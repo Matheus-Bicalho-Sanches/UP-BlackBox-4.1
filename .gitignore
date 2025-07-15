@@ -81,8 +81,14 @@ quant_engine.log
 # Cursor IDE files
 .cursor/
 
-# Large binary files and folders (keep only important ones)
-Dll_Profit/
+# Dll_Profit - ignore only logs, temp and cache files, keep source code and DLLs
+Dll_Profit/Logs/
+Dll_Profit/Temp/
+Dll_Profit/__pycache__/
+Dll_Profit/Exemplo\ Python/Logs/
+Dll_Profit/Exemplo\ Python/__pycache__/
+Dll_Profit/Erro.log
+Dll_Profit/Exemplo\ Python/Erro.log
 
 # UP BlackBox 2.0 - ignore only heavy/generated files, keep source code
 "UP BlackBox 2.0/venv_bb2/"
@@ -95,8 +101,10 @@ Dll_Profit/
 "UP BlackBox 4.0/__pycache__/"
 "UP BlackBox 4.0/.env"
 
-# Backend homepage (if not needed)
-backendhomepagesiteUP/
+# Backend homepage - ignore only node_modules and logs, keep source code
+backendhomepagesiteUP/node_modules/
+backendhomepagesiteUP/.git/
+backendhomepagesiteUP/package-lock.json
 
 # Temporary and generated files
 h -u origin main
