@@ -1,0 +1,17 @@
+{
+  "tasks": [
+    {
+      "id": "5d8d1038-eb41-4938-9352-dff2e1e95edd",
+      "title": "sdfsdf",
+      "description": "sdfasf",
+      "estimatedHours": 1,
+      "priority": "Média",
+      "assignedTo": [],
+      "status": "Não iniciada",
+      "isCompleted": false,
+      "observations": "",
+      "createdAt": "2025-03-24T14:29:17.118Z",
+      "updatedAt": "2025-03-24T14:29:17.118Z"
+    }
+  ]
+}

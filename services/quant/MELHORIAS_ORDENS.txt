@@ -1,0 +1,63 @@
+============================================================
+     MELHORIAS IMPLEMENTADAS PARA CORRIGIR ORDENS DUPLICADAS
+============================================================
+
+PROBLEMAS IDENTIFICADOS NOS LOGS:
+- ID: unknown → Sistema não conseguia rastrear ordens
+- "Sem ordem ativa" → Registro de ordens falhando  
+- Ordens repetidas → Múltiplas ordens com mesmo preço
+
+============================================================
+                    CORREÇÕES IMPLEMENTADAS
+============================================================
+
+1. GERAÇÃO DE IDs ÚNICOS
+   • Se API retornar ID inválido/vazio, gera ID único
+   • Formato: QUANT_{strategy_id}_{timestamp_microsegundos}
+   • Garante rastreamento mesmo com falhas de API
+
+2. VERIFICAÇÃO ROBUSTA DE ORDENS
+   • Verifica preço, lado E quantidade da ordem
+   • Só atualiza se diferença > R$ 0,50
+   • Logs detalhados para debug
+
+3. PREVENÇÃO DE ORDENS DUPLICADAS
+   • Registra ordem no sistema SEMPRE que envia
+   • Verifica ordens ativas antes de enviar nova
+   • Return early se ordem já está correta
+
+4. LOGS MELHORADOS
+   • Status detalhado das ordens ativas
+   • Debug com contadores de ordens
+   • Logs específicos para cada tipo de mudança
+
+============================================================
+                  ANTES vs AGORA
+============================================================
+
+ANTES (PROBLEMAS):
+❌ API retornava "unknown" → Não rastreava ordem
+❌ Sistema enviava ordens repetidas a cada ciclo
+❌ Logs mostravam "Sem ordem ativa" sempre
+
+AGORA (SOLUÇÕES):
+✅ IDs únicos garantem rastreamento
+✅ Verifica ordem existente antes de enviar nova
+✅ Logs mostram status real das ordens
+
+============================================================
+                      COMO TESTAR
+============================================================
+
+1. Execute o sistema normalmente
+2. Observe os logs - agora devem mostrar:
+   • "Ordem: BUY @ 136532.56 | ID: QUANT_strategy_123..."
+   • "Ordem já ativa com parâmetros corretos"
+   • "Ordem registrada no sistema"
+
+3. NÃO deve mais aparecer:
+   • "ID: unknown"
+   • Ordens repetidas com mesmo preço
+   • "Sem ordem ativa" quando tem ordem
+
+============================================================ 

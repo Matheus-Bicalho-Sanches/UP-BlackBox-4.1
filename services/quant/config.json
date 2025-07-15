@@ -1,0 +1,51 @@
+{
+  "system": {
+    "blackbox_api_url": "http://localhost:8000",
+    "market_feed_url": "http://localhost:8001",
+    "loop_interval_seconds": 10,
+    "strategy_reload_interval_seconds": 60,
+    "max_candles_history": 50,
+    "api_timeout_seconds": 30
+  },
+  "strategies": {
+    "Voltaamedia_Bollinger_1min_WINQ25": {
+      "enabled": true,
+      "ticker": "WINQ25",
+      "exchange": "F",
+      "timeframe": "1m",
+      "bollinger_bands": {
+        "period": 20,
+        "std_deviation": 2.0,
+        "ma_type": "SMA"
+      },
+      "risk_management": {
+        "max_position": 10,
+        "enable_stop_loss": false,
+        "stop_loss_percent": 5.0,
+        "enable_take_profit": false,
+        "take_profit_percent": 10.0
+      },
+      "execution": {
+        "order_type": "market",
+        "use_master_account": true,
+        "quantity_per_signal": 1
+      }
+    }
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "quant_engine.log",
+    "max_file_size_mb": 10,
+    "backup_count": 5
+  },
+  "safety": {
+    "paper_trading_mode": false,
+    "max_daily_trades": 100,
+    "max_daily_loss": 5000,
+    "trading_hours": {
+      "start": "09:00",
+      "end": "17:00",
+      "timezone": "America/Sao_Paulo"
+    }
+  }
+} 
