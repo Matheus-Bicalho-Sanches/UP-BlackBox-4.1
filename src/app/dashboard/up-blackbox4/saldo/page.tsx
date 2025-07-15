@@ -16,72 +16,118 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-function EditSaldoModal({ isOpen, onClose, onSave, values, setValues }: any) {
+function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, loading }: any) {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-[#222] rounded-lg p-6 w-full max-w-md">
-        <h3 className="text-xl font-bold text-white mb-4">Editar Saldos</h3>
+      <div className="bg-[#222] rounded-lg p-6 w-full max-w-lg">
+        <h3 className="text-xl font-bold text-white mb-4">Editar Conta</h3>
         <div className="space-y-4">
-          <div>
-            <label className="block text-gray-300 mb-1">Saldo Hoje</label>
-            <input
-              type="number"
-              value={values["Saldo Hoje"] ?? ""}
-              onChange={e => setValues((v: any) => ({ ...v, "Saldo Hoje": Number(e.target.value) }))}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-300 mb-1">Saldo D+1</label>
-            <input
-              type="number"
-              value={values["Saldo D+1"] ?? ""}
-              onChange={e => setValues((v: any) => ({ ...v, "Saldo D+1": Number(e.target.value) }))}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-gray-300 mb-1">Saldo D+2</label>
-            <input
-              type="number"
-              value={values["Saldo D+2"] ?? ""}
-              onChange={e => setValues((v: any) => ({ ...v, "Saldo D+2": Number(e.target.value) }))}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-gray-300 mb-1">% Min Caixa</label>
-              <input
-                type="number"
-                step="0.1"
-                value={values["PctSaldoMin"] ?? ""}
-                onChange={e => setValues((v: any) => ({ ...v, PctSaldoMin: Number(e.target.value) }))}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
-              />
+          {/* Seção de Saldos */}
+          <div className="border-b border-gray-600 pb-4">
+            <h4 className="text-lg font-semibold text-white mb-3">Saldos</h4>
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <label className="block text-gray-300 mb-1">Saldo Hoje</label>
+                <input
+                  type="number"
+                  value={values["Saldo Hoje"] ?? ""}
+                  onChange={e => setValues((v: any) => ({ ...v, "Saldo Hoje": Number(e.target.value) }))}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-1">Saldo D+1</label>
+                <input
+                  type="number"
+                  value={values["Saldo D+1"] ?? ""}
+                  onChange={e => setValues((v: any) => ({ ...v, "Saldo D+1": Number(e.target.value) }))}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-1">Saldo D+2</label>
+                <input
+                  type="number"
+                  value={values["Saldo D+2"] ?? ""}
+                  onChange={e => setValues((v: any) => ({ ...v, "Saldo D+2": Number(e.target.value) }))}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-gray-300 mb-1">% Min Caixa</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={values["PctSaldoMin"] ?? ""}
+                    onChange={e => setValues((v: any) => ({ ...v, PctSaldoMin: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-gray-300 mb-1">% Max Caixa</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={values["PctSaldoMax"] ?? ""}
+                    onChange={e => setValues((v: any) => ({ ...v, PctSaldoMax: Number(e.target.value) }))}
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                  />
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="block text-gray-300 mb-1">% Max Caixa</label>
-              <input
-                type="number"
-                step="0.1"
-                value={values["PctSaldoMax"] ?? ""}
-                onChange={e => setValues((v: any) => ({ ...v, PctSaldoMax: Number(e.target.value) }))}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
-              />
+          </div>
+
+          {/* Seção de LFTS11 */}
+          <div>
+            <h4 className="text-lg font-semibold text-white mb-3">LFTS11</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-gray-300 mb-1">Quantidade</label>
+                <input
+                  type="number"
+                  step="1"
+                  value={values.quantity ?? ""}
+                  onChange={e => setValues((v: any) => ({ ...v, quantity: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                  placeholder="Ex: 1000"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-300 mb-1">Preço Médio</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={values.avgPrice ?? ""}
+                  onChange={e => setValues((v: any) => ({ ...v, avgPrice: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
+                  placeholder="Ex: 110.50"
+                />
+              </div>
             </div>
+            {values.quantity && values.avgPrice && (
+              <div className="bg-gray-800 p-3 rounded-md mt-3">
+                <p className="text-gray-300 text-sm">
+                  <strong>Valor Total LFTS11:</strong> {(values.quantity * values.avgPrice).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
+            disabled={loading}
+            className="px-4 py-2 bg-gray-700 text-gray-300 rounded hover:bg-gray-600 disabled:opacity-50"
           >Cancelar</button>
           <button
             onClick={onSave}
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500"
-          >Salvar</button>
+            disabled={loading}
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500 disabled:opacity-50"
+          >
+            {loading ? 'Salvando...' : 'Salvar'}
+          </button>
         </div>
       </div>
     </div>
@@ -94,6 +140,8 @@ export default function SaldoPage() {
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const [editValues, setEditValues] = useState<any>({});
   const [modalOpen, setModalOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [lftsPositions, setLftsPositions] = useState<Record<string, { quantity: number; avgPrice: number }>>({});
   const [saldosFuturos, setSaldosFuturos] = useState<any>({});
   const [lftsValor, setLftsValor] = useState<Record<string, number>>({});
   const [lftsRefPrice, setLftsRefPrice] = useState<number>(110);
@@ -192,24 +240,30 @@ export default function SaldoPage() {
           const qLfts = query(collection(db, "posicoesDLL"), where("ticker", "==", "LFTS11"));
           const snapLfts = await getDocs(qLfts);
           const map: Record<string, number> = {};
+          const positions: Record<string, { quantity: number; avgPrice: number }> = {};
           let totalValor = 0;
           let totalQty = 0;
           snapLfts.forEach((docSnap) => {
             const d = docSnap.data() as any;
-            const valor = (Number(d.quantity) || 0) * (Number(d.avgPrice) || 0);
+            const quantity = Number(d.quantity) || 0;
+            const avgPrice = Number(d.avgPrice) || 0;
+            const valor = quantity * avgPrice;
             if (d.account_id) {
               map[d.account_id] = (map[d.account_id] || 0) + valor;
+              positions[d.account_id] = { quantity, avgPrice };
             }
             totalValor += valor;
-            totalQty += Number(d.quantity) || 0;
+            totalQty += quantity;
           });
           setLftsValor(map);
+          setLftsPositions(positions);
           if (totalQty > 0) {
             setLftsRefPrice(totalValor / totalQty);
           }
         } catch (err) {
           console.error("[SALDO] Erro ao buscar posição LFTS11:", err);
           setLftsValor({});
+          setLftsPositions({});
         }
 
         // Atualizar saldo no Firebase se necessário
@@ -573,7 +627,25 @@ export default function SaldoPage() {
                     {(item.PctSaldoMax ?? DEFAULT_PCT_MAX).toFixed(1)}%
                   </td>
                   <td style={{ padding: 10, textAlign: 'center' }}>
-                    <button title="Editar saldos" onClick={() => { setEditIdx(idx); setEditValues({ "Saldo Hoje": item["Saldo Hoje"], "Saldo D+1": item["Saldo D+1"], "Saldo D+2": item["Saldo D+2"], PctSaldoMin: item.PctSaldoMin ?? DEFAULT_PCT_MIN, PctSaldoMax: item.PctSaldoMax ?? DEFAULT_PCT_MAX }); setModalOpen(true); }} style={{ marginRight: 6, background: 'transparent', border: 'none', cursor: 'pointer', color: '#0ea5e9' }}>
+                    <button 
+                      title="Editar conta" 
+                      onClick={() => { 
+                        setEditIdx(idx); 
+                        const accountId = item.AccountID;
+                        const position = lftsPositions[accountId] || { quantity: 0, avgPrice: 0 };
+                        setEditValues({ 
+                          "Saldo Hoje": item["Saldo Hoje"], 
+                          "Saldo D+1": item["Saldo D+1"], 
+                          "Saldo D+2": item["Saldo D+2"], 
+                          PctSaldoMin: item.PctSaldoMin ?? DEFAULT_PCT_MIN, 
+                          PctSaldoMax: item.PctSaldoMax ?? DEFAULT_PCT_MAX,
+                          quantity: position.quantity, 
+                          avgPrice: position.avgPrice 
+                        }); 
+                        setModalOpen(true); 
+                      }} 
+                      style={{ marginRight: 6, background: 'transparent', border: 'none', cursor: 'pointer', color: '#0ea5e9' }}
+                    >
                       <FiEdit2 size={16} />
                     </button>
                     <button title={ajusteLoadingMap[item.AccountID] ? 'Processando...' : 'Ajustar caixa'} onClick={() => handleAjustarCaixa(item)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#facc15' }}>
@@ -589,36 +661,105 @@ export default function SaldoPage() {
       <EditSaldoModal
         isOpen={modalOpen}
         onClose={() => { setModalOpen(false); setEditIdx(null); setEditValues({}); }}
+        loading={editLoading}
         onSave={async () => {
           if (editIdx !== null) {
-            const novosClientes = [...clientes];
-            const cliente = novosClientes[editIdx];
-            const docId = cliente._id;
-            const updateData: any = {
-              updatedAt: new Date().toISOString(),
-            };
-            if (editValues["Saldo Hoje"] !== undefined) updateData["Saldo Hoje"] = editValues["Saldo Hoje"];
-            if (editValues["Saldo D+1"] !== undefined) updateData["Saldo D+1"] = editValues["Saldo D+1"];
-            if (editValues["Saldo D+2"] !== undefined) updateData["Saldo D+2"] = editValues["Saldo D+2"];
-            if (editValues.PctSaldoMin !== undefined) updateData.PctSaldoMin = editValues.PctSaldoMin;
-            if (editValues.PctSaldoMax !== undefined) updateData.PctSaldoMax = editValues.PctSaldoMax;
-            console.log("Tentando atualizar documento Firebase:", { docId, updateData });
+            setEditLoading(true);
             try {
-              await updateDoc(doc(db, "contasDll", docId), updateData);
+              const cliente = clientes[editIdx];
+              const accountId = cliente.AccountID;
+              const clienteDocId = cliente._id;
+              
+              // ========== SALVAR DADOS DE SALDO ==========
+              const saldoUpdateData: any = {
+                updatedAt: new Date().toISOString(),
+              };
+              if (editValues["Saldo Hoje"] !== undefined) saldoUpdateData["Saldo Hoje"] = editValues["Saldo Hoje"];
+              if (editValues["Saldo D+1"] !== undefined) saldoUpdateData["Saldo D+1"] = editValues["Saldo D+1"];
+              if (editValues["Saldo D+2"] !== undefined) saldoUpdateData["Saldo D+2"] = editValues["Saldo D+2"];
+              if (editValues.PctSaldoMin !== undefined) saldoUpdateData.PctSaldoMin = editValues.PctSaldoMin;
+              if (editValues.PctSaldoMax !== undefined) saldoUpdateData.PctSaldoMax = editValues.PctSaldoMax;
+
+              await updateDoc(doc(db, "contasDll", clienteDocId), saldoUpdateData);
+
+              // ========== SALVAR DADOS DE LFTS11 ==========
+              // Validação dos dados de LFTS11
+              if (editValues.quantity !== undefined && editValues.quantity < 0) {
+                alert("Por favor, insira uma quantidade válida (maior ou igual a 0).");
+                setEditLoading(false);
+                return;
+              }
+              
+              if (editValues.quantity > 0 && (!editValues.avgPrice || editValues.avgPrice <= 0)) {
+                alert("Por favor, insira um preço médio válido (maior que 0).");
+                setEditLoading(false);
+                return;
+              }
+
+              const lftsDocId = `${accountId}_LFTS11`;
+              
+              if (editValues.quantity !== undefined && editValues.avgPrice !== undefined) {
+                const positionData = {
+                  account_id: accountId,
+                  ticker: "LFTS11",
+                  quantity: editValues.quantity,
+                  avgPrice: editValues.avgPrice,
+                  updatedAt: serverTimestamp(),
+                };
+
+                // Se a quantidade for 0, remove a posição; caso contrário, cria/atualiza
+                if (editValues.quantity === 0) {
+                  const posRef = doc(db, "posicoesDLL", lftsDocId);
+                  const posSnap = await getDoc(posRef);
+                  if (posSnap.exists()) {
+                    await updateDoc(posRef, { quantity: 0 });
+                  }
+                } else {
+                  await setDoc(doc(db, "posicoesDLL", lftsDocId), positionData, { merge: true });
+                }
+
+                // Atualiza os estados locais de LFTS11
+                const newPositions = { ...lftsPositions };
+                const newValores = { ...lftsValor };
+                
+                if (editValues.quantity === 0) {
+                  delete newPositions[accountId];
+                  newValores[accountId] = 0;
+                } else {
+                  newPositions[accountId] = { 
+                    quantity: editValues.quantity, 
+                    avgPrice: editValues.avgPrice 
+                  };
+                  newValores[accountId] = editValues.quantity * editValues.avgPrice;
+                }
+                
+                setLftsPositions(newPositions);
+                setLftsValor(newValores);
+              }
+
+              // Atualiza os dados do cliente no estado local
+              const novosClientes = [...clientes];
               novosClientes[editIdx] = {
                 ...novosClientes[editIdx],
-                ...editValues,
+                "Saldo Hoje": editValues["Saldo Hoje"],
+                "Saldo D+1": editValues["Saldo D+1"],
+                "Saldo D+2": editValues["Saldo D+2"],
+                PctSaldoMin: editValues.PctSaldoMin,
+                PctSaldoMax: editValues.PctSaldoMax,
               };
               setClientes(novosClientes);
-              alert("Saldo atualizado com sucesso!\n\nID: " + docId + "\nDados enviados: " + JSON.stringify(updateData, null, 2));
+              
+              alert("Dados atualizados com sucesso!");
+              setModalOpen(false);
+              setEditIdx(null);
+              setEditValues({});
             } catch (err: any) {
-              console.error("Erro ao atualizar saldo no Firebase:", err);
-              alert("Erro ao atualizar saldo no Firebase.\n\nID: " + docId + "\nDados enviados: " + JSON.stringify(updateData, null, 2) + "\n\nErro: " + (err && err.message ? err.message : JSON.stringify(err)));
+              console.error("Erro ao atualizar dados:", err);
+              alert("Erro ao atualizar dados: " + (err?.message || "Erro desconhecido"));
+            } finally {
+              setEditLoading(false);
             }
           }
-          setModalOpen(false);
-          setEditIdx(null);
-          setEditValues({});
         }}
         values={editValues}
         setValues={setEditValues}
