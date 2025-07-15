@@ -328,7 +328,7 @@ def send_order(account_id: str, broker_id: int, ticker: str, quantity: int, pric
                 db.collection("ordensDLL").document(str(result)).set(ordem_data)
             except Exception as e:
                 print("[FIREBASE] Erro ao salvar ordem:", e)
-            return {"success": True, "log": f"Ordem enviada com sucesso! ProfitID: {result}"}
+            return {"success": True, "log": f"Ordem enviada com sucesso! ProfitID: {result}", "order_id": str(result)}
         else:
             return {"success": False, "log": f"Erro ao enviar ordem. Código: {result}"}
     except Exception as e:
