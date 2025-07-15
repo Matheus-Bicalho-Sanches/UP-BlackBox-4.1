@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "src/app/api/**/*": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  },
+  "build": {
+    "env": {
+      "NODE_VERSION": "18.x"
+    }
+  }
+} 

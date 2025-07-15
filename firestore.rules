@@ -1,0 +1,186 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user is accessing their own data
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Função auxiliar para verificar roles
+    function hasRole(role) {
+      return request.auth != null && get(/databases/$(database)/documents/clients/$(request.auth.uid)).data.role == role;
+    }
+
+    // Clients collection rules
+    match /clients/{clientId} {
+      // Admins podem ler e escrever
+      allow read, write: if hasRole('admin');
+      // Clientes só podem ler seus próprios dados
+      allow read: if request.auth != null && request.auth.uid == resource.data.uid;
+      
+      // Nested collections under clients
+      match /{document=**} {
+        allow read, write: if isAuthenticated();
+      }
+
+      allow create: if request.auth != null 
+        && request.resource.data.keys().hasAll(['name', 'email', 'cpf', 'phone', 'asaasId', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.email is string
+        && request.resource.data.cpf is string
+        && request.resource.data.phone is string
+        && request.resource.data.asaasId is string
+        && request.resource.data.createdAt is string;
+    }
+
+    // Allocations collection rules
+    match /allocations/{allocationId} {
+      // Allow read and write only if user is authenticated
+      allow read, write: if isAuthenticated();
+    }
+
+    // Payment rules
+    match /payments/{paymentId} {
+      allow read: if request.auth != null;
+      
+      allow create: if request.auth != null
+        && request.resource.data.clientId is string
+        && request.resource.data.date is string
+        && request.resource.data.dueDate is string
+        && request.resource.data.value is number
+        && request.resource.data.value > 0
+        && request.resource.data.status in ['pending', 'paid', 'overdue']
+        && request.resource.data.createdAt is string;
+      
+      allow update: if request.auth != null
+        && request.resource.data.clientId == resource.data.clientId
+        && request.resource.data.date is string
+        && request.resource.data.dueDate is string
+        && request.resource.data.value is number
+        && request.resource.data.value > 0
+        && request.resource.data.status in ['pending', 'paid', 'overdue']
+        && request.resource.data.updatedAt is string;
+      
+      allow delete: if request.auth != null;
+    }
+
+    // Transactions collection rules
+    match /transactions/{transactionId} {
+      // Allow read and write for authenticated users (collaborators)
+      allow read, write: if isAuthenticated()
+        // Adicionar validação de dados na criação (opcional, mas recomendado)
+        && (request.method == 'create' ? 
+            request.resource.data.clientId is string &&
+            request.resource.data.date is string && request.resource.data.date.matches('^\\d{4}-\\d{2}-\\d{2}$') &&
+            request.resource.data.type in ['aporte', 'resgate'] &&
+            request.resource.data.amount is number && request.resource.data.amount > 0 &&
+            request.resource.data.portfolioValueBefore is number && request.resource.data.portfolioValueBefore >= 0 &&
+            request.resource.data.createdAt is timestamp &&
+            request.resource.data.createdBy == request.auth.uid
+            // notes é opcional
+            : true); // Permite update/delete sem validações extras por enquanto
+    }
+
+    // Permitir acesso à coleção contacts
+    match /contacts/{document=**} {
+      allow read, write: if true;  // Permite leitura e escrita para todos os usuários
+    }
+
+    // Regras para a coleção csvBases (upload de arquivos CSV)
+    match /csvBases/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Regras para a coleção estrategias
+    match /estrategias/{document=**} {
+      // Permitir leitura para qualquer usuário autenticado
+      allow read: if isAuthenticated();
+      // Permitir escrita para qualquer usuário autenticado
+      allow write: if isAuthenticated();
+    }
+
+    // Regras para a coleção backtests
+    match /backtests/{document=**} {
+      // Permitir leitura para qualquer usuário autenticado
+      allow read: if isAuthenticated();
+      // Permitir escrita apenas para administradores
+      allow write: if hasRole('admin');
+    }
+
+    // Regras para a coleção contasDll
+    match /contasDll/{contaId} {
+      allow read, write: if isAuthenticated()
+        && (request.method == 'create' ?
+          request.resource.data.keys().hasAll(['Nome Cliente', 'Valor Investido', 'BrokerID', 'AccountID']) &&
+          request.resource.data['Nome Cliente'] is string &&
+          request.resource.data['Valor Investido'] is number &&
+          request.resource.data['BrokerID'] is string &&
+          request.resource.data['AccountID'] is string
+          : true);
+    }
+
+    // Regras para a coleção ordensDLL
+    match /ordensDLL/{ordemId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Regras para a coleção activeSubscriptions (tickers acompanhados)
+    match /activeSubscriptions/{tickerId} {
+      // Qualquer usuário autenticado pode ler quais ativos estão sendo acompanhados
+      allow read: if isAuthenticated();
+      // Escrita restrita ao servidor (Firebase Admin SDK) — clientes não podem criar/alterar
+      allow write: if false;
+    }
+
+    // Regras para a coleção posicoesDLL
+    match /posicoesDLL/{posicaoId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Regras para a coleção config (ex.: preço LFTS11)
+    match /config/{docId} {
+      // Qualquer usuário pode ler o valor configurado (campo público)
+      allow read: if true;
+      // Apenas usuários autenticados podem atualizar/criar
+      allow write: if isAuthenticated();
+    }
+
+    // Match for real-time market data generated by ProfitDLL
+    match /marketDataDLL/{ticker}/{sub=**} {
+      // Qualquer usuário autenticado pode ler os dados de market data
+      allow read: if isAuthenticated();
+      // Escrita é feita apenas via Firebase Admin SDK (bypass das rules)
+      // Caso queira restringir também, remova o comentário abaixo
+      // allow write: if hasRole('admin');
+    }
+
+    // Regras para a coleção quantStrategies (Estratégias Quant)
+    match /quantStrategies/{strategyId} {
+      // Qualquer usuário autenticado pode ler as estratégias quant
+      allow read: if isAuthenticated();
+      // Usuários autenticados podem criar/editar/excluir estratégias quant
+      allow write: if isAuthenticated()
+        && (request.method == 'create' ? 
+          request.resource.data.keys().hasAll(['nome', 'status', 'carteiraBlackBox', 'tamanhoPosition']) &&
+          request.resource.data.nome is string &&
+          request.resource.data.status is bool &&
+          request.resource.data.carteiraBlackBox is string &&
+          request.resource.data.tamanhoPosition is number &&
+          request.resource.data.tamanhoPosition >= 0 &&
+          request.resource.data.tamanhoPosition <= 100
+          : true);
+    }
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+} 
