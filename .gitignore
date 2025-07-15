@@ -77,3 +77,30 @@ public/backtests/
 *.pyo
 debug_dll.log
 quant_engine.log
+
+# Cursor IDE files
+.cursor/
+
+# Large binary files and folders (keep only important ones)
+Dll_Profit/
+
+# UP BlackBox 2.0 - ignore only heavy/generated files, keep source code
+"UP BlackBox 2.0/venv_bb2/"
+"UP BlackBox 2.0/__pycache__/"
+"UP BlackBox 2.0/.env"
+
+# UP BlackBox 4.0 - similar protection
+"UP BlackBox 4.0/venv/"
+"UP BlackBox 4.0/venv_bb4/"
+"UP BlackBox 4.0/__pycache__/"
+"UP BlackBox 4.0/.env"
+
+# Backend homepage (if not needed)
+backendhomepagesiteUP/
+
+# Temporary and generated files
+h -u origin main
+git pull .bat
+otimizacao home.md
+sugestoeshomepage.md
+teste_backtest_manual.py
