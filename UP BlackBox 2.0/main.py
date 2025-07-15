@@ -11,6 +11,7 @@ import io
 from dotenv import load_dotenv
 import datetime
 from estrategias.comprafechamento_vendeabertura import run_comprafechamento_vendeabertura
+from estrategias.vendeabertura_comprafechamento import run_vendeabertura_comprafechamento
 from estrategias.buyifstockupxpercentage import run_buyifstockupxpercentage
 from estrategias.buysequenciadealtaouqueda import run_buysequenciadealtaouqueda
 from estrategias.operandomomentum import run_operandomomentum
@@ -239,6 +240,9 @@ async def run_backtest(request: Request):
         # Executar a estratégia e obter resultado
         if estrategia_nome.lower() == 'comprafechamento_vendeabertura':
             resultado = run_comprafechamento_vendeabertura(tmp_path)
+        
+        elif estrategia_nome.lower().replace('_', '').replace('-', '') == 'vendeaberturacomprafechamento':
+            resultado = run_vendeabertura_comprafechamento(tmp_path)
         elif estrategia_nome.lower() == 'buyifstockupxpercentage':
             x = parametros.get('x', 0.03)
             y = parametros.get('y', 5)
