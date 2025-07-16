@@ -506,6 +506,25 @@ async def edit_orders_batch(request: Request):
     if not ordens:
         raise HTTPException(status_code=404, detail="Nenhuma ordem encontrada para este batch.")
 
+    # Detectar se as ordens pertencem a uma estratégia específica
+    strategy_ids = set(o.get('strategy_id') for o in ordens if o.get('strategy_id'))
+    use_strategy_allocations = len(strategy_ids) == 1 and list(strategy_ids)[0]
+    
+    # Buscar valores investidos
+    if use_strategy_allocations:
+        # Usar alocações da estratégia específica
+        strategy_id = list(strategy_ids)[0]
+        print(f"[EDIT_ORDERS_BATCH] Usando alocações da estratégia: {strategy_id}")
+        alloc_ref = db.collection("strategyAllocations").where("strategy_id", "==", strategy_id).stream()
+        valor_map = {doc.to_dict()['account_id']: float(doc.to_dict().get('valor_investido', 0)) 
+                    for doc in alloc_ref}
+    else:
+        # Usar valores totais das contas (Master Global)
+        print(f"[EDIT_ORDERS_BATCH] Usando valores totais das contas (Master Global)")
+        contas_ref = db.collection('contasDll').stream()
+        valor_map = {c.get('AccountID'): float(c.get('Valor Investido', 0)) 
+                    for c in (c_doc.to_dict() for c_doc in contas_ref)}
+
     # Manter apenas ordens em aberto (pendentes ou parcialmente executadas)
     STATUS_FECHADOS = {"Filled", "Cancelled", "Canceled", "Rejected"}
     ordens_editaveis = [
@@ -529,14 +548,12 @@ async def edit_orders_batch(request: Request):
         ordens_ref_update = db.collection('ordensDLL').where('OrderID', '==', str(ordem['OrderID'])).stream()
         for doc in ordens_ref_update:
             db.collection('ordensDLL').document(doc.id).update({"master_base_qty": base_qty})
-    # Buscar valor investido de cada conta
-    contas_ref = db.collection('contasDll').stream()
-    valor_map = {c.get('AccountID'): float(c.get('Valor Investido', 0)) for c in (c_doc.to_dict() for c_doc in contas_ref)}
     results = []
     for ordem in ordens_editaveis:
         valor = valor_map.get(ordem['account_id'], 0)
         fator = valor / 10000  # Usar o mesmo divisor fixo do envio da boleta Master
         nova_qtd = max(1, int(base_qty * fator))
+        print(f"[EDIT_ORDERS_BATCH] Conta {ordem['account_id']}: valor={valor}, fator={fator:.4f}, nova_qtd={nova_qtd}")
         try:
             # Chama a edição de ordem existente
             from dll_login import profit_dll

@@ -15,6 +15,8 @@ interface EditBatchModalProps {
   valorInvestidoMap: Record<string, number>;
   defaultPrice?: number | string;
   defaultBaseQty?: number | string;
+  strategyId?: string;
+  strategyName?: string;
 }
 
 interface DeleteBatchModalProps {
@@ -56,7 +58,7 @@ function EditOrderModal({ isOpen, onClose, onSave, order }: any) {
 }
 
 // Modal de edição em lote
-function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMap, defaultPrice, defaultBaseQty }: EditBatchModalProps) {
+function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMap, defaultPrice, defaultBaseQty, strategyId, strategyName }: EditBatchModalProps) {
   const [price, setPrice] = useState(defaultPrice ?? '');
   const [baseQty, setBaseQty] = useState(defaultBaseQty ?? '');
   const [loading, setLoading] = useState(false);
@@ -92,6 +94,16 @@ function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMa
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-[#222] rounded-lg p-6 w-full max-w-lg">
         <h3 className="text-xl font-bold text-white mb-4">Editar Lote de Ordens</h3>
+        {strategyId && strategyName && (
+          <div className="mb-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded">
+            <p className="text-blue-300 text-sm">
+              <strong>Estratégia:</strong> {strategyName}
+            </p>
+            <p className="text-blue-300 text-sm">
+              <strong>ID:</strong> {strategyId}
+            </p>
+          </div>
+        )}
         <div className="space-y-4">
           <div>
             <label className="block text-gray-300 mb-1">Novo Preço</label>
@@ -208,9 +220,10 @@ export default function OrdensPage() {
   const [orderToEdit, setOrderToEdit] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean, order: any } | null>(null);
   const [expandedBatches, setExpandedBatches] = useState<{ [batchId: string]: boolean }>({});
-  const [editBatch, setEditBatch] = useState<{ batchId: string, orders: any[] } | null>(null);
+  const [editBatch, setEditBatch] = useState<{ batchId: string, orders: any[], strategyId?: string, strategyName?: string } | null>(null);
   const [deleteBatch, setDeleteBatch] = useState<{ batchId: string, orders: any[] } | null>(null);
   const [valorInvestidoMap, setValorInvestidoMap] = useState<Record<string, number>>({});
+  const [currentStrategyId, setCurrentStrategyId] = useState<string | null>(null);
   // --- filtros: período, ativo e status ---
   // Usamos string (AAAA-MM-DD) para evitar problemas de fuso ao serializar Date
   // definir período padrão: últimos 10 dias (hoje inclusive)
@@ -274,6 +287,13 @@ export default function OrdensPage() {
     fetchStrategies();
   }, []);
 
+  // Função para detectar estratégia das ordens
+  const detectStrategyFromOrders = (orders: any[]) => {
+    // Verificar se todas as ordens têm o mesmo strategy_id
+    const strategyIds = [...new Set(orders.map(o => o.strategy_id).filter(Boolean))];
+    return strategyIds.length === 1 ? strategyIds[0] : null;
+  };
+
   useEffect(() => {
     async function fetchValores() {
       try {
@@ -285,11 +305,44 @@ export default function OrdensPage() {
             map[c.AccountID] = Number(c["Valor Investido"] || 0);
           }
           setValorInvestidoMap(map);
+          setCurrentStrategyId(null);
         }
       } catch {}
     }
     fetchValores();
   }, []);
+
+  async function fetchValoresForStrategy(strategyId?: string) {
+    try {
+      if (strategyId) {
+        // Buscar alocações da estratégia específica
+        const allocRes = await fetch(`http://localhost:8000/allocations?strategy_id=${strategyId}`);
+        if (allocRes.ok) {
+          const allocData = await allocRes.json();
+          const valorMap: Record<string, number> = {};
+          for (const alloc of allocData.allocations || []) {
+            valorMap[alloc.account_id] = alloc.valor_investido || 0;
+          }
+          setValorInvestidoMap(valorMap);
+          setCurrentStrategyId(strategyId);
+          return;
+        }
+      }
+      
+      // Fallback: buscar de contasDll (Master Global)
+      const contasDllRes = await fetch("http://localhost:8000/contasDll");
+      if (contasDllRes.ok) {
+        const contasDllData = await contasDllRes.json();
+        const contasDll: any[] = contasDllData.contas || [];
+        const valorMap: Record<string, number> = {};
+        for (const c of contasDll) {
+          valorMap[c.AccountID] = c["Valor Investido"] || 0;
+        }
+        setValorInvestidoMap(valorMap);
+        setCurrentStrategyId(null);
+      }
+    } catch {}
+  }
 
   function handleAccountChange(e: React.ChangeEvent<HTMLSelectElement>) {
     setSelectedAccount(e.target.value);
@@ -682,7 +735,13 @@ export default function OrdensPage() {
                           {headerOrder.TextMessage ?? '-'}
                         </td>
                         <td style={{ padding: 6, border: '1px solid #444', textAlign: 'center', fontWeight: 700 }}>
-                          <button title="Editar lote" onClick={() => setEditBatch({ batchId, orders: group })} style={{ marginRight: 6, color: '#0ea5e9', background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                          <button title="Editar lote" onClick={() => {
+                            const strategyId = detectStrategyFromOrders(group);
+                            const strategyName = strategyId ? strategies.find(s => s.id === strategyId)?.name : undefined;
+                            setEditBatch({ batchId, orders: group, strategyId, strategyName });
+                            // Buscar valores corretos para a estratégia
+                            fetchValoresForStrategy(strategyId);
+                          }} style={{ marginRight: 6, color: '#0ea5e9', background: 'transparent', border: 'none', cursor: 'pointer' }}>
                             <FiEdit2 size={18} />
                           </button>
                           <button title="Excluir lote" onClick={() => setDeleteBatch({ batchId, orders: group })} style={{ color: '#dc2626', background: 'transparent', border: 'none', cursor: 'pointer' }}>
@@ -858,6 +917,8 @@ export default function OrdensPage() {
         valorInvestidoMap={valorInvestidoMap}
         defaultPrice={editBatch?.orders[0]?.price}
         defaultBaseQty={editBatch?.orders[0]?.master_base_qty ?? editBatch?.orders.reduce((sum, o) => sum + (o.quantity || 0), 0)}
+        strategyId={editBatch?.strategyId}
+        strategyName={editBatch?.strategyName}
       />
       {/* Modal de exclusão em lote */}
       <DeleteBatchModal
