@@ -1,3 +1,24 @@
+"""
+UP BlackBox 4.0 - Backend API
+
+ARQUITETURA:
+- Sistema de gestão de carteiras manual e automatizada
+- Carteiras: UP BlackBox FIIs (manual), UP BlackBox Multi (manual → automatizada)
+- "MASTER" é abstração para consolidar dados de múltiplas contas
+- Integração com ProfitDLL para execução de ordens
+
+SEGURANÇA:
+- Autenticação de usuários via frontend /login
+- Todos os usuários têm mesmo nível de acesso
+- Sistema em produção - não usar fallbacks fictícios
+
+FUNCIONALIDADES:
+- Login automático na DLL do Profit
+- Gestão de estratégias (carteiras) e alocações
+- Execução de ordens individuais e em lote
+- Consolidação de posições por estratégia
+"""
+
 from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Request
@@ -5,6 +26,7 @@ from dll_login import login_profit, get_accounts, get_positions, send_order, get
 import os
 import firebase_admin
 from firebase_admin import credentials, firestore
+from firebase_admin.firestore import SERVER_TIMESTAMP
 from ctypes import byref, c_double, c_int, c_longlong, c_wchar_p, create_unicode_buffer, cast
 import threading
 import time
@@ -18,10 +40,31 @@ app = FastAPI()
 # Configuração de CORS para permitir o frontend acessar o backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        # Permitir qualquer origem em desenvolvimento (mais permissivo)
+        "*"
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers"
+    ],
+    expose_headers=["*"],
+    max_age=86400  # Cache preflight por 24 horas
 )
 
 # --- Firebase Admin SDK ---
@@ -31,6 +74,26 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
+
+@app.get("/test")
+def test_endpoint():
+    """Endpoint de teste para verificar se o servidor está funcionando"""
+    return {"message": "Backend funcionando!", "status": "ok"}
+
+@app.get("/test-cors")
+def test_cors_endpoint():
+    """Endpoint específico para testar CORS"""
+    return {
+        "message": "CORS funcionando!",
+        "status": "ok",
+        "timestamp": time.time(),
+        "cors_test": True
+    }
+
+@app.options("/test-cors")
+def test_cors_options():
+    """Endpoint OPTIONS para testar preflight CORS"""
+    return {"message": "OPTIONS funcionando", "status": "ok"}
 
 # ---- Routers ----
 from routers.strategies import router as strategies_router
@@ -81,8 +144,23 @@ def atualizar_posicoes_firebase(account_id):
     Atualiza a coleção posicoesDLL para o cliente account_id, calculando a posição líquida e preço médio de cada ativo a partir das ordens EXECUTADAS em ordensDLL.
     Só considera ordens com Status 'Filled' ou TradedQuantity > 0, e usa a quantidade executada (TradedQuantity).
     O preço médio é calculado usando preco_medio_executado se existir, senão price.
+    Para LFTS11, considera ajustes manuais armazenados em contasDll.
     """
     print(f"[posicoesDLL] Atualizando posições para account_id={account_id}")
+    
+    # Buscar ajustes manuais da conta (se existirem)
+    ajuste_quantity = 0
+    ajuste_avg_price = 0
+    try:
+        contas_ref = db.collection('contasDll').where('AccountID', '==', account_id).stream()
+        for doc in contas_ref:
+            conta = doc.to_dict()
+            ajuste_quantity = float(conta.get('AjusteQuantityLFTS11', 0))
+            ajuste_avg_price = float(conta.get('AjusteAvgPriceLFTS11', 0))
+            break
+    except Exception as e:
+        print(f"[posicoesDLL] Erro ao buscar ajustes manuais para {account_id}: {e}")
+    
     ordens_ref = db.collection('ordensDLL').where('account_id', '==', account_id).stream()
     pos_map = {}
     for doc in ordens_ref:
@@ -97,16 +175,103 @@ def atualizar_posicoes_firebase(account_id):
         if not ticker or traded_qty == 0:
             continue
         if ticker not in pos_map:
-            pos_map[ticker] = {'ticker': ticker, 'quantity': 0, 'totalBuy': 0, 'totalSell': 0, 'avgPrice': 0}
+            pos_map[ticker] = {
+                'ticker': ticker, 
+                'quantity': 0, 
+                'totalBuy': 0, 
+                'totalSell': 0, 
+                'avgPrice': 0,
+                'avgBuyPrice': 0,    # NOVO: Preço médio das compras
+                'avgSellPrice': 0,   # NOVO: Preço médio das vendas
+                'totalBuyQty': 0,    # NOVO: Quantidade total comprada
+                'totalSellQty': 0    # NOVO: Quantidade total vendida
+            }
         if side == 'buy':
             pos_map[ticker]['quantity'] += traded_qty
             pos_map[ticker]['totalBuy'] += traded_qty * price
+            pos_map[ticker]['totalBuyQty'] += traded_qty  # NOVO
         elif side == 'sell':
             pos_map[ticker]['quantity'] -= traded_qty
             pos_map[ticker]['totalSell'] += traded_qty * price
-    # Calcula preço médio ponderado das compras
+            pos_map[ticker]['totalSellQty'] += traded_qty  # NOVO
+    
+    # Calcula preços médios ponderados
     for pos in pos_map.values():
-        pos['avgPrice'] = pos['quantity'] > 0 and pos['totalBuy'] / (pos['quantity'] if pos['quantity'] != 0 else 1) or 0
+        # Calcular preço médio das compras
+        pos['avgBuyPrice'] = pos['totalBuyQty'] > 0 and pos['totalBuy'] / pos['totalBuyQty'] or 0
+        
+        # Calcular preço médio das vendas
+        pos['avgSellPrice'] = pos['totalSellQty'] > 0 and pos['totalSell'] / pos['totalSellQty'] or 0
+        
+        # Determinar qual preço médio usar baseado na posição líquida
+        if pos['quantity'] > 0:
+            # Posição comprada: usar preço médio das compras
+            pos['avgPrice'] = pos['avgBuyPrice']
+        elif pos['quantity'] < 0:
+            # Posição vendida: usar preço médio das vendas
+            pos['avgPrice'] = pos['avgSellPrice']
+        else:
+            # Posição zerada: usar preço médio das compras (fallback)
+            pos['avgPrice'] = pos['avgBuyPrice']
+    
+    # Aplicar ajustes manuais para LFTS11
+    if 'LFTS11' in pos_map:
+        pos_lfts = pos_map['LFTS11']
+        posicao_calculada = pos_lfts['quantity']  # Posição baseada nas ordens
+        
+        # NOVA LÓGICA: Se posição calculada é 0, zerar ajuste manual automaticamente
+        if posicao_calculada == 0 and ajuste_quantity != 0:
+            try:
+                # Buscar documento da conta
+                contas_ref = db.collection('contasDll').where('AccountID', '==', account_id).stream()
+                for doc in contas_ref:
+                    # Zerar o ajuste manual
+                    doc.reference.update({
+                        'AjusteQuantityLFTS11': 0,
+                        'AjusteAvgPriceLFTS11': 0
+                    })
+                    print(f"[posicoesDLL] ✅ Ajuste manual zerado automaticamente para {account_id} - posição calculada = 0, ajuste anterior = {ajuste_quantity}")
+                    ajuste_quantity = 0  # Zerar para uso local
+                    break
+            except Exception as e:
+                print(f"[posicoesDLL] ❌ Erro ao zerar ajuste manual para {account_id}: {e}")
+        
+        # Aplicar ajuste de quantidade (agora pode ser 0)
+        pos_lfts['quantity'] += ajuste_quantity
+        
+        # USAR PREÇO LFTS11 FIXO DO CONFIG
+        try:
+            # Buscar preço LFTS11 fixo do config
+            config_ref = db.collection('config').document('lftsPrice')
+            config_doc = config_ref.get()
+            if config_doc.exists:
+                preco_fixo = float(config_doc.to_dict().get('value', 0))
+                if preco_fixo > 0:
+                    pos_lfts['avgPrice'] = preco_fixo
+                    print(f"[posicoesDLL] LFTS11 usando preço fixo - Conta {account_id}: quantidade={pos_lfts['quantity']}, preco_medio_fixo={pos_lfts['avgPrice']:.2f}")
+                else:
+                    # Fallback: usar preço médio calculado se não há preço fixo
+                    if pos_lfts['quantity'] > 0:
+                        pos_lfts['avgPrice'] = pos_lfts['totalBuy'] / pos_lfts['quantity']
+                    else:
+                        pos_lfts['avgPrice'] = 0
+                    print(f"[posicoesDLL] LFTS11 usando preço calculado (fallback) - Conta {account_id}: quantidade={pos_lfts['quantity']}, preco_medio={pos_lfts['avgPrice']:.2f}")
+            else:
+                # Fallback: usar preço médio calculado se não há config
+                if pos_lfts['quantity'] > 0:
+                    pos_lfts['avgPrice'] = pos_lfts['totalBuy'] / pos_lfts['quantity']
+                else:
+                    pos_lfts['avgPrice'] = 0
+                print(f"[posicoesDLL] LFTS11 usando preço calculado (sem config) - Conta {account_id}: quantidade={pos_lfts['quantity']}, preco_medio={pos_lfts['avgPrice']:.2f}")
+        except Exception as e:
+            print(f"[posicoesDLL] Erro ao buscar preço fixo LFTS11: {e}")
+            # Fallback: usar preço médio calculado
+            if pos_lfts['quantity'] > 0:
+                pos_lfts['avgPrice'] = pos_lfts['totalBuy'] / pos_lfts['quantity']
+            else:
+                pos_lfts['avgPrice'] = 0
+            print(f"[posicoesDLL] LFTS11 usando preço calculado (erro) - Conta {account_id}: quantidade={pos_lfts['quantity']}, preco_medio={pos_lfts['avgPrice']:.2f}")
+    
     # Salva as posições na coleção posicoesDLL (um doc por ticker por cliente)
     for ticker, pos in pos_map.items():
         doc_id = f"{account_id}_{ticker}"
@@ -115,6 +280,10 @@ def atualizar_posicoes_firebase(account_id):
             'ticker': ticker,
             'quantity': pos['quantity'],
             'avgPrice': pos['avgPrice'],
+            'avgBuyPrice': pos['avgBuyPrice'],      # NOVO
+            'avgSellPrice': pos['avgSellPrice'],    # NOVO
+            'totalBuyQty': pos['totalBuyQty'],      # NOVO
+            'totalSellQty': pos['totalSellQty'],    # NOVO
             'updatedAt': firestore.SERVER_TIMESTAMP
         })
     print(f"[posicoesDLL] Posições atualizadas para {account_id}: {list(pos_map.keys())}")
@@ -123,21 +292,79 @@ def atualizar_posicoes_firebase_strategy(strategy_id):
     """
     Consolida posições por estratégia usando ordensDLL com strategy_id.
     Salva em collection strategyPositions (doc id: f"{strategy_id}_{ticker}").
+    FILTRO: Apenas ordens do dia atual E apenas de contas atualmente alocadas na estratégia.
     """
-    print(f"[strategyPositions] Recalculando posições para strategy_id={strategy_id}")
+    import datetime
+    
+    # Obter data atual (início do dia)
+    hoje = datetime.datetime.now().date()
+    inicio_dia = datetime.datetime.combine(hoje, datetime.time.min)
+    
+    print(f"[strategyPositions] Recalculando posições para strategy_id={strategy_id} (apenas ordens de {hoje})")
+    
+    # 1. Buscar contas atualmente alocadas na estratégia
+    alloc_docs = db.collection('strategyAllocations').where('strategy_id','==',strategy_id).stream()
+    contas_ativas = [d.to_dict()['account_id'] for d in alloc_docs]
+    
+    print(f"[strategyPositions] Strategy {strategy_id}: {len(contas_ativas)} contas ativas")
+    
+    if not contas_ativas:
+        print(f"[strategyPositions] Strategy {strategy_id}: Nenhuma conta ativa, limpando posições")
+        # Limpar posições antigas da estratégia
+        strategy_pos_docs = db.collection('strategyPositions').where('strategy_id','==',strategy_id).stream()
+        for doc in strategy_pos_docs:
+            doc.reference.delete()
+        return
+    
+    # 2. Buscar ordens da estratégia do dia atual (apenas de contas ativas)
     ordens_ref = db.collection('ordensDLL').where('strategy_id', '==', strategy_id).stream()
     pos_map = {}
+    ordens_processadas = 0
+    ordens_filtradas = 0
+    ordens_contas_inativas = 0
+    
     for doc in ordens_ref:
         o = doc.to_dict()
         if not o:
             continue
+            
+        ordens_processadas += 1
+        
+        # Verificar se a ordem é de uma conta ativa
+        account_id = o.get('account_id')
+        if account_id not in contas_ativas:
+            ordens_contas_inativas += 1
+            continue
+        
+        # Verificar se a ordem é do dia atual
+        created_at = o.get('createdAt')
+        if created_at:
+            # Converter string ISO para datetime se necessário
+            if isinstance(created_at, str):
+                try:
+                    order_date = datetime.datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                except:
+                    # Se não conseguir converter, assume que é antiga e pula
+                    ordens_filtradas += 1
+                    continue
+            else:
+                # Se já é datetime
+                order_date = created_at
+                
+            # Verificar se é do dia atual
+            if order_date.date() != hoje:
+                ordens_filtradas += 1
+                continue
+        
         ticker = o.get('ticker')
         side = o.get('side')
         qty = float(o.get('TradedQuantity') or o.get('quantity') or 0)
         price = float(o.get('preco_medio_executado', o.get('price', 0)))
         status = o.get('Status')
+        
         if qty == 0 or (status and status.lower() not in ('filled','partially filled','executada')):
             continue
+            
         if ticker not in pos_map:
             pos_map[ticker] = {'qty':0,'totalBuy':0}
         if side=='buy':
@@ -145,8 +372,11 @@ def atualizar_posicoes_firebase_strategy(strategy_id):
             pos_map[ticker]['totalBuy'] += qty*price
         elif side=='sell':
             pos_map[ticker]['qty'] -= qty
+    
     # salvar
     for t,vals in pos_map.items():
+        if vals['qty'] == 0:  # Pular posições zeradas
+            continue
         avg = vals['qty']>0 and vals['totalBuy']/vals['qty'] or 0
         db.collection('strategyPositions').document(f"{strategy_id}_{t}").set({
             'strategy_id': strategy_id,
@@ -155,7 +385,9 @@ def atualizar_posicoes_firebase_strategy(strategy_id):
             'avgPrice': avg,
             'updatedAt': firestore.SERVER_TIMESTAMP
         })
+    
     print(f"[strategyPositions] Atualizado strategy_id={strategy_id} tickers={list(pos_map.keys())}")
+    print(f"[strategyPositions] Processadas: {ordens_processadas} ordens, Filtradas: {ordens_filtradas} ordens antigas, {ordens_contas_inativas} ordens de contas inativas")
 
 @app.post("/login")
 def login():
@@ -313,11 +545,15 @@ async def order(request: Request):
             master_batch_id = str(uuid.uuid4())
 
         results = []
+        
         for alloc in allocations:
             valor_inv = float(alloc.get("valor_investido", 0))
+            
+            # Lógica consistente para compra e venda
             fator = valor_inv / 10000
             qty_calc = max(1, int(math.floor(quantity * fator)))
-            print(f"[ORDER] Conta {alloc['account_id']} (Broker {alloc['broker_id']}) – valor_inv={valor_inv:.2f} fator={fator:.4f} qty_calc={qty_calc}")
+            print(f"[ORDER] {side.upper()} - Conta {alloc['account_id']} (Broker {alloc['broker_id']}) – valor_inv={valor_inv:.2f} fator={fator:.4f} qty_calc={qty_calc}")
+            
             if qty_calc <= 0:
                 results.append({"account_id": alloc["account_id"], "success": False, "log": "Quantidade calculada = 0, ordem ignorada.", "valor_inv": valor_inv})
                 continue
@@ -500,6 +736,7 @@ async def edit_orders_batch(request: Request):
     master_batch_id = data.get("master_batch_id")
     new_price = float(data.get("price"))
     base_qty = int(data.get("baseQty"))
+    new_lote = data.get("new_lote")  # NOVO: tamanho do lote para icebergs
     # Buscar todas as ordens do batch
     ordens_ref = db.collection('ordensDLL').where('master_batch_id', '==', master_batch_id).stream()
     ordens = [doc.to_dict() for doc in ordens_ref]
@@ -550,10 +787,18 @@ async def edit_orders_batch(request: Request):
             db.collection('ordensDLL').document(doc.id).update({"master_base_qty": base_qty})
     results = []
     for ordem in ordens_editaveis:
-        valor = valor_map.get(ordem['account_id'], 0)
-        fator = valor / 10000  # Usar o mesmo divisor fixo do envio da boleta Master
-        nova_qtd = max(1, int(base_qty * fator))
-        print(f"[EDIT_ORDERS_BATCH] Conta {ordem['account_id']}: valor={valor}, fator={fator:.4f}, nova_qtd={nova_qtd}")
+        # CORREÇÃO: Para ordens iceberg, usar o tamanho do lote atual, não a quantidade total
+        # Buscar configuração atual do iceberg
+        doc_iceberg = db.collection('icebergs').document(master_batch_id).get()
+        if doc_iceberg.exists:
+            cfg_iceberg = doc_iceberg.to_dict()
+            lote_atual = int(cfg_iceberg.get('lote', 1))  # Usar lote atualizado se disponível
+            nova_qtd = lote_atual  # Para iceberg, quantidade = tamanho do lote
+            print(f"[EDIT_ORDERS_BATCH] Conta {ordem['account_id']}: iceberg lote={lote_atual}, nova_qtd={nova_qtd}")
+        else:
+            # Fallback: usar quantidade original da ordem
+            nova_qtd = int(ordem.get('quantity', 1))
+            print(f"[EDIT_ORDERS_BATCH] Conta {ordem['account_id']}: fallback qtd_original={nova_qtd}")
         try:
             # Chama a edição de ordem existente
             from dll_login import profit_dll
@@ -582,10 +827,23 @@ async def edit_orders_batch(request: Request):
                 results.append({"order_id": ordem['OrderID'], "success": False, "error": f"Erro código {ret}"})
         except Exception as e:
             results.append({"order_id": ordem['OrderID'], "success": False, "error": str(e)})
-    # Atualizar preço no doc iceberg (para futuros envios)
+    # Atualizar preço e lote no doc iceberg (para futuros envios)
+    iceberg_update = {}
     if new_price is not None:
-        db.collection('icebergs').document(master_batch_id).set({'price': new_price}, merge=True)
-    return {"results": results, "total_editable": len(ordens_editaveis), "total_skipped": len(ordens) - len(ordens_editaveis)}
+        iceberg_update['price'] = new_price
+    if new_lote is not None:
+        iceberg_update['lote'] = new_lote
+        print(f"[EDIT ICEBERG] Tamanho do lote atualizado para {new_lote} na iceberg {master_batch_id}")
+    
+    if iceberg_update:
+        db.collection('icebergs').document(master_batch_id).set(iceberg_update, merge=True)
+    
+    return {
+        "results": results, 
+        "total_editable": len(ordens_editaveis), 
+        "total_skipped": len(ordens) - len(ordens_editaveis),
+        "iceberg_lote_updated": new_lote is not None
+    }
 
 @app.post("/cancel_orders_batch")
 async def cancel_orders_batch(request: Request):
@@ -626,7 +884,7 @@ async def cancel_orders_batch(request: Request):
 @app.post("/order_iceberg")
 def order_iceberg(data: dict = Body(...)):
     """
-    Endpoint para ordem iceberg simples (conta individual).
+    Endpoint para ordem iceberg simples (conta individual) com suporte TWAP.
     """
     iceberg_id = str(uuid.uuid4())
     account_id = data.get("account_id")
@@ -639,20 +897,50 @@ def order_iceberg(data: dict = Body(...)):
     exchange = data.get("exchange")
     sub_account = data.get("sub_account", "")
     strategy_id = data.get("strategy_id")
+    
+    # NOVOS PARÂMETROS TWAP
+    twap_enabled = data.get("twap_enabled", False)
+    twap_interval = data.get("twap_interval", 30) if data.get("twap_enabled", False) else 30
 
     # Cria/atualiza doc do iceberg no Firestore para controle dinâmico
     db.collection('icebergs').document(iceberg_id).set({
+        'iceberg_id': iceberg_id,
+        'account_id': account_id,
+        'broker_id': broker_id,
+        'ticker': ticker,
         'price': price,
         'total': quantity_total,
+        'total_lotes': quantity_total // lote + (1 if quantity_total % lote > 0 else 0),
         'executed': 0,
+        'executed_lotes': 0,
+        'current_lote': 0,
         'halt': False,
+        'lote': lote,  # Armazenar tamanho do lote inicial
+        'twap_enabled': twap_enabled,
+        'twap_interval': twap_interval,
+        'side': side,
+        'exchange': exchange,
+        'strategy_id': strategy_id,
+        'status': 'running',
+        'start_time': firestore.SERVER_TIMESTAMP,
+        'last_update': firestore.SERVER_TIMESTAMP,
         'createdAt': firestore.SERVER_TIMESTAMP
     })
 
     def iceberg_worker():
         quantidade_restante = quantity_total
+        lote_atual = 0
+        
+        # Logs TWAP
+        if twap_enabled:
+            total_lotes = quantity_total // lote + (1 if quantity_total % lote > 0 else 0)
+            tempo_total_estimado = total_lotes * twap_interval
+            print(f"[ICEBERG TWAP] Configurado: {twap_interval}s entre lotes")
+            print(f"[ICEBERG TWAP] Total estimado: {total_lotes} lotes")
+            print(f"[ICEBERG TWAP] Tempo total estimado: {tempo_total_estimado}s ({tempo_total_estimado/60:.1f} minutos)")
+        
         while quantidade_restante > 0:
-            # Verifica flag halt e preço atualizado
+            # Verifica flag halt, preço e lote atualizados
             doc_cfg = db.collection('icebergs').document(iceberg_id).get()
             if doc_cfg.exists:
                 cfg = doc_cfg.to_dict()
@@ -660,9 +948,11 @@ def order_iceberg(data: dict = Body(...)):
                     print(f"[ICEBERG] Halt flag detectada, encerrando iceberg {iceberg_id}")
                     break
                 price_atual = float(cfg.get('price', price))
+                lote_atual = int(cfg.get('lote', lote))  # Usar lote atualizado se disponível
             else:
                 price_atual = price
-            quantidade_envio = min(lote, quantidade_restante)
+                lote_atual = lote
+            quantidade_envio = min(lote_atual, quantidade_restante)
             # Envia ordem
             res = send_order(account_id, broker_id, ticker, quantidade_envio, price_atual, side, exchange, master_batch_id=iceberg_id, master_base_qty=quantity_total, sub_account=sub_account, strategy_id=strategy_id)
             if not res.get("success"):
@@ -681,7 +971,13 @@ def order_iceberg(data: dict = Body(...)):
                     traded = float(ordem.get("TradedQuantity", 0))
                     if status == "Filled" or traded >= quantidade_envio:
                         # incrementa progresso
-                        db.collection('icebergs').document(iceberg_id).update({'executed': firestore.Increment(traded)})
+                        lote_atual += 1
+                        db.collection('icebergs').document(iceberg_id).update({
+                            'executed': firestore.Increment(traded),
+                            'executed_lotes': lote_atual,
+                            'current_lote': lote_atual,
+                            'last_update': firestore.SERVER_TIMESTAMP
+                        })
                         # Atualizar posições
                         try:
                             atualizar_posicoes_firebase(account_id)
@@ -690,20 +986,35 @@ def order_iceberg(data: dict = Body(...)):
                         except Exception:
                             pass
                         break
-                time.sleep(1)
+                time.sleep(0.2)  # CORREÇÃO: Reduzido de 1s para 0.2s (5x mais rápido)
             else:
                 print(f"[ICEBERG] Timeout aguardando execução da ordem {order_id}")
                 break
             quantidade_restante -= quantidade_envio
-        print(f"[ICEBERG] Ordem iceberg {iceberg_id} finalizada.")
+            
+            # NOVA FUNCIONALIDADE TWAP
+            if twap_enabled and quantidade_restante > 0:
+                print(f"[ICEBERG TWAP] Aguardando {twap_interval} segundos antes do próximo lote...")
+                time.sleep(twap_interval)
+        
+        # Finalizar iceberg
+        final_status = 'completed' if quantidade_restante == 0 else 'failed'
+        db.collection('icebergs').document(iceberg_id).update({
+            'status': final_status,
+            'end_time': firestore.SERVER_TIMESTAMP,
+            'last_update': firestore.SERVER_TIMESTAMP,
+            'error_message': 'Falha na execução' if final_status == 'failed' else ''
+        })
+        
+        print(f"[ICEBERG] Ordem iceberg {iceberg_id} finalizada com status: {final_status}")
 
     threading.Thread(target=iceberg_worker, daemon=True).start()
-    return {"success": True, "log": f"Ordem iceberg iniciada! ID: {iceberg_id}", "iceberg_id": iceberg_id}
+    return {"success": True, "log": f"Ordem iceberg iniciada! ID: {iceberg_id}", "order_id": iceberg_id}
 
 @app.post("/order_iceberg_master")
 def order_iceberg_master(data: dict = Body(...)):
     """
-    Endpoint para ordem iceberg master (várias contas em ondas).
+    Endpoint para ordem iceberg master (várias contas em ondas) com suporte TWAP.
     """
     iceberg_id = str(uuid.uuid4())
     broker_id = data.get("broker_id")
@@ -715,6 +1026,10 @@ def order_iceberg_master(data: dict = Body(...)):
     exchange = data.get("exchange")
     group_size = int(data.get("group_size", 1))
     strategy_id = data.get("strategy_id")
+    
+    # NOVOS PARÂMETROS TWAP
+    twap_enabled = data.get("twap_enabled", False)
+    twap_interval = data.get("twap_interval", 30) if data.get("twap_enabled", False) else 30
 
     # cria doc do iceberg master também
     db.collection('icebergs').document(iceberg_id).set({
@@ -722,6 +1037,9 @@ def order_iceberg_master(data: dict = Body(...)):
         'total': quantity_total,
         'executed': 0,
         'halt': False,
+        'lote': lote,  # Armazenar tamanho do lote inicial
+        'twap_enabled': twap_enabled,
+        'twap_interval': twap_interval,
         'createdAt': firestore.SERVER_TIMESTAMP
     })
 
@@ -755,6 +1073,16 @@ def order_iceberg_master(data: dict = Body(...)):
                     'BrokerID': acc['BrokerID'],
                     'quantidade': quantidade
                 })
+        
+        # Logs TWAP
+        if twap_enabled:
+            total_contas = len(contas_proporcionais)
+            total_grupos = (total_contas + group_size - 1) // group_size
+            print(f"[ICEBERG MASTER TWAP] Configurado: {twap_interval}s entre lotes")
+            print(f"[ICEBERG MASTER TWAP] Total contas: {total_contas}")
+            print(f"[ICEBERG MASTER TWAP] Total grupos: {total_grupos}")
+            print(f"[ICEBERG MASTER TWAP] Contas por grupo: {group_size}")
+            
         # Dividir em grupos
         for i in range(0, len(contas_proporcionais), group_size):
             grupo = contas_proporcionais[i:i+group_size]
@@ -768,9 +1096,11 @@ def order_iceberg_master(data: dict = Body(...)):
                         if doc_cfg.exists and doc_cfg.to_dict().get('halt'):
                             print(f"[ICEBERG MASTER] Halt flag, encerrando conta {conta['AccountID']}")
                             return
-                        price_cfg = doc_cfg.to_dict().get('price', price) if doc_cfg.exists else price
+                        cfg = doc_cfg.to_dict() if doc_cfg.exists else {}
+                        price_cfg = cfg.get('price', price)
+                        lote_atual = int(cfg.get('lote', lote))  # Usar lote atualizado se disponível
 
-                        quantidade_envio = min(lote, quantidade_restante)
+                        quantidade_envio = min(lote_atual, quantidade_restante)
                         res = send_order(conta['AccountID'], conta['BrokerID'], ticker, quantidade_envio, price_cfg, side, exchange, master_batch_id=iceberg_id, master_base_qty=quantity_total, sub_account=conta.get('SubAccountID', ""), strategy_id=strategy_id)
                         if not res.get("success"):
                             print(f"[ICEBERG MASTER] Falha ao enviar ordem: {res.get('log')}")
@@ -790,11 +1120,17 @@ def order_iceberg_master(data: dict = Body(...)):
                                     # incrementa progresso
                                     db.collection('icebergs').document(iceberg_id).update({'executed': firestore.Increment(traded)})
                                     break
-                            time.sleep(1)
+                            time.sleep(0.2)  # CORREÇÃO: Reduzido de 1s para 0.2s (5x mais rápido)
                         else:
                             print(f"[ICEBERG MASTER] Timeout aguardando execução da ordem {order_id}")
                             break
                         quantidade_restante -= quantidade_envio
+                        
+                        # NOVA FUNCIONALIDADE TWAP - Entre lotes de cada conta
+                        if twap_enabled and quantidade_restante > 0:
+                            print(f"[ICEBERG MASTER TWAP] Aguardando {twap_interval}s antes do próximo lote da conta {conta['AccountID']}...")
+                            time.sleep(twap_interval)
+                            
                     print(f"[ICEBERG MASTER] Conta {conta['AccountID']} finalizada.")
                 t = threading.Thread(target=iceberg_conta_worker, daemon=True)
                 threads.append(t)
@@ -802,6 +1138,12 @@ def order_iceberg_master(data: dict = Body(...)):
             # Esperar todas as contas do grupo terminarem
             for t in threads:
                 t.join()
+                
+            # NOVA FUNCIONALIDADE TWAP - Entre grupos de contas
+            if twap_enabled and i + group_size < len(contas_proporcionais):
+                print(f"[ICEBERG MASTER TWAP] Aguardando {twap_interval}s antes do próximo grupo de contas...")
+                time.sleep(twap_interval)
+                
         print(f"[ICEBERG MASTER] Ordem iceberg master {iceberg_id} finalizada.")
 
     threading.Thread(target=iceberg_master_worker, daemon=True).start()
@@ -919,8 +1261,592 @@ async def close_master_batch(request: Request):
 
     return {"close_batch_id": close_batch_id, "results": results}
 
+@app.get("/iceberg_info/{iceberg_id}")
+def get_iceberg_info(iceberg_id: str):
+    """
+    Endpoint para obter informações de uma iceberg específica.
+    """
+    try:
+        iceberg_doc = db.collection('icebergs').document(iceberg_id).get()
+        
+        if not iceberg_doc.exists:
+            return {"success": False, "error": "Iceberg não encontrada"}
+        
+        iceberg_data = iceberg_doc.to_dict()
+        
+        return {
+            "success": True,
+            "iceberg": {
+                "id": iceberg_id,
+                "price": iceberg_data.get('price'),
+                "total": iceberg_data.get('total'),
+                "executed": iceberg_data.get('executed', 0),
+                "lote": iceberg_data.get('lote'),  # Tamanho do lote atual
+                "halt": iceberg_data.get('halt', False),
+                "twap_enabled": iceberg_data.get('twap_enabled', False),
+                "twap_interval": iceberg_data.get('twap_interval'),
+                "createdAt": iceberg_data.get('createdAt')
+            }
+        }
+        
+    except Exception as e:
+        print(f"Erro ao buscar informações da iceberg: {e}")
+        return {"success": False, "error": str(e)}
+
 @app.get("/positions_strategy")
 def positions_strategy(strategy_id: str):
-    docs = db.collection('strategyPositions').where('strategy_id','==',strategy_id).stream()
-    positions = [d.to_dict() for d in docs]
-    return {'positions': positions} 
+    """
+    Retorna posições consolidadas de uma estratégia, incluindo ajustes manuais.
+    Filtra apenas contas que ainda estão alocadas na estratégia.
+    """
+    try:
+        # 1. Buscar contas atualmente alocadas na estratégia
+        alloc_docs = db.collection('strategyAllocations').where('strategy_id','==',strategy_id).stream()
+        contas_ativas = [d.to_dict()['account_id'] for d in alloc_docs]
+        
+        print(f"[positions_strategy] Strategy {strategy_id}: {len(contas_ativas)} contas ativas")
+        
+        if not contas_ativas:
+            print(f"[positions_strategy] Strategy {strategy_id}: Nenhuma conta ativa, retornando vazio")
+            return {'positions': []}
+        
+        # 2. Buscar posições calculadas APENAS das contas ativas
+        posicoes_calculadas = []
+        for account_id in contas_ativas:
+            pos_docs = db.collection('posicoesDLL').where('account_id','==',account_id).stream()
+            for doc in pos_docs:
+                pos_data = doc.to_dict()
+                posicoes_calculadas.append(pos_data)
+        
+        # 3. Buscar ajustes manuais da estratégia (apenas das contas ativas)
+        ajustes_docs = db.collection('posicoesAjusteManual').where('strategy_id','==',strategy_id).stream()
+        ajustes_manuais = []
+        for doc in ajustes_docs:
+            ajuste_data = doc.to_dict()
+            # Filtrar apenas ajustes de contas ativas
+            if ajuste_data.get('account_id') in contas_ativas:
+                ajustes_manuais.append(ajuste_data)
+        
+        print(f"[positions_strategy] Strategy {strategy_id}: {len(posicoes_calculadas)} posições calculadas, {len(ajustes_manuais)} ajustes manuais")
+        
+        # 4. Consolidar posições incluindo ajustes
+        mapa_posicoes = {}
+        
+        # Adicionar posições calculadas
+        for pos in posicoes_calculadas:
+            ticker = pos.get('ticker')
+            if ticker:
+                if ticker not in mapa_posicoes:
+                    mapa_posicoes[ticker] = {
+                        'ticker': ticker,
+                        'quantity': 0,
+                        'totalBuy': 0,
+                        'hasAjustes': False,
+                        'contas_com_ajuste': set()  # Set para evitar duplicatas
+                    }
+                
+                posicao = mapa_posicoes[ticker]
+                quantidade = float(pos.get('quantity', 0))
+                preco_medio = float(pos.get('avgPrice', 0))
+                
+                posicao['quantity'] += quantidade
+                posicao['totalBuy'] += quantidade * preco_medio
+        
+        # Aplicar ajustes manuais
+        for ajuste in ajustes_manuais:
+            ticker = ajuste.get('ticker')
+            if not ticker:
+                continue
+                
+            quantidade_ajuste = float(ajuste.get('quantidade_ajuste', 0))
+            preco_medio_ajuste = float(ajuste.get('preco_medio_ajuste', 0))
+            account_id = ajuste.get('account_id')
+            
+            if ticker not in mapa_posicoes:
+                # Posição não existe, criar apenas com ajuste
+                mapa_posicoes[ticker] = {
+                    'ticker': ticker,
+                    'quantity': quantidade_ajuste,
+                    'totalBuy': quantidade_ajuste * preco_medio_ajuste,
+                    'hasAjustes': True,
+                    'contas_com_ajuste': {account_id}
+                }
+            else:
+                # Posição existe, somar ajuste
+                posicao = mapa_posicoes[ticker]
+                posicao['quantity'] += quantidade_ajuste
+                posicao['totalBuy'] += quantidade_ajuste * preco_medio_ajuste
+                posicao['hasAjustes'] = True
+                posicao['contas_com_ajuste'].add(account_id)
+        
+        # 5. Calcular preços médios finais
+        posicoes_consolidadas = []
+        for pos in mapa_posicoes.values():
+            avg_price = pos['totalBuy'] / pos['quantity'] if pos['quantity'] > 0 else 0
+            posicoes_consolidadas.append({
+                'ticker': pos['ticker'],
+                'quantity': pos['quantity'],
+                'avgPrice': avg_price,
+                'hasAjustes': pos['hasAjustes'],
+                'contas_com_ajuste': list(pos['contas_com_ajuste']) if pos['hasAjustes'] else []
+            })
+        
+        # 6. Filtrar posições zeradas
+        posicoes_consolidadas = [
+            pos for pos in posicoes_consolidadas 
+            if pos['quantity'] != 0  # Filtrar posições zeradas
+        ]
+        
+        print(f"[positions_strategy] Strategy {strategy_id}: {len(posicoes_consolidadas)} posições consolidadas")
+        return {'positions': posicoes_consolidadas}
+        
+    except Exception as e:
+        print(f"[positions_strategy] Erro ao consolidar posições da estratégia {strategy_id}: {e}")
+        return {'positions': [], 'error': str(e)}
+
+@app.get("/sync-data/{strategy_id}")
+def get_sync_data(strategy_id: str):
+    """
+    Retorna dados completos para sincronização de uma estratégia:
+    - Posições reais consolidadas
+    - Carteira de referência
+    - Diferenças calculadas
+    """
+    try:
+        # 1. Buscar posições reais da estratégia
+        real_positions_response = positions_strategy(strategy_id)
+        real_positions = real_positions_response.get('positions', [])
+        
+        # 2. Buscar carteira de referência
+        reference_portfolio = None
+        try:
+            ref_docs = db.collection('referencePortfolios').where('strategy_id', '==', strategy_id).stream()
+            for doc in ref_docs:
+                reference_portfolio = doc.to_dict()
+                reference_portfolio['id'] = doc.id
+                break
+        except Exception as e:
+            print(f"[sync-data] Erro ao buscar carteira de referência: {e}")
+        
+        # 3. Calcular diferenças se houver carteira de referência
+        sync_data = {
+            'strategy_id': strategy_id,
+            'real_positions': real_positions,
+            'reference_portfolio': reference_portfolio,
+            'differences': []
+        }
+        
+        if reference_portfolio:
+            # Criar mapa de posições reais por ticker
+            real_positions_map = {}
+            for pos in real_positions:
+                real_positions_map[pos['ticker']] = pos
+            
+            # Calcular diferenças
+            differences = []
+            for ref_pos in reference_portfolio.get('positions', []):
+                ticker = ref_pos['ticker']
+                ideal_percentage = ref_pos['percentage']
+                
+                real_pos = real_positions_map.get(ticker)
+                real_percentage = real_pos['percentage'] if real_pos else 0
+                real_quantity = real_pos['quantity'] if real_pos else 0
+                real_avg_price = real_pos['avgPrice'] if real_pos else 0
+                
+                difference = ideal_percentage - real_percentage
+                
+                differences.append({
+                    'ticker': ticker,
+                    'ideal_percentage': ideal_percentage,
+                    'real_percentage': real_percentage,
+                    'real_quantity': real_quantity,
+                    'real_avg_price': real_avg_price,
+                    'difference_percentage': difference,
+                    'needs_sync': abs(difference) > 1.0,  # Tolerância de 1%
+                    'action': 'buy' if difference > 1.0 else 'sell' if difference < -1.0 else 'none'
+                })
+            
+            # Adicionar posições reais que não estão na referência
+            for ticker, real_pos in real_positions_map.items():
+                if not any(d['ticker'] == ticker for d in differences):
+                    differences.append({
+                        'ticker': ticker,
+                        'ideal_percentage': 0,
+                        'real_percentage': real_pos['percentage'],
+                        'real_quantity': real_pos['quantity'],
+                        'real_avg_price': real_pos['avgPrice'],
+                        'difference_percentage': -real_pos['percentage'],
+                        'needs_sync': real_pos['percentage'] > 1.0,
+                        'action': 'sell' if real_pos['percentage'] > 1.0 else 'none'
+                    })
+            
+            sync_data['differences'] = differences
+        
+        return sync_data
+        
+    except Exception as e:
+        print(f"[sync-data] Erro ao buscar dados de sincronização para estratégia {strategy_id}: {e}")
+        return {
+            'strategy_id': strategy_id,
+            'real_positions': [],
+            'reference_portfolio': None,
+            'differences': [],
+            'error': str(e)
+        } 
+
+# ------------------------------------------------------------
+# Carteiras de Referência - Gerenciamento de posições de estratégias
+# ------------------------------------------------------------
+
+@app.get("/carteiras_referencia")
+def get_carteiras_referencia(strategy_id: str = None):
+    """
+    Retorna posições de referência das estratégias.
+    Se strategy_id for fornecido, retorna apenas posições dessa estratégia.
+    """
+    try:
+        ref = db.collection('CarteirasDeRefDLL')
+        if strategy_id:
+            ref = ref.where('strategy_id', '==', strategy_id)
+        
+        docs = ref.stream()
+        positions = []
+        
+        for doc in docs:
+            data = doc.to_dict()
+            positions.append({
+                'id': doc.id,
+                'strategy_id': data.get('strategy_id'),
+                'ticker': data.get('ticker'),
+                'price': data.get('price', 0),
+                'quantity': data.get('quantity', 0),
+                'percentage': data.get('percentage', 0),
+                'created_at': data.get('created_at'),
+                'updated_at': data.get('updated_at')
+            })
+        
+        return {'positions': positions}
+        
+    except Exception as e:
+        print(f"[carteiras_referencia] Erro ao buscar posições: {e}")
+        return {'positions': [], 'error': str(e)}
+
+@app.post("/carteiras_referencia")
+def create_carteira_referencia(data: dict = Body(...)):
+    """
+    Cria nova posição de referência para uma estratégia.
+    Campos obrigatórios: strategy_id, ticker, price, quantity, percentage
+    """
+    try:
+        required_fields = ['strategy_id', 'ticker', 'price', 'quantity', 'percentage']
+        for field in required_fields:
+            if field not in data:
+                raise HTTPException(status_code=400, detail=f"Campo obrigatório ausente: {field}")
+        
+        # Verificar se já existe posição para este ticker na estratégia
+        existing_docs = db.collection('CarteirasDeRefDLL').where('strategy_id', '==', data['strategy_id']).where('ticker', '==', data['ticker']).stream()
+        if list(existing_docs):
+            raise HTTPException(status_code=400, detail=f"Já existe posição para o ticker {data['ticker']} na estratégia")
+        
+        # Criar documento
+        doc_ref = db.collection('CarteirasDeRefDLL').document()
+        position_data = {
+            'strategy_id': data['strategy_id'],
+            'ticker': data['ticker'],
+            'price': float(data['price']),
+            'quantity': int(data['quantity']),
+            'percentage': float(data['percentage']),
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'updated_at': firestore.SERVER_TIMESTAMP
+        }
+        
+        doc_ref.set(position_data)
+        
+        return {
+            'success': True,
+            'position': {
+                'id': doc_ref.id,
+                **position_data
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[carteiras_referencia] Erro ao criar posição: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.put("/carteiras_referencia/{position_id}")
+def update_carteira_referencia(position_id: str, data: dict = Body(...)):
+    """
+    Atualiza posição de referência existente.
+    """
+    try:
+        doc_ref = db.collection('CarteirasDeRefDLL').document(position_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Posição não encontrada")
+        
+        # Campos permitidos para atualização
+        allowed_fields = ['price', 'quantity', 'percentage']
+        update_data = {}
+        
+        for field in allowed_fields:
+            if field in data:
+                if field in ['price', 'percentage']:
+                    update_data[field] = float(data[field])
+                elif field == 'quantity':
+                    update_data[field] = int(data[field])
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="Nenhum campo válido para atualizar")
+        
+        update_data['updated_at'] = firestore.SERVER_TIMESTAMP
+        doc_ref.update(update_data)
+        
+        return {
+            'success': True,
+            'position': {
+                'id': position_id,
+                **doc.to_dict(),
+                **update_data
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[carteiras_referencia] Erro ao atualizar posição: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.delete("/carteiras_referencia/{position_id}")
+def delete_carteira_referencia(position_id: str):
+    """
+    Remove posição de referência.
+    """
+    try:
+        doc_ref = db.collection('CarteirasDeRefDLL').document(position_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Posição não encontrada")
+        
+        doc_ref.delete()
+        
+        return {'success': True, 'message': 'Posição removida com sucesso'}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[carteiras_referencia] Erro ao remover posição: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}") 
+
+# ------------------------------------------------------------
+# Posições Reais dos Clientes - Para sincronização
+# ------------------------------------------------------------
+
+@app.get("/client-positions/{account_id}")
+def get_client_positions(account_id: str):
+    """
+    Busca posições reais de um cliente específico no Firestore.
+    Retorna posições da coleção 'posicoesDLL' filtradas por account_id.
+    """
+    try:
+        print(f"[get_client_positions] Buscando posições para account_id: {account_id}")
+        
+        # Buscar posições do cliente no Firestore usando o campo correto
+        posicoes_ref = db.collection('posicoesDLL').where('account_id', '==', account_id).stream()
+        
+        positions = []
+        total_docs = 0
+        
+        for doc in posicoes_ref:
+            total_docs += 1
+            pos_data = doc.to_dict()
+            
+            # Log detalhado para debug
+            print(f"[get_client_positions] Documento {doc.id}: {pos_data}")
+            
+            quantity = float(pos_data.get('quantity', 0))
+            
+            # Só incluir posições com quantidade diferente de zero
+            if quantity != 0:
+                positions.append({
+                    'id': doc.id,
+                    'ticker': pos_data.get('ticker', ''),
+                    'quantity': quantity,
+                    'price': pos_data.get('price', 0.0),
+                    'avgPrice': pos_data.get('avgPrice', 0.0),
+                    'avgBuyPrice': pos_data.get('avgBuyPrice', 0.0),    # NOVO
+                    'avgSellPrice': pos_data.get('avgSellPrice', 0.0),  # NOVO
+                    'totalBuyQty': pos_data.get('totalBuyQty', 0),      # NOVO
+                    'totalSellQty': pos_data.get('totalSellQty', 0),    # NOVO
+                    'exchange': pos_data.get('exchange', ''),
+                    'accountId': pos_data.get('account_id', ''),
+                    'brokerId': pos_data.get('broker_id', ''),
+                    'timestamp': pos_data.get('updatedAt', None)
+                })
+                print(f"[get_client_positions] Adicionada posição: {pos_data.get('ticker', '')} - Qty: {quantity}")
+            else:
+                print(f"[get_client_positions] Posição zerada ignorada: {pos_data.get('ticker', '')} - Qty: {quantity}")
+        
+        print(f"[get_client_positions] Total de documentos encontrados: {total_docs}")
+        print(f"[get_client_positions] Encontradas {len(positions)} posições com quantidade > 0 para {account_id}")
+        
+        return {"success": True, "positions": positions}
+        
+    except Exception as e:
+        print(f"[get_client_positions] Erro ao buscar posições do cliente {account_id}: {e}")
+        return {"success": False, "error": str(e)}
+
+@app.get("/iceberg_status/{order_id}")
+def get_iceberg_status(order_id: str):
+    """
+    Verifica o status de uma ordem iceberg específica.
+    Retorna informações sobre progresso, conclusão e erros.
+    """
+    try:
+        # Buscar informações do iceberg no Firestore
+        iceberg_ref = db.collection('icebergs').document(order_id)
+        iceberg_doc = iceberg_ref.get()
+        
+        if not iceberg_doc.exists:
+            return {
+                "success": False,
+                "error": "Iceberg não encontrado",
+                "completed": False,
+                "failed": True,
+                "error_message": "Ordem iceberg não encontrada"
+            }
+        
+        iceberg_data = iceberg_doc.to_dict()
+        
+        # Calcular progresso
+        total_lotes = iceberg_data.get('total_lotes', 0)
+        executed_lotes = iceberg_data.get('executed_lotes', 0)
+        current_lote = iceberg_data.get('current_lote', 0)
+        
+        # Determinar status
+        status = iceberg_data.get('status', 'unknown')
+        completed = status == 'completed'
+        failed = status == 'failed' or status == 'cancelled'
+        
+        # Calcular progresso percentual
+        progress_percent = 0
+        if total_lotes > 0:
+            progress_percent = (executed_lotes / total_lotes) * 100
+        
+        return {
+            "success": True,
+            "order_id": order_id,
+            "account_id": iceberg_data.get('account_id', ''),
+            "ticker": iceberg_data.get('ticker', ''),
+            "completed": completed,
+            "failed": failed,
+            "status": status,
+            "progress": {
+                "total_lotes": total_lotes,
+                "executed_lotes": executed_lotes,
+                "remaining_lotes": total_lotes - executed_lotes,
+                "current_lote": current_lote
+            },
+            "progress_percent": progress_percent,
+            "error_message": iceberg_data.get('error_message', ''),
+            "start_time": iceberg_data.get('start_time', ''),
+            "end_time": iceberg_data.get('end_time', ''),
+            "last_update": iceberg_data.get('last_update', '')
+        }
+        
+    except Exception as e:
+        print(f"[get_iceberg_status] Erro ao verificar status do iceberg {order_id}: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "completed": False,
+            "failed": True,
+            "error_message": f"Erro ao verificar status: {str(e)}"
+        }
+
+@app.post("/force_position_update/{account_id}")
+def force_position_update(account_id: str):
+    """
+    Força a atualização das posições de uma conta específica.
+    Útil para resolver problemas de cache e dados inconsistentes.
+    """
+    try:
+        print(f"[force_position_update] Forçando atualização de posições para account_id: {account_id}")
+        
+        # Chamar a função de atualização de posições
+        atualizar_posicoes_firebase(account_id)
+        
+        print(f"[force_position_update] ✅ Posições atualizadas com sucesso para account_id: {account_id}")
+        
+        return {
+            "success": True,
+            "message": f"Posições atualizadas com sucesso para conta {account_id}",
+            "account_id": account_id,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        print(f"[force_position_update] ❌ Erro ao atualizar posições para account_id {account_id}: {e}")
+        
+        return {
+            "success": False,
+            "error": str(e),
+            "account_id": account_id,
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+
+@app.post("/cancel_iceberg/{order_id}")
+def cancel_iceberg(order_id: str):
+    """
+    Cancela uma ordem iceberg em execução.
+    Atualiza o status para 'cancelled' e para a execução.
+    """
+    try:
+        # Buscar informações do iceberg no Firestore
+        iceberg_ref = db.collection('icebergs').document(order_id)
+        iceberg_doc = iceberg_ref.get()
+        
+        if not iceberg_doc.exists:
+            return {
+                "success": False,
+                "error": "Iceberg não encontrado"
+            }
+        
+        iceberg_data = iceberg_doc.to_dict()
+        current_status = iceberg_data.get('status', 'unknown')
+        
+        # Verificar se pode ser cancelado
+        if current_status in ['completed', 'failed', 'cancelled']:
+            return {
+                "success": False,
+                "error": f"Iceberg já está {current_status} e não pode ser cancelado"
+            }
+        
+        # Atualizar status para cancelado
+        update_data = {
+            'status': 'cancelled',
+            'end_time': SERVER_TIMESTAMP,
+            'last_update': SERVER_TIMESTAMP,
+            'error_message': 'Cancelado pelo usuário'
+        }
+        
+        iceberg_ref.update(update_data)
+        
+        print(f"[cancel_iceberg] Iceberg {order_id} cancelado com sucesso")
+        
+        return {
+            "success": True,
+            "message": "Iceberg cancelado com sucesso",
+            "order_id": order_id
+        }
+        
+    except Exception as e:
+        print(f"[cancel_iceberg] Erro ao cancelar iceberg {order_id}: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
