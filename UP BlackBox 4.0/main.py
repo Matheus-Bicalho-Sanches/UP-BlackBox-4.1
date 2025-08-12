@@ -31,6 +31,7 @@ from ctypes import byref, c_double, c_int, c_longlong, c_wchar_p, create_unicode
 import threading
 import time
 import uuid
+import datetime
 
 # Aqui você importaria a função real de login da DLL
 # from profit_dll import login_profit
@@ -138,6 +139,237 @@ def atualizar_ordem_firebase(order_id, novos_dados):
         updated = True
     # Silenciar caso a ordem ainda não tenha sido gravada — evita spam de log
     return updated
+
+def calcular_novo_preco_medio(quantity_atual, preco_medio_atual, quantity_change, price, side):
+    """
+    Calcula novo preço médio baseado na operação
+    
+    Args:
+        quantity_atual: Quantidade atual da posição
+        preco_medio_atual: Preço médio atual
+        quantity_change: Mudança na quantidade (positivo para compra, negativo para venda)
+        price: Preço da transação
+        side: 'buy' ou 'sell'
+    
+    Returns:
+        float: Novo preço médio
+    """
+    if side == 'buy' and quantity_change > 0:
+        # Compra: média ponderada
+        if quantity_atual >= 0:
+            # Posição long ou zerada: média ponderada normal
+            valor_total_atual = quantity_atual * preco_medio_atual
+            valor_total_novo = quantity_change * price
+            nova_quantity_total = quantity_atual + quantity_change
+            
+            if nova_quantity_total > 0:
+                return (valor_total_atual + valor_total_novo) / nova_quantity_total
+            else:
+                return 0
+        else:
+            # Posição short: reduz o short
+            if quantity_atual + quantity_change >= 0:
+                # Short foi zerado e virou long
+                return price
+            else:
+                # Short foi reduzido: mantém preço médio do short
+                return preco_medio_atual
+                
+    elif side == 'sell' and quantity_change > 0:
+        # Venda: mantém preço médio atual (exceto se zerar)
+        if quantity_atual > 0:
+            # Posição long: mantém preço médio
+            return preco_medio_atual
+        else:
+            # Posição short ou zerada: preço da venda
+            return price
+    
+    return preco_medio_atual
+
+def calcular_campos_adicionais(pos_atual, quantity_change, price, side):
+    """
+    Calcula campos adicionais para compatibilidade com frontend
+    
+    Args:
+        pos_atual: Posição atual do documento
+        quantity_change: Mudança na quantidade
+        price: Preço da transação
+        side: 'buy' ou 'sell'
+    
+    Returns:
+        tuple: (avg_buy_price, avg_sell_price, total_buy_qty, total_sell_qty)
+    """
+    avg_buy_price = pos_atual.get('avgBuyPrice', 0)
+    avg_sell_price = pos_atual.get('avgSellPrice', 0)
+    total_buy_qty = pos_atual.get('totalBuyQty', 0)
+    total_sell_qty = pos_atual.get('totalSellQty', 0)
+    
+    if side == 'buy' and quantity_change > 0:
+        # Compra: atualiza campos de compra
+        if total_buy_qty > 0:
+            # Média ponderada das compras
+            novo_total_buy = total_buy_qty + quantity_change
+            novo_avg_buy = ((total_buy_qty * avg_buy_price) + (quantity_change * price)) / novo_total_buy
+        else:
+            # Primeira compra
+            novo_total_buy = quantity_change
+            novo_avg_buy = price
+        
+        return novo_avg_buy, avg_sell_price, novo_total_buy, total_sell_qty
+        
+    elif side == 'sell' and quantity_change > 0:
+        # Venda: atualiza campos de venda
+        if total_sell_qty > 0:
+            # Média ponderada das vendas
+            novo_total_sell = total_sell_qty + quantity_change
+            novo_avg_sell = ((total_sell_qty * avg_sell_price) + (quantity_change * price)) / novo_total_sell
+        else:
+            # Primeira venda
+            novo_total_sell = quantity_change
+            novo_avg_sell = price
+        
+        return avg_buy_price, novo_avg_sell, total_buy_qty, novo_total_sell
+    
+    return avg_buy_price, avg_sell_price, total_buy_qty, total_sell_qty
+
+def buscar_ajuste_manual_lfts11(account_id):
+    """
+    Busca ajustes manuais de LFTS11 da conta
+    
+    Args:
+        account_id: ID da conta
+    
+    Returns:
+        float: Quantidade do ajuste manual
+    """
+    try:
+        contas_ref = db.collection('contasDll').where('AccountID', '==', account_id).stream()
+        for doc in contas_ref:
+            conta = doc.to_dict()
+            return float(conta.get('AjusteQuantityLFTS11', 0))
+    except Exception as e:
+        print(f"[AJUSTE] Erro ao buscar ajuste manual LFTS11 para {account_id}: {e}")
+        return 0
+
+def buscar_preco_fixo_lfts11():
+    """
+    Busca preço fixo de LFTS11 do config
+    
+    Returns:
+        float: Preço fixo ou 0 se não encontrado
+    """
+    try:
+        config_ref = db.collection('config').document('lftsPrice')
+        config_doc = config_ref.get()
+        if config_doc.exists:
+            preco_fixo = float(config_doc.to_dict().get('value', 0))
+            if preco_fixo > 0:
+                return preco_fixo
+    except Exception as e:
+        print(f"[PREÇO] Erro ao buscar preço fixo LFTS11: {e}")
+    return 0
+
+
+
+def atualizar_posicao_incremental(account_id, ticker, quantity_change, price, side):
+    """
+    Atualização incremental de posição com suporte a operações short
+    
+    Args:
+        account_id: ID da conta
+        ticker: Ticker do ativo
+        quantity_change: Mudança na quantidade (positivo para compra, negativo para venda)
+        price: Preço da transação
+        side: 'buy' ou 'sell'
+    """
+    print(f"[INCREMENTAL] Atualizando {ticker} para {account_id}: {quantity_change} ações a R$ {price} ({side})")
+    
+    doc_id = f"{account_id}_{ticker}"
+    doc_ref = db.collection('posicoesDLL').document(doc_id)
+    
+    # Busca posição atual
+    doc = doc_ref.get()
+    
+    if doc.exists:
+        pos_atual = doc.to_dict()
+        quantity_atual = pos_atual.get('quantity', 0)
+        preco_medio_atual = pos_atual.get('avgPrice', 0)
+        
+        # ✅ CORREÇÃO: Tratamento especial para LFTS11 (apenas preço fixo)
+        if ticker == 'LFTS11':
+            # Buscar ajuste manual apenas para log (não afeta cálculo)
+            ajuste_quantity = buscar_ajuste_manual_lfts11(account_id)
+            print(f"[INCREMENTAL] LFTS11 - Posição atual: {quantity_atual}, Ajuste: {ajuste_quantity}, Posição exibida: {quantity_atual + ajuste_quantity}")
+        
+        # Calcula nova quantidade baseada na posição REAL (sem ajuste manual)
+        nova_quantity = quantity_atual + quantity_change
+        
+        # Calcula novo preço médio baseado na posição REAL (sem ajuste manual)
+        novo_preco_medio = calcular_novo_preco_medio(
+            quantity_atual, preco_medio_atual, quantity_change, price, side
+        )
+        
+        # Calcula campos adicionais para compatibilidade
+        avg_buy_price, avg_sell_price, total_buy_qty, total_sell_qty = calcular_campos_adicionais(
+            pos_atual, quantity_change, price, side
+        )
+        
+        # ✅ CORREÇÃO: Aplicar preço fixo para LFTS11 (se configurado)
+        if ticker == 'LFTS11':
+            preco_fixo = buscar_preco_fixo_lfts11()
+            if preco_fixo > 0:
+                novo_preco_medio = preco_fixo
+        
+        # Atualiza no Firebase
+        doc_ref.update({
+            'quantity': nova_quantity,
+            'avgPrice': novo_preco_medio,
+            'avgBuyPrice': avg_buy_price,
+            'avgSellPrice': avg_sell_price,
+            'totalBuyQty': total_buy_qty,
+            'totalSellQty': total_sell_qty,
+            'updatedAt': firestore.SERVER_TIMESTAMP
+        })
+        
+        print(f"[INCREMENTAL] ✅ {ticker} atualizado: {quantity_atual} → {nova_quantity}, R$ {preco_medio_atual:.2f} → R$ {novo_preco_medio:.2f}")
+        
+    else:
+        # Cria nova posição
+        nova_quantity = quantity_change
+        novo_preco_medio = price
+        
+        # ✅ CORREÇÃO: Tratamento especial para LFTS11 em nova posição (apenas preço fixo)
+        if ticker == 'LFTS11':
+            # Buscar ajuste manual apenas para log (não afeta cálculo)
+            ajuste_quantity = buscar_ajuste_manual_lfts11(account_id)
+            print(f"[INCREMENTAL] LFTS11 - Nova posição: {quantity_change}, Ajuste: {ajuste_quantity}, Posição exibida: {quantity_change + ajuste_quantity}")
+            
+            # Buscar preço fixo
+            preco_fixo = buscar_preco_fixo_lfts11()
+            if preco_fixo > 0:
+                novo_preco_medio = preco_fixo
+        
+        # Campos adicionais para nova posição
+        if side == 'buy' and quantity_change > 0:
+            avg_buy_price, avg_sell_price, total_buy_qty, total_sell_qty = price, 0, quantity_change, 0
+        elif side == 'sell' and quantity_change > 0:
+            avg_buy_price, avg_sell_price, total_buy_qty, total_sell_qty = 0, price, 0, quantity_change
+        else:
+            avg_buy_price, avg_sell_price, total_buy_qty, total_sell_qty = 0, 0, 0, 0
+        
+        doc_ref.set({
+            'account_id': account_id,
+            'ticker': ticker,
+            'quantity': nova_quantity,
+            'avgPrice': novo_preco_medio,
+            'avgBuyPrice': avg_buy_price,
+            'avgSellPrice': avg_sell_price,
+            'totalBuyQty': total_buy_qty,
+            'totalSellQty': total_sell_qty,
+            'updatedAt': firestore.SERVER_TIMESTAMP
+        })
+        
+        print(f"[INCREMENTAL] ✅ Nova posição {ticker} criada: {nova_quantity} ações a R$ {novo_preco_medio:.2f}")
 
 def atualizar_posicoes_firebase(account_id):
     """
@@ -574,7 +806,8 @@ async def order(request: Request):
             results.append({"account_id": alloc["account_id"], "valor_inv": valor_inv, "qty_calc": qty_calc, **res})
             if res.get("success"):
                 try:
-                    atualizar_posicoes_firebase(alloc["account_id"])
+                    # ✅ REMOVIDO: Atualização incremental (será feita pelo callback DLL)
+                    pass
                 except Exception:
                     pass
 
@@ -583,7 +816,8 @@ async def order(request: Request):
     # -------------------- FLUXO ANTIGO (conta individual) --------------------
     result = send_order(account_id, broker_id, ticker, quantity, price, side, exchange, master_batch_id, master_base_qty, sub_account, strategy_id)
     if result["success"]:
-        atualizar_posicoes_firebase(account_id)
+        # ✅ REMOVIDO: Atualização incremental (será feita pelo callback DLL)
+        
         # Se há strategy_id, também atualizar posições da estratégia
         if strategy_id:
             try:
@@ -735,7 +969,12 @@ async def edit_orders_batch(request: Request):
     data = await request.json()
     master_batch_id = data.get("master_batch_id")
     new_price = float(data.get("price"))
-    base_qty = int(data.get("baseQty"))
+    # Tratamento defensivo para identificar alteração explícita de baseQty
+    base_qty_value = data.get("baseQty")
+    if base_qty_value == '' or base_qty_value is None:
+        base_qty = None  # não alterar quantidades se usuário não informou
+    else:
+        base_qty = int(base_qty_value)
     new_lote = data.get("new_lote")  # NOVO: tamanho do lote para icebergs
     # Buscar todas as ordens do batch
     ordens_ref = db.collection('ordensDLL').where('master_batch_id', '==', master_batch_id).stream()
@@ -780,25 +1019,56 @@ async def edit_orders_batch(request: Request):
             db.collection('icebergs').document(master_batch_id).set({'price': new_price}, merge=True)
         return {"results": [], "detail": "Nenhuma ordem pendente para edição."}
 
-    # Atualizar master_base_qty em todas as ordens do batch (inclusive preenchidas) para manter consistência
-    for ordem in ordens:
-        ordens_ref_update = db.collection('ordensDLL').where('OrderID', '==', str(ordem['OrderID'])).stream()
-        for doc in ordens_ref_update:
-            db.collection('ordensDLL').document(doc.id).update({"master_base_qty": base_qty})
+    # Detectar se baseQty foi alterado pelo usuário comparando com valor atual
+    existing_base_qty = None
+    for o in ordens:
+        if 'master_base_qty' in o:
+            existing_base_qty = o.get('master_base_qty')
+            break
+    base_qty_changed = (base_qty is not None and base_qty != existing_base_qty)
+
+    # Atualizar master_base_qty em todas as ordens do batch somente se informado
+    if base_qty is not None:
+        for ordem in ordens:
+            ordens_ref_update = db.collection('ordensDLL').where('OrderID', '==', str(ordem['OrderID'])).stream()
+            for doc in ordens_ref_update:
+                db.collection('ordensDLL').document(doc.id).update({"master_base_qty": base_qty})
     results = []
     for ordem in ordens_editaveis:
-        # CORREÇÃO: Para ordens iceberg, usar o tamanho do lote atual, não a quantidade total
-        # Buscar configuração atual do iceberg
-        doc_iceberg = db.collection('icebergs').document(master_batch_id).get()
-        if doc_iceberg.exists:
-            cfg_iceberg = doc_iceberg.to_dict()
-            lote_atual = int(cfg_iceberg.get('lote', 1))  # Usar lote atualizado se disponível
-            nova_qtd = lote_atual  # Para iceberg, quantidade = tamanho do lote
-            print(f"[EDIT_ORDERS_BATCH] Conta {ordem['account_id']}: iceberg lote={lote_atual}, nova_qtd={nova_qtd}")
-        else:
-            # Fallback: usar quantidade original da ordem
-            nova_qtd = int(ordem.get('quantity', 1))
-            print(f"[EDIT_ORDERS_BATCH] Conta {ordem['account_id']}: fallback qtd_original={nova_qtd}")
+        # Definir quantidade a enviar conforme regra:
+        # - Por padrão NÃO recalcular quantidade; manter a quantidade atual da ordem
+        # - Somente recalcular se baseQty foi alterado pelo usuário
+        # Quantidade atual (preferir LeavesQuantity se disponível)
+        qty_value_current = ordem.get('LeavesQuantity', ordem.get('quantity', 0))
+        try:
+            qty_atual = int(qty_value_current) if qty_value_current not in ('', None) else 0
+        except Exception:
+            qty_atual = 0
+
+        nova_qtd = qty_atual
+
+        if base_qty_changed:
+            # Se houver doc de iceberg ativo, para ordens iceberg usar tamanho do lote atual
+            doc_iceberg = db.collection('icebergs').document(master_batch_id).get()
+            if doc_iceberg.exists:
+                cfg_iceberg = doc_iceberg.to_dict()
+                lote_value = cfg_iceberg.get('lote', 1)
+                if lote_value == '' or lote_value is None:
+                    lote_atual = 1
+                else:
+                    lote_atual = int(lote_value)
+                nova_qtd = lote_atual
+                print(f"[EDIT_ORDERS_BATCH] Conta {ordem['account_id']}: baseQty alterado → iceberg lote={lote_atual}, nova_qtd={nova_qtd}")
+            else:
+                # Não é iceberg: recalcular com base no novo base_qty e valor investido da conta
+                valor_inv = float(valor_map.get(ordem['account_id'], 0))
+                fator = valor_inv / 10000.0
+                try:
+                    calc_qtd = int(base_qty * fator)
+                except Exception:
+                    calc_qtd = 0
+                nova_qtd = max(1, calc_qtd)
+                print(f"[EDIT_ORDERS_BATCH] Conta {ordem['account_id']}: baseQty alterado → recálculo qty={nova_qtd} (valor_inv={valor_inv})")
         try:
             # Chama a edição de ordem existente
             from dll_login import profit_dll
@@ -808,7 +1078,7 @@ async def edit_orders_batch(request: Request):
             change_order.Version = 0
             change_order.Price = new_price
             change_order.StopPrice = -1
-            change_order.Quantity = nova_qtd
+            change_order.Quantity = nova_qtd  # mantém qty atual, só altera se baseQty mudou
             change_order.Password = os.getenv("roteamento", "")
             change_order.AccountID = TConnectorAccountIdentifier()
             change_order.AccountID.Version = 0
@@ -890,8 +1160,18 @@ def order_iceberg(data: dict = Body(...)):
     account_id = data.get("account_id")
     broker_id = data.get("broker_id")
     ticker = data.get("ticker")
-    quantity_total = int(data.get("quantity_total"))
-    lote = int(data.get("lote"))
+    # Tratamento defensivo para evitar erro de conversão de string vazia para int
+    qty_total_value = data.get("quantity_total")
+    if qty_total_value == '' or qty_total_value is None:
+        quantity_total = 0
+    else:
+        quantity_total = int(qty_total_value)
+    # Tratamento defensivo para evitar erro de conversão de string vazia para int
+    lote_value = data.get("lote")
+    if lote_value == '' or lote_value is None:
+        lote = 1
+    else:
+        lote = int(lote_value)
     price = float(data.get("price"))
     side = data.get("side")
     exchange = data.get("exchange")
@@ -902,6 +1182,9 @@ def order_iceberg(data: dict = Body(...)):
     twap_enabled = data.get("twap_enabled", False)
     twap_interval = data.get("twap_interval", 30) if data.get("twap_enabled", False) else 30
 
+    # Calcular número correto de lotes
+    total_lotes = (quantity_total + lote - 1) // lote  # Equivalente a Math.ceil(quantity_total / lote)
+    
     # Cria/atualiza doc do iceberg no Firestore para controle dinâmico
     db.collection('icebergs').document(iceberg_id).set({
         'iceberg_id': iceberg_id,
@@ -910,7 +1193,7 @@ def order_iceberg(data: dict = Body(...)):
         'ticker': ticker,
         'price': price,
         'total': quantity_total,
-        'total_lotes': quantity_total // lote + (1 if quantity_total % lote > 0 else 0),
+        'total_lotes': total_lotes,
         'executed': 0,
         'executed_lotes': 0,
         'current_lote': 0,
@@ -933,7 +1216,6 @@ def order_iceberg(data: dict = Body(...)):
         
         # Logs TWAP
         if twap_enabled:
-            total_lotes = quantity_total // lote + (1 if quantity_total % lote > 0 else 0)
             tempo_total_estimado = total_lotes * twap_interval
             print(f"[ICEBERG TWAP] Configurado: {twap_interval}s entre lotes")
             print(f"[ICEBERG TWAP] Total estimado: {total_lotes} lotes")
@@ -948,7 +1230,12 @@ def order_iceberg(data: dict = Body(...)):
                     print(f"[ICEBERG] Halt flag detectada, encerrando iceberg {iceberg_id}")
                     break
                 price_atual = float(cfg.get('price', price))
-                lote_atual = int(cfg.get('lote', lote))  # Usar lote atualizado se disponível
+                # Tratamento defensivo para evitar erro de conversão de string vazia para int
+                lote_value = cfg.get('lote', lote)
+                if lote_value == '' or lote_value is None:
+                    lote_atual = lote
+                else:
+                    lote_atual = int(lote_value)  # Usar lote atualizado se disponível
             else:
                 price_atual = price
                 lote_atual = lote
@@ -980,7 +1267,8 @@ def order_iceberg(data: dict = Body(...)):
                         })
                         # Atualizar posições
                         try:
-                            atualizar_posicoes_firebase(account_id)
+                            # ✅ REMOVIDO: Atualização incremental (será feita pelo callback DLL)
+                            
                             if strategy_id:
                                 atualizar_posicoes_firebase_strategy(strategy_id)
                         except Exception:
@@ -1015,21 +1303,62 @@ def order_iceberg(data: dict = Body(...)):
 def order_iceberg_master(data: dict = Body(...)):
     """
     Endpoint para ordem iceberg master (várias contas em ondas) com suporte TWAP.
+    Suporta tanto estratégias quanto lista de contas específicas (para sincronização).
     """
-    iceberg_id = str(uuid.uuid4())
-    broker_id = data.get("broker_id")
-    ticker = data.get("ticker")
-    quantity_total = int(data.get("quantity_total"))
-    lote = int(data.get("lote"))
-    price = float(data.get("price"))
-    side = data.get("side")
-    exchange = data.get("exchange")
-    group_size = int(data.get("group_size", 1))
-    strategy_id = data.get("strategy_id")
-    
-    # NOVOS PARÂMETROS TWAP
-    twap_enabled = data.get("twap_enabled", False)
-    twap_interval = data.get("twap_interval", 30) if data.get("twap_enabled", False) else 30
+    try:
+        print(f"[ICEBERG MASTER] Recebido payload: {data}")
+        
+        iceberg_id = str(uuid.uuid4())
+        broker_id = data.get("broker_id")
+        ticker = data.get("ticker")
+        
+        # Validação dos campos obrigatórios
+        quantity_total = data.get("quantity_total")
+        if quantity_total is None:
+            raise HTTPException(status_code=400, detail="Campo 'quantity_total' é obrigatório")
+        quantity_total = int(quantity_total)
+        
+        lote = data.get("lote")
+        if lote is None:
+            raise HTTPException(status_code=400, detail="Campo 'lote' é obrigatório")
+        lote = int(lote)
+        
+        price = data.get("price")
+        if price is None:
+            raise HTTPException(status_code=400, detail="Campo 'price' é obrigatório")
+        price = float(price)
+        
+        side = data.get("side")
+        if not side:
+            raise HTTPException(status_code=400, detail="Campo 'side' é obrigatório")
+            
+        exchange = data.get("exchange")
+        if not exchange:
+            raise HTTPException(status_code=400, detail="Campo 'exchange' é obrigatório")
+            
+        # Tratamento defensivo para evitar erro de conversão de string vazia para int
+        group_size_value = data.get("group_size", 1)
+        if group_size_value == '' or group_size_value is None:
+            group_size = 1
+        else:
+            group_size = int(group_size_value)
+        strategy_id = data.get("strategy_id")
+        
+        # NOVOS PARÂMETROS TWAP
+        twap_enabled = data.get("twap_enabled", False)
+        twap_interval = data.get("twap_interval", 30) if data.get("twap_enabled", False) else 30
+
+        # NOVO: Suporte para lista de contas específicas (para sincronização)
+        accounts_data = data.get("accounts", [])  # Lista de contas com quantidades específicas
+        
+        print(f"[ICEBERG MASTER] Dados validados: ticker={ticker}, quantity_total={quantity_total}, lote={lote}, price={price}, side={side}, exchange={exchange}")
+        
+    except ValueError as e:
+        print(f"[ICEBERG MASTER] Erro de conversão de tipo: {e}")
+        raise HTTPException(status_code=400, detail=f"Erro de conversão de tipo: {e}")
+    except Exception as e:
+        print(f"[ICEBERG MASTER] Erro inesperado: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro inesperado: {e}")
 
     # cria doc do iceberg master também
     db.collection('icebergs').document(iceberg_id).set({
@@ -1045,11 +1374,66 @@ def order_iceberg_master(data: dict = Body(...)):
 
     def iceberg_master_worker():
         # Obter contas participantes
-        if strategy_id:
+        if accounts_data:
+            # Modo Sync: usar contas específicas fornecidas
+            print(f"[ICEBERG MASTER] Modo Sync: {len(accounts_data)} contas específicas")
+            print(f"[ICEBERG MASTER] Dados recebidos do frontend:")
+            for acc_data in accounts_data:
+                print(f"  - Account ID: {acc_data.get('account_id')}, Quantity: {acc_data.get('quantity')}, Lote: {acc_data.get('lote')}")
+            
+            contas_proporcionais = []
+            for acc_data in accounts_data:
+                account_id = acc_data.get('account_id')
+                quantity = acc_data.get('quantity', 0)
+                lote_size = acc_data.get('lote', lote)
+                
+                if quantity > 0:
+                    # Buscar BrokerID da conta
+                    contasDllSnap = db.collection('contasDll').where('AccountID', '==', account_id).stream()
+                    contasDll = [doc.to_dict() for doc in contasDllSnap]
+                    
+                    if contasDll:
+                        # Tratamento defensivo para evitar erro de conversão de string vazia para int
+                        broker_id_value = contasDll[0].get('BrokerID', 0)
+                        if broker_id_value == '' or broker_id_value is None:
+                            broker_id = 0
+                        else:
+                            broker_id = int(broker_id_value)
+                        contas_proporcionais.append({
+                            'AccountID': account_id,
+                            'BrokerID': broker_id,
+                            'quantidade': quantity,
+                            'lote': lote_size
+                        })
+                        print(f"[ICEBERG MASTER] ✅ Conta {account_id}: {quantity} ações, lote {lote_size}")
+                    else:
+                        print(f"[ICEBERG MASTER] ❌ Conta {account_id} não encontrada no contasDll")
+        elif strategy_id:
+            # Modo Boletas: buscar contas da estratégia
+            print(f"[ICEBERG MASTER] Modo Boletas: estratégia {strategy_id}")
             allocSnap = db.collection('strategyAllocations').where('strategy_id', '==', strategy_id).stream()
             allocs = [a.to_dict() for a in allocSnap]
             contas = [{ 'AccountID': a['account_id'], 'BrokerID': int(a['broker_id']), 'valor_investido': float(a['valor_investido']) } for a in allocs]
+            
+            # Ordenar contas por valor investido (decrescente) para priorizar contas maiores
+            contas.sort(key=lambda c: c.get('valor_investido', 0), reverse=True)
+
+            # Calcular quantidade proporcional para cada conta
+            contas_proporcionais = []
+            for acc in contas:
+                valorInvestido = acc.get('valor_investido', 0)
+                fator = valorInvestido / 10000
+                quantidade = int(quantity_total * fator)
+                if quantidade > 0:
+                    contas_proporcionais.append({
+                        'AccountID': acc['AccountID'],
+                        'BrokerID': acc['BrokerID'],
+                        'quantidade': quantidade,
+                        'lote': lote
+                    })
         else:
+            # Modo MASTER: todas as contas
+            print(f"[ICEBERG MASTER] Modo MASTER: todas as contas")
             contas_data = get_accounts()
             contas = contas_data.get("accounts", [])
             contasDllSnap = db.collection('contasDll').stream()
@@ -1058,21 +1442,22 @@ def order_iceberg_master(data: dict = Body(...)):
             for c in contas:
                 c['valor_investido'] = valorInvestidoMap.get(c['AccountID'], 0)
 
-        # Ordenar contas por valor investido (decrescente) para priorizar contas maiores
-        contas.sort(key=lambda c: c.get('valor_investido', 0), reverse=True)
+            # Ordenar contas por valor investido (decrescente) para priorizar contas maiores
+            contas.sort(key=lambda c: c.get('valor_investido', 0), reverse=True)
 
-        # Calcular quantidade proporcional para cada conta
-        contas_proporcionais = []
-        for acc in contas:
-            valorInvestido = acc.get('valor_investido', 0)
-            fator = valorInvestido / 10000
-            quantidade = int(quantity_total * fator)
-            if quantidade > 0:
-                contas_proporcionais.append({
-                    'AccountID': acc['AccountID'],
-                    'BrokerID': acc['BrokerID'],
-                    'quantidade': quantidade
-                })
+            # Calcular quantidade proporcional para cada conta
+            contas_proporcionais = []
+            for acc in contas:
+                valorInvestido = acc.get('valor_investido', 0)
+                fator = valorInvestido / 10000
+                quantidade = int(quantity_total * fator)
+                if quantidade > 0:
+                    contas_proporcionais.append({
+                        'AccountID': acc['AccountID'],
+                        'BrokerID': acc['BrokerID'],
+                        'quantidade': quantidade,
+                        'lote': lote
+                    })
         
         # Logs TWAP
         if twap_enabled:
@@ -1082,6 +1467,12 @@ def order_iceberg_master(data: dict = Body(...)):
             print(f"[ICEBERG MASTER TWAP] Total contas: {total_contas}")
             print(f"[ICEBERG MASTER TWAP] Total grupos: {total_grupos}")
             print(f"[ICEBERG MASTER TWAP] Contas por grupo: {group_size}")
+        
+        # Log resumo das quantidades que serão executadas
+        total_quantidade_executar = sum(conta['quantidade'] for conta in contas_proporcionais)
+        print(f"[ICEBERG MASTER] 📊 RESUMO: {len(contas_proporcionais)} contas, {total_quantidade_executar} ações total")
+        for conta in contas_proporcionais:
+            print(f"  - {conta['AccountID']}: {conta['quantidade']} ações")
             
         # Dividir em grupos
         for i in range(0, len(contas_proporcionais), group_size):
@@ -1090,6 +1481,8 @@ def order_iceberg_master(data: dict = Body(...)):
             for conta in grupo:
                 def iceberg_conta_worker(conta=conta):
                     quantidade_restante = conta['quantidade']
+                    lote_conta = conta.get('lote', lote)  # Usar lote específico da conta se disponível
+                    
                     while quantidade_restante > 0:
                         # buscar config dinâmica antes de cada fatia
                         doc_cfg = db.collection('icebergs').document(iceberg_id).get()
@@ -1098,7 +1491,12 @@ def order_iceberg_master(data: dict = Body(...)):
                             return
                         cfg = doc_cfg.to_dict() if doc_cfg.exists else {}
                         price_cfg = cfg.get('price', price)
-                        lote_atual = int(cfg.get('lote', lote))  # Usar lote atualizado se disponível
+                        # Tratamento defensivo para evitar erro de conversão de string vazia para int
+                        lote_value = cfg.get('lote', lote_conta)
+                        if lote_value == '' or lote_value is None:
+                            lote_atual = lote_conta
+                        else:
+                            lote_atual = int(lote_value)  # Usar lote atualizado ou específico da conta
 
                         quantidade_envio = min(lote_atual, quantidade_restante)
                         res = send_order(conta['AccountID'], conta['BrokerID'], ticker, quantidade_envio, price_cfg, side, exchange, master_batch_id=iceberg_id, master_base_qty=quantity_total, sub_account=conta.get('SubAccountID', ""), strategy_id=strategy_id)
@@ -1147,7 +1545,7 @@ def order_iceberg_master(data: dict = Body(...)):
         print(f"[ICEBERG MASTER] Ordem iceberg master {iceberg_id} finalizada.")
 
     threading.Thread(target=iceberg_master_worker, daemon=True).start()
-    return {"success": True, "log": f"Ordem iceberg master iniciada! ID: {iceberg_id}", "iceberg_id": iceberg_id}
+    return {"success": True, "log": f"Ordem iceberg master iniciada! ID: {iceberg_id}", "order_id": iceberg_id}
 
 # --------------------- NOVA ROTA: FECHAR/REDUZIR MASTER BATCH ---------------------
 
@@ -1164,8 +1562,18 @@ async def close_master_batch(request: Request):
     pct = float(data.get("pct", 1.0))
     order_type = data.get("order_type", "market").lower()  # market | limit | iceberg
     price = float(data.get("price", -1))   # -1 será tratado como Market
-    lote = int(data.get("lote", 0))         # obrigatório p/ iceberg
-    group_size = int(data.get("group_size", 1))
+    # Tratamento defensivo para evitar erro de conversão de string vazia para int
+    lote_value = data.get("lote", 0)
+    if lote_value == '' or lote_value is None:
+        lote = 0
+    else:
+        lote = int(lote_value)         # obrigatório p/ iceberg
+    # Tratamento defensivo para evitar erro de conversão de string vazia para int
+    group_size_value = data.get("group_size", 1)
+    if group_size_value == '' or group_size_value is None:
+        group_size = 1
+    else:
+        group_size = int(group_size_value)
 
     if not master_batch_id or not ticker or not exchange:
         raise HTTPException(status_code=400, detail="master_batch_id, ticker e exchange são obrigatórios")
@@ -1650,15 +2058,15 @@ def delete_carteira_referencia(position_id: str):
 def get_client_positions(account_id: str):
     """
     Busca posições reais de um cliente específico no Firestore.
-    Retorna posições da coleção 'posicoesDLL' filtradas por account_id.
+    Retorna posições da coleção 'posicoesDLL' consolidadas com ajustes manuais.
     """
     try:
         print(f"[get_client_positions] Buscando posições para account_id: {account_id}")
         
-        # Buscar posições do cliente no Firestore usando o campo correto
+        # 1. Buscar posições calculadas do cliente
         posicoes_ref = db.collection('posicoesDLL').where('account_id', '==', account_id).stream()
         
-        positions = []
+        posicoes_calculadas = []
         total_docs = 0
         
         for doc in posicoes_ref:
@@ -1666,33 +2074,120 @@ def get_client_positions(account_id: str):
             pos_data = doc.to_dict()
             
             # Log detalhado para debug
-            print(f"[get_client_positions] Documento {doc.id}: {pos_data}")
+            print(f"[get_client_positions] Documento calculado {doc.id}: {pos_data}")
             
             quantity = float(pos_data.get('quantity', 0))
             
             # Só incluir posições com quantidade diferente de zero
             if quantity != 0:
-                positions.append({
+                posicoes_calculadas.append({
                     'id': doc.id,
                     'ticker': pos_data.get('ticker', ''),
                     'quantity': quantity,
                     'price': pos_data.get('price', 0.0),
                     'avgPrice': pos_data.get('avgPrice', 0.0),
-                    'avgBuyPrice': pos_data.get('avgBuyPrice', 0.0),    # NOVO
-                    'avgSellPrice': pos_data.get('avgSellPrice', 0.0),  # NOVO
-                    'totalBuyQty': pos_data.get('totalBuyQty', 0),      # NOVO
-                    'totalSellQty': pos_data.get('totalSellQty', 0),    # NOVO
+                    'avgBuyPrice': pos_data.get('avgBuyPrice', 0.0),
+                    'avgSellPrice': pos_data.get('avgSellPrice', 0.0),
+                    'totalBuyQty': pos_data.get('totalBuyQty', 0),
+                    'totalSellQty': pos_data.get('totalSellQty', 0),
                     'exchange': pos_data.get('exchange', ''),
                     'accountId': pos_data.get('account_id', ''),
                     'brokerId': pos_data.get('broker_id', ''),
                     'timestamp': pos_data.get('updatedAt', None)
                 })
-                print(f"[get_client_positions] Adicionada posição: {pos_data.get('ticker', '')} - Qty: {quantity}")
+                print(f"[get_client_positions] Adicionada posição calculada: {pos_data.get('ticker', '')} - Qty: {quantity}")
             else:
                 print(f"[get_client_positions] Posição zerada ignorada: {pos_data.get('ticker', '')} - Qty: {quantity}")
         
-        print(f"[get_client_positions] Total de documentos encontrados: {total_docs}")
-        print(f"[get_client_positions] Encontradas {len(positions)} posições com quantidade > 0 para {account_id}")
+        # 2. Buscar ajustes manuais para todas as estratégias desta conta
+        ajustes_ref = db.collection('posicoesAjusteManual').where('account_id', '==', account_id).stream()
+        
+        ajustes_manuais = []
+        for doc in ajustes_ref:
+            ajuste_data = doc.to_dict()
+            print(f"[get_client_positions] Ajuste manual {doc.id}: {ajuste_data}")
+            ajustes_manuais.append(ajuste_data)
+        
+        print(f"[get_client_positions] Encontrados {len(ajustes_manuais)} ajustes manuais para {account_id}")
+        
+        # 3. Consolidar posições calculadas com ajustes manuais
+        mapa_posicoes = {}
+        
+        # Adicionar posições calculadas
+        for pos in posicoes_calculadas:
+            mapa_posicoes[pos['ticker']] = {
+                'ticker': pos['ticker'],
+                'quantity': pos['quantity'],
+                'avgPrice': pos['avgPrice'],
+                'avgBuyPrice': pos['avgBuyPrice'],
+                'avgSellPrice': pos['avgSellPrice'],
+                'totalBuyQty': pos['totalBuyQty'],
+                'totalSellQty': pos['totalSellQty'],
+                'exchange': pos['exchange'],
+                'accountId': pos['accountId'],
+                'brokerId': pos['brokerId'],
+                'timestamp': pos['timestamp'],
+                'isAjuste': False
+            }
+        
+        # Aplicar ajustes manuais
+        for ajuste in ajustes_manuais:
+            ticker = ajuste.get('ticker', '')
+            quantidade_ajuste = float(ajuste.get('quantidade_ajuste', 0))
+            preco_medio_ajuste = float(ajuste.get('preco_medio_ajuste', 0))
+            
+            if ticker in mapa_posicoes:
+                # Posição já existe, aplicar ajuste
+                pos_atual = mapa_posicoes[ticker]
+                nova_quantidade = pos_atual['quantity'] + quantidade_ajuste
+                
+                # Calcular novo preço médio ponderado
+                if nova_quantidade != 0:
+                    valor_atual = pos_atual['quantity'] * pos_atual['avgPrice']
+                    valor_ajuste = quantidade_ajuste * preco_medio_ajuste
+                    novo_preco_medio = (valor_atual + valor_ajuste) / nova_quantidade
+                else:
+                    novo_preco_medio = 0
+                
+                mapa_posicoes[ticker].update({
+                    'quantity': nova_quantidade,
+                    'avgPrice': novo_preco_medio,
+                    'hasAjuste': True,
+                    'ajusteManual': ajuste
+                })
+                
+                print(f"[get_client_positions] Ajuste aplicado para {ticker}: {pos_atual['quantity']} + {quantidade_ajuste} = {nova_quantidade}")
+            else:
+                # Posição não existe, criar apenas com ajuste
+                mapa_posicoes[ticker] = {
+                    'ticker': ticker,
+                    'quantity': quantidade_ajuste,
+                    'avgPrice': preco_medio_ajuste,
+                    'avgBuyPrice': 0,
+                    'avgSellPrice': 0,
+                    'totalBuyQty': 0,
+                    'totalSellQty': 0,
+                    'exchange': '',
+                    'accountId': account_id,
+                    'brokerId': '',
+                    'timestamp': None,
+                    'isAjuste': True,
+                    'hasAjuste': True,
+                    'ajusteManual': ajuste
+                }
+                
+                print(f"[get_client_positions] Nova posição criada com ajuste: {ticker} - Qty: {quantidade_ajuste}")
+        
+        # 4. Converter para lista e filtrar posições zeradas
+        positions = []
+        for ticker, pos in mapa_posicoes.items():
+            if pos['quantity'] != 0:
+                positions.append(pos)
+                print(f"[get_client_positions] Posição final: {ticker} - Qty: {pos['quantity']} - Ajuste: {pos.get('hasAjuste', False)}")
+        
+        print(f"[get_client_positions] Total de documentos calculados: {total_docs}")
+        print(f"[get_client_positions] Total de ajustes manuais: {len(ajustes_manuais)}")
+        print(f"[get_client_positions] Posições consolidadas finais: {len(positions)}")
         
         return {"success": True, "positions": positions}
         

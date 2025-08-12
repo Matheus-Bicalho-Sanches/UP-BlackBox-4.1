@@ -15,7 +15,7 @@
       "timeframe": "1m",
       "bollinger_bands": {
         "period": 20,
-        "std_deviation": 2.0,
+        "std_deviation": 1.0,
         "ma_type": "SMA"
       },
       "risk_management": {

@@ -2,6 +2,21 @@
 import { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 
+/**
+ * Página de Estratégias - UP BlackBox 4.0
+ * 
+ * CONTEXTO:
+ * - Estratégias representam carteiras específicas da gestora
+ * - Exemplos: UP BlackBox FIIs (manual), UP BlackBox Multi (manual → automatizada)
+ * - Cada estratégia pode ter múltiplas contas de clientes alocadas
+ * - Sistema permite gerenciar alocações de capital por cliente por estratégia
+ * 
+ * FUNCIONALIDADES:
+ * - Criar/editar estratégias (carteiras)
+ * - Gerenciar alocações de clientes por estratégia
+ * - Definir valor investido por cliente
+ */
+
 interface Strategy {
   id: string;
   name: string;
@@ -151,6 +166,7 @@ export default function EstrategiasPage() {
 
 // -------- AllocationModal component --------
 import React from "react";
+import AccountSelector from "@/components/AccountSelector";
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 import app from '@/config/firebase';
 
@@ -174,9 +190,12 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
   const [error, setError] = React.useState("");
   const [accounts, setAccounts] = React.useState<any[]>([]);
   const [clientNames, setClientNames] = React.useState<{[key: string]: string}>({});
+  const [allocSearch, setAllocSearch] = React.useState("");
+  const [editingId, setEditingId] = React.useState<string | null>(null);
+  const [editingValue, setEditingValue] = React.useState<string>("");
 
   // form states
-  const [selAccountIdx, setSelAccountIdx] = React.useState(0);
+  const [selAccountId, setSelAccountId] = React.useState<string>("");
   const [valorInvestido, setValorInvestido] = React.useState(0);
 
   const db = getFirestore(app);
@@ -225,6 +244,8 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
 
         setAllocations(allocationsWithNames);
         setAccounts(accountsWithNames);
+        // default: vazio para forçar seleção via busca
+        setSelAccountId("");
         setClientNames(nomeMap);
       } catch (err: any) {
         setError(err.message);
@@ -235,8 +256,9 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    if (accounts.length === 0) return;
-    const account = accounts[selAccountIdx];
+    if (accounts.length === 0 || !selAccountId) return;
+    const account = accounts.find(a => a.AccountID === selAccountId);
+    if (!account) return;
     const payload = {
       strategy_id: strategy.id,
       account_id: account.AccountID || account.account_id || account.AccountId,
@@ -276,63 +298,150 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
     setAllocations((prev) => prev.filter((a) => a.id !== allocation.id));
   }
 
+  const normalize = (t: string) =>
+    (t || "")
+      .toString()
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .toLowerCase();
+
+  const filteredAllocations = allocations.filter((a) => {
+    if (!allocSearch.trim()) return true;
+    const q = normalize(allocSearch);
+    return (
+      normalize(a.client_name || "").includes(q) ||
+      normalize(String(a.account_id)).includes(q) ||
+      normalize(String(a.broker_id)).includes(q)
+    );
+  });
+
   return (
     <div
       style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }}
       onClick={onClose}
     >
       <div
-        style={{ background: "#222", padding: 24, borderRadius: 8, width: 600, maxHeight: "90%", overflowY: "auto" }}
+        style={{ background: "#222", padding: 24, borderRadius: 8, width: "min(95vw, 1100px)", maxHeight: "90%", minHeight: "600px", overflowY: "auto" }}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 style={{ color: "#fff" }}>Alocações – {strategy.name}</h2>
         {error && <p style={{ color: "#f00" }}>{error}</p>}
 
-        {/* Lista */}
-        <table style={{ width: "100%", marginTop: 12, color: "#fff", fontSize: 14 }}>
-          <thead>
-            <tr style={{ textAlign: "left" }}>
-              <th>Cliente</th>
-              <th>Conta</th>
-              <th>Broker</th>
-              <th style={{ textAlign: "right" }}>Valor Investido (R$)</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {allocations.map((a) => (
-              <tr key={a.id}>
-                <td style={{ color: "#06b6d4", fontWeight: "bold" }}>{a.client_name}</td>
-                <td>{a.account_id}</td>
-                <td>{a.broker_id}</td>
-                <td style={{ textAlign: "right" }}>{a.valor_investido.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-                <td>
-                  <button onClick={() => handleDelete(a)} style={{ color: "#f87171" }}>Excluir</button>
-                </td>
+        {/* Busca e Lista */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+          <input
+            type="text"
+            placeholder="Buscar por cliente, conta ou broker..."
+            value={allocSearch}
+            onChange={(e) => setAllocSearch(e.target.value)}
+            style={{ flex: 1, padding: 8, borderRadius: 4, border: '1px solid #444', background: '#181818', color: '#fff' }}
+          />
+        </div>
+        <div style={{ width: '100%', marginTop: 12, maxHeight: 420, overflowY: 'auto', borderRadius: 4 }}>
+          <table style={{ width: "100%", color: "#fff", fontSize: 14 }}>
+            <thead>
+              <tr style={{ textAlign: "left" }}>
+                <th>Cliente</th>
+                <th>Conta</th>
+                <th>Broker</th>
+                <th style={{ textAlign: "right" }}>Valor Investido (R$)</th>
+                <th></th>
               </tr>
-            ))}
-            {allocations.length === 0 && (
+            </thead>
+            <tbody>
+            {filteredAllocations.map((a) => {
+              const isEditing = editingId === a.id;
+              return (
+                <tr key={a.id}>
+                  <td style={{ color: "#06b6d4", fontWeight: "bold" }}>{a.client_name}</td>
+                  <td>{a.account_id}</td>
+                  <td>{a.broker_id}</td>
+                  <td style={{ textAlign: "right" }}>
+                    {isEditing ? (
+                      <input
+                        type="number"
+                        value={editingValue}
+                        onChange={(e) => setEditingValue(e.target.value)}
+                        min={0}
+                        step={100}
+                        style={{ width: 160, padding: 6, borderRadius: 4, border: '1px solid #444', background: '#181818', color: '#fff', textAlign: 'right' }}
+                        autoFocus
+                      />
+                    ) : (
+                      a.valor_investido.toLocaleString('pt-BR', { minimumFractionDigits: 2 })
+                    )}
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    {isEditing ? (
+                      <>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const newValueNum = Number(editingValue);
+                              if (Number.isNaN(newValueNum) || newValueNum < 0) return alert('Valor inválido');
+                              const res = await fetch(`http://localhost:8000/allocations/${a.strategy_id}/${a.account_id}/${a.broker_id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ valor_investido: newValueNum })
+                              });
+                              if (!res.ok) {
+                                const data = await res.json().catch(()=>({detail:'Erro'}));
+                                throw new Error(data.detail || 'Falha ao atualizar alocação');
+                              }
+                              // Atualizar estado local
+                              setAllocations(prev => prev.map(item => item.id === a.id ? { ...item, valor_investido: newValueNum } : item));
+                              setEditingId(null);
+                              setEditingValue('');
+                            } catch (err:any) {
+                              alert(err.message || 'Erro ao atualizar alocação');
+                            }
+                          }}
+                          style={{ marginRight: 8, padding: '6px 10px', background: '#10b981', color: '#fff', borderRadius: 4 }}
+                        >
+                          Salvar
+                        </button>
+                        <button
+                          onClick={() => { setEditingId(null); setEditingValue(''); }}
+                          style={{ padding: '6px 10px', background: '#6b7280', color: '#fff', borderRadius: 4 }}
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => { setEditingId(a.id); setEditingValue(String(a.valor_investido)); }}
+                          style={{ marginRight: 8, color: '#60a5fa' }}
+                        >
+                          Editar
+                        </button>
+                        <button onClick={() => handleDelete(a)} style={{ color: '#f87171' }}>Excluir</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {filteredAllocations.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ color: "#aaa", textAlign: "center", padding: 8 }}>Nenhuma alocação.</td>
               </tr>
             )}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
 
         {/* Form adicionar */}
         <form onSubmit={handleAdd} style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
           <h3 style={{ color: "#fff", fontSize: 16 }}>Nova alocação</h3>
-          <select
-            value={selAccountIdx}
-            onChange={(e) => setSelAccountIdx(Number(e.target.value))}
-            style={{ padding: 8, borderRadius: 4, border: "1px solid #444" }}
-          >
-            {accounts.map((acc, idx) => (
-              <option key={idx} value={idx}>
-                {acc.nomeCliente} - {acc.AccountID || acc.account_id} (Broker {(acc.BrokerID ?? acc.broker_id)})
-              </option>
-            ))}
-          </select>
+          <AccountSelector
+            value={selAccountId || ""}
+            onChange={(val) => setSelAccountId(val)}
+            accounts={accounts}
+            strategies={[]}
+            onlyAccounts
+            placeholder="Buscar cliente por nome ou ID..."
+          />
           <input
             type="number"
             placeholder="Valor investido (R$)"

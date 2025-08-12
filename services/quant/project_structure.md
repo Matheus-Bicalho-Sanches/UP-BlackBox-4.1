@@ -71,7 +71,7 @@ graph LR
           "nome": "Voltaamedia_Bollinger_1min_WINQ25",
   "status": true,
   "carteiraBlackBox": "estrategia_bb4_id",
-  "tamanhoPosition": 10.0,
+  "tamanhoPosition": 100000.0,  // Valor em reais alocado (R$ 100.000 = 10 contratos)
   "createdAt": "timestamp",
   "updatedAt": "timestamp"
 }

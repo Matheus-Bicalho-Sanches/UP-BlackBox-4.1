@@ -1,6 +1,21 @@
 "use client";
 import { useState } from "react";
 
+/**
+ * Página de Login - UP BlackBox 4.0
+ * 
+ * CONTEXTO:
+ * - Login automático na DLL do Profit (sistema de trading)
+ * - Não é autenticação de usuário (feita em /login)
+ * - Todos os colaboradores têm o mesmo nível de acesso
+ * - Sistema em produção - não usar fallbacks fictícios
+ * 
+ * FUNCIONALIDADES:
+ * - Login automático na DLL do Profit
+ * - Logoff da DLL
+ * - Status de conexão com o sistema de trading
+ */
+
 export default function LoginPage() {
   const [log, setLog] = useState("");
   const [loading, setLoading] = useState(false);

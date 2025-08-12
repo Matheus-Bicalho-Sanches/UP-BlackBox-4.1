@@ -78,7 +78,7 @@ No arquivo `config.json`:
 ## 📈 Lógica da Estratégia
 
 ```
-WINQ25 (Mini Índice - 1min) + Bollinger Bands (20, 2.0, SMA)
+WINQ25 (Mini Índice - 1min) + Bollinger Bands (20, 1.0, SMA)
 
 🎯 SISTEMA DE ORDENS LIMITADAS SEMPRE ATIVAS:
 • Sem posição: Mantém ordem de compra na banda inferior

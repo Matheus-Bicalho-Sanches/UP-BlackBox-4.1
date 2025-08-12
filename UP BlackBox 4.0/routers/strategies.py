@@ -1,3 +1,17 @@
+"""
+Router de Estratégias - UP BlackBox 4.0
+
+CONTEXTO:
+- Estratégias representam carteiras específicas da gestora
+- Exemplos: UP BlackBox FIIs, UP BlackBox Multi
+- Cada estratégia pode ter múltiplas contas de clientes alocadas
+- Sistema permite gerenciar alocações de capital por cliente
+
+IMPORTANTE:
+- Sistema em produção - não usar fallbacks fictícios
+- IDs são gerados automaticamente baseados no nome da estratégia
+"""
+
 from fastapi import APIRouter, HTTPException, Body
 from firebase_admin import firestore
 import re

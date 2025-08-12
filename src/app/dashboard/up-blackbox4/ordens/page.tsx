@@ -1,10 +1,22 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { db } from "@/config/firebase";
-import { collection, query, where, getDocs, orderBy, limit as limitFn } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, limit as limitFn, onSnapshot } from "firebase/firestore";
+import type { Unsubscribe } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { FiChevronDown, FiChevronRight, FiEdit2, FiTrash2, FiRefreshCcw } from 'react-icons/fi';
 import React from "react";
+import AccountSelector from "@/components/AccountSelector";
+
+/**
+ * Função helper para calcular quantidades - mesma lógica do backend Python
+ * Garante consistência entre frontend e backend
+ */
+function calcularQuantidade(quantity: number, valorInvestido: number): number {
+  const fator = valorInvestido / 10000;
+  // Usar exatamente a mesma lógica do Python: max(1, int(math.floor(quantity * fator)))
+  return Math.max(1, Math.floor(quantity * fator));
+}
 
 // ===== Tipagens para os modais =====
 interface EditBatchModalProps {
@@ -17,6 +29,8 @@ interface EditBatchModalProps {
   defaultBaseQty?: number | string;
   strategyId?: string;
   strategyName?: string;
+  isIceberg?: boolean;
+  defaultLote?: number | string;
 }
 
 interface DeleteBatchModalProps {
@@ -58,23 +72,86 @@ function EditOrderModal({ isOpen, onClose, onSave, order }: any) {
 }
 
 // Modal de edição em lote
-function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMap, defaultPrice, defaultBaseQty, strategyId, strategyName }: EditBatchModalProps) {
+function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMap, defaultPrice, defaultBaseQty, strategyId, strategyName, isIceberg, defaultLote }: EditBatchModalProps) {
   const [price, setPrice] = useState(defaultPrice ?? '');
   const [baseQty, setBaseQty] = useState(defaultBaseQty ?? '');
+  const [lote, setLote] = useState(defaultLote ?? '');
   const [loading, setLoading] = useState(false);
+  const [valoresAtualizados, setValoresAtualizados] = useState<Record<string, number>>({});
+  const [carregandoValores, setCarregandoValores] = useState(false);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
+
+  // Função para buscar valores atualizados do backend
+  // CORREÇÃO BUG #4: Busca valores em tempo real para evitar inconsistências
+  const buscarValoresAtualizados = async () => {
+    if (!batchOrders || batchOrders.length === 0) return;
+    
+    setCarregandoValores(true);
+    try {
+      let valoresMap: Record<string, number> = {};
+      
+      // Detectar se as ordens pertencem a uma estratégia específica
+      const strategyIds = [...new Set(batchOrders.map(o => o.strategy_id).filter(Boolean))];
+      const useStrategyAllocations = strategyIds.length === 1 && strategyIds[0];
+      
+      if (useStrategyAllocations) {
+        // Usar alocações da estratégia específica
+        const strategyId = strategyIds[0];
+        const allocRes = await fetch(`http://localhost:8000/allocations?strategy_id=${strategyId}`);
+        if (allocRes.ok) {
+          const allocData = await allocRes.json();
+          for (const alloc of allocData.allocations || []) {
+            valoresMap[alloc.account_id] = alloc.valor_investido || 0;
+          }
+        }
+      } else {
+        // Usar valores totais das contas (Master Global)
+        const contasDllRes = await fetch("http://localhost:8000/contasDll");
+        if (contasDllRes.ok) {
+          const contasDllData = await contasDllRes.json();
+          for (const c of contasDllData.contas || []) {
+            valoresMap[c.AccountID] = Number(c["Valor Investido"] || 0);
+          }
+        }
+      }
+      
+      setValoresAtualizados(valoresMap);
+      setUltimaAtualizacao(new Date());
+    } catch (error) {
+      console.error('Erro ao buscar valores atualizados:', error);
+      // Fallback para valores originais
+      setValoresAtualizados(valorInvestidoMap);
+    } finally {
+      setCarregandoValores(false);
+    }
+  };
+
+  // Buscar valores atualizados quando modal abre ou quando baseQty muda
+  useEffect(() => {
+    if (isOpen && batchOrders) {
+      buscarValoresAtualizados();
+    }
+  }, [isOpen, batchOrders, baseQty]);
+
   useEffect(() => {
     setPrice(defaultPrice ?? '');
     setBaseQty(defaultBaseQty ?? '');
+    setLote(defaultLote ?? '');
     setLoading(false);
-  }, [defaultPrice, defaultBaseQty, batchOrders]);
+  }, [defaultPrice, defaultBaseQty, defaultLote, batchOrders]);
+
   if (!isOpen || !batchOrders) return null;
+
+  // Usar valores atualizados se disponíveis, senão usar os originais
+  const valoresParaCalculo = Object.keys(valoresAtualizados).length > 0 ? valoresAtualizados : valorInvestidoMap;
+  
   // Calcular total investido
-  const totalInvestido = batchOrders.reduce((sum, o) => sum + (valorInvestidoMap[o.account_id] || 0), 0);
-  // Calcular quantidades proporcionais
+  const totalInvestido = batchOrders.reduce((sum, o) => sum + (valoresParaCalculo[o.account_id] || 0), 0);
+  
+  // Calcular quantidades proporcionais - mesma lógica do backend
   const preview = batchOrders.map(o => {
-    const valor = valorInvestidoMap[o.account_id] || 0;
-    const fator = valor / 10000; // divisor fixo, igual ao backend
-    const quantidade = Math.max(1, Math.floor(Number(baseQty) * fator));
+    const valor = valoresParaCalculo[o.account_id] || 0;
+    const quantidade = calcularQuantidade(Number(baseQty), valor);
     return { ...o, quantidadePreview: quantidade, valorInvestido: valor };
   });
   // Consolidar linha da Conta Master
@@ -113,8 +190,49 @@ function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMa
             <label className="block text-gray-300 mb-1">Nova Quantidade Base</label>
             <input type="number" value={baseQty} onChange={e => setBaseQty(e.target.value)} className="w-full p-2 rounded bg-[#181818] text-white border border-gray-600" />
           </div>
+          {isIceberg && (
+            <div>
+              <label className="block text-gray-300 mb-1">Novo Tamanho do Lote (Iceberg)</label>
+              <input 
+                type="number" 
+                value={lote} 
+                onChange={e => setLote(e.target.value)} 
+                className="w-full p-2 rounded bg-[#181818] text-white border border-gray-600" 
+                placeholder="Tamanho do lote para próximas ordens"
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Este valor será usado para os próximos lotes da iceberg em andamento
+              </p>
+            </div>
+          )}
           <div className="mt-4">
-            <div className="text-gray-300 mb-2">Prévia das quantidades proporcionais:</div>
+            <div className="flex items-center justify-between text-gray-300 mb-2">
+              <span>Prévia das quantidades proporcionais:</span>
+              <div className="flex items-center gap-2">
+                {carregandoValores && (
+                  <div className="flex items-center text-blue-400 text-xs">
+                    <svg className="animate-spin mr-1 h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                    </svg>
+                    Atualizando...
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={buscarValoresAtualizados}
+                  disabled={carregandoValores}
+                  className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  🔄 Atualizar
+                </button>
+                {ultimaAtualizacao && (
+                  <div className="text-xs text-green-400">
+                    ✓ {ultimaAtualizacao.toLocaleTimeString('pt-BR')}
+                  </div>
+                )}
+              </div>
+            </div>
             <table className="w-full text-sm text-white">
               <thead>
                 <tr>
@@ -145,7 +263,7 @@ function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMa
           <button
             onClick={async () => {
               setLoading(true);
-              await onSave({ price, baseQty, preview: previewWithMaster });
+              await onSave({ price, baseQty, lote, preview: previewWithMaster });
               setLoading(false);
             }}
             className="px-4 py-2 rounded bg-blue-600 text-white flex items-center justify-center min-w-[120px]"
@@ -208,8 +326,10 @@ export default function OrdensPage() {
   const [selectedAccount, setSelectedAccount] = useState("MASTER");
   const [selectedBroker, setSelectedBroker] = useState(0);
   const [orders, setOrders] = useState<any[]>([]);
+  const [rawOrders, setRawOrders] = useState<any[]>([]);
   const [log, setLog] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isLive, setIsLive] = useState(false);
   const [marketTicker, setMarketTicker] = useState("");
   const [marketQuantity, setMarketQuantity] = useState("");
   const [marketSide, setMarketSide] = useState("buy");
@@ -220,17 +340,17 @@ export default function OrdensPage() {
   const [orderToEdit, setOrderToEdit] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean, order: any } | null>(null);
   const [expandedBatches, setExpandedBatches] = useState<{ [batchId: string]: boolean }>({});
-  const [editBatch, setEditBatch] = useState<{ batchId: string, orders: any[], strategyId?: string, strategyName?: string } | null>(null);
+  const [editBatch, setEditBatch] = useState<{ batchId: string, orders: any[], strategyId?: string, strategyName?: string, isIceberg?: boolean, defaultLote?: number | string } | null>(null);
   const [deleteBatch, setDeleteBatch] = useState<{ batchId: string, orders: any[] } | null>(null);
   const [valorInvestidoMap, setValorInvestidoMap] = useState<Record<string, number>>({});
   const [currentStrategyId, setCurrentStrategyId] = useState<string | null>(null);
+  // Listener atual do Firestore
+  const listenerRef = useRef<Unsubscribe | null>(null);
   // --- filtros: período, ativo e status ---
   // Usamos string (AAAA-MM-DD) para evitar problemas de fuso ao serializar Date
-  // definir período padrão: últimos 10 dias (hoje inclusive)
+  // definir período padrão: hoje somente
   const [startDate, setStartDate] = useState<string>(()=>{
-    const d = new Date();
-    d.setDate(d.getDate()-9); // hoje - 9 => 10 dias contando hoje
-    return d.toISOString().slice(0,10);
+    return new Date().toISOString().slice(0,10);
   });
   const [endDate, setEndDate] = useState<string>(()=> new Date().toISOString().slice(0,10));
   const [filterTicker, setFilterTicker] = useState("");
@@ -294,6 +414,23 @@ export default function OrdensPage() {
     return strategyIds.length === 1 ? strategyIds[0] : null;
   };
 
+  // Função para detectar se uma ordem é iceberg
+  const detectIcebergFromOrders = (orders: any[]) => {
+    return orders.some(o => o.master_batch_id) ? orders[0]?.master_batch_id : null;
+  };
+
+  // Função para buscar informações da iceberg
+  const fetchIcebergInfo = async (icebergId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/iceberg_info/${icebergId}`);
+      const data = await response.json();
+      return data.success ? data.iceberg : null;
+    } catch (error) {
+      console.error('Erro ao buscar informações da iceberg:', error);
+      return null;
+    }
+  };
+
   useEffect(() => {
     async function fetchValores() {
       try {
@@ -344,7 +481,7 @@ export default function OrdensPage() {
     } catch {}
   }
 
-  function handleAccountChange(e: React.ChangeEvent<HTMLSelectElement>) {
+  function handleAccountChange(e: { target: { value: string } }) {
     setSelectedAccount(e.target.value);
   }
 
@@ -394,6 +531,62 @@ export default function OrdensPage() {
       });
     }
     return filtered;
+  };
+
+  // Monta a query conforme filtro atual (MASTER, estratégia, conta)
+  const buildOrdersQuery = () => {
+    const base = collection(db, "ordensDLL");
+    // Estratégia explicitamente selecionada via prefixo
+    if (typeof selectedAccount === 'string' && selectedAccount.startsWith('strategy:')) {
+      const sid = selectedAccount.replace('strategy:', '');
+      return query(base, where('strategy_id', '==', sid), orderBy('createdAt', 'desc'), limitFn(500));
+    }
+    // MASTER
+    if (selectedAccount === 'MASTER') {
+      return query(base, orderBy('LastUpdate', 'desc'), limitFn(500));
+    }
+    // Conta individual
+    return query(base, where('account_id', '==', selectedAccount), orderBy('LastUpdate', 'desc'), limitFn(500));
+  };
+
+  // Anexa listener em tempo real, com unsubscribe do anterior
+  const attachOrdersListener = () => {
+    // limpar listener anterior
+    if (listenerRef.current) {
+      listenerRef.current();
+      listenerRef.current = null;
+    }
+    setIsLive(false);
+    try {
+      setLoading(true);
+      const q = buildOrdersQuery();
+      listenerRef.current = onSnapshot(q, (snapshot) => {
+        const docs = snapshot.docs.map(d => d.data());
+        // Ordenar localmente por data decrescente (garante consistência caso datas variem entre campos)
+        const sorted = [...docs].sort((a: any, b: any) => {
+          const da = parseDate(a);
+          const dbt = parseDate(b);
+          if (!da || !dbt) return 0;
+          return dbt.getTime() - da.getTime();
+        });
+        setRawOrders(sorted);
+        const filtered = applyFilters(sorted);
+        setOrders(filtered);
+        setLog(`LIVE: ouvindo ${filtered.length} ordens`);
+        setIsLive(true);
+        setLoading(false);
+      }, (err) => {
+        console.error('onSnapshot error:', err);
+        setLog('Erro no listener em tempo real: ' + (err.message || JSON.stringify(err)));
+        setIsLive(false);
+        setLoading(false);
+      });
+    } catch (err: any) {
+      console.error('Falha ao anexar listener:', err);
+      setLog('Falha ao anexar listener: ' + (err.message || JSON.stringify(err)));
+      setIsLive(false);
+      setLoading(false);
+    }
   };
 
   async function handleListOrders(max?: number) {
@@ -485,10 +678,26 @@ export default function OrdensPage() {
     setLoading(false);
   }
 
-  // carregamento inicial: últimas 10 ordens Master Global
-  useEffect(()=>{
-    handleListOrders(10);
-  },[]);
+  // Listener em tempo real: conectar ao montar e a cada troca de filtro de conta/estratégia
+  useEffect(() => {
+    if (typeof selectedAccount === 'string' && selectedAccount.length > 0) {
+      attachOrdersListener();
+    }
+    return () => {
+      if (listenerRef.current) {
+        listenerRef.current();
+        listenerRef.current = null;
+      }
+      setIsLive(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAccount]);
+
+  // Reaplicar filtros de UI quando mudarem, usando o snapshot mais recente
+  useEffect(() => {
+    setOrders(applyFilters(rawOrders));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate, filterTicker, filterStatus]);
 
   async function handleEditOrder(values: any) {
     if (!orderToEdit) return;
@@ -510,7 +719,8 @@ export default function OrdensPage() {
       alert(data.log);
       setEditModalOpen(false);
       setOrderToEdit(null);
-      handleListOrders();
+      // Listener manterá os dados atualizados; opcionalmente reatachar
+      attachOrdersListener();
     } catch (err) {
       alert("Erro ao editar ordem.");
     }
@@ -532,11 +742,50 @@ export default function OrdensPage() {
       const data = await res.json();
       alert(data.log);
       setDeleteConfirm(null);
-      handleListOrders();
+      // Listener manterá os dados atualizados; opcionalmente reatachar
+      attachOrdersListener();
     } catch (err) {
       alert("Erro ao cancelar ordem.");
     }
   }
+
+  // Função para calcular valores consolidados de um batch
+  // Implementa consolidação de dados para linhas Master:
+  // - Quantidade, Executada, Pendente: soma simples
+  // - Preço Médio: média ponderada pela quantidade executada
+  const calcularValoresConsolidados = (group: any[]) => {
+    let totalQuantity = 0;
+    let totalTradedQuantity = 0;
+    let totalLeavesQuantity = 0;
+    let totalPriceWeighted = 0;
+    let totalTradedForAverage = 0;
+    
+    group.forEach(order => {
+      // Somas simples
+      totalQuantity += Number(order.quantity || 0);
+      totalTradedQuantity += Number(order.TradedQuantity || 0);
+      totalLeavesQuantity += Number(order.LeavesQuantity || 0);
+      
+      // Para preço médio ponderado
+      const tradedQty = Number(order.TradedQuantity || 0);
+      const avgPrice = Number(order.preco_medio_executado || order.AveragePrice || 0);
+      
+      if (tradedQty > 0 && avgPrice > 0) {
+        totalPriceWeighted += tradedQty * avgPrice;
+        totalTradedForAverage += tradedQty;
+      }
+    });
+    
+    // Calcular preço médio ponderado
+    const precoMedioConsolidado = totalTradedForAverage > 0 ? totalPriceWeighted / totalTradedForAverage : 0;
+    
+    return {
+      totalQuantity,
+      totalTradedQuantity,
+      totalLeavesQuantity,
+      precoMedioConsolidado
+    };
+  };
 
   // Agrupar ordens por master_batch_id
   const batchGroups: { [batchId: string]: any[] } = {};
@@ -561,28 +810,50 @@ export default function OrdensPage() {
 
   return (
     <div style={{ maxWidth: '90%', margin: "40px auto", padding: 8, background: "#222", borderRadius: 8 }}>
-      <h2 style={{ color: "#fff", marginBottom: 24 }}>Ordens</h2>
-      <label style={{ color: '#fff', fontSize: 14, marginTop: 4 }}>Conta</label>
-      <select
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 24 }}>
+        <h2 style={{ color: "#fff", marginBottom: 0 }}>Ordens</h2>
+        {isLive && (
+          <span
+            title="Atualização em tempo real ativa"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '2px 8px',
+              borderRadius: 9999,
+              background: '#064e3b',
+              color: '#34d399',
+              fontSize: 12,
+              fontWeight: 700
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: '#10b981',
+                boxShadow: '0 0 6px #10b981'
+              }}
+            />
+            LIVE
+          </span>
+        )}
+      </div>
+      <label style={{ color: '#fff', fontSize: 14, marginTop: 4, display: 'block', marginBottom: 8 }}>Conta</label>
+      <AccountSelector
         value={selectedAccount}
-        onChange={handleAccountChange}
-        required
-        style={{ padding: 8, borderRadius: 4, border: "1px solid #444", marginBottom: 12 }}
-      >
-        <optgroup label="Estratégias">
-          {strategies.map((st:any)=>(
-            <option key={st.id} value={`strategy:${st.id}`}>{st.name}</option>
-          ))}
-        </optgroup>
-        <optgroup label="Master">
-          <option value="MASTER">MASTER - Todas as contas</option>
-        </optgroup>
-        <optgroup label="Contas Individuais">
-          {accounts.map((acc:any,idx:number)=>(
-            <option key={idx} value={acc.AccountID}>{acc.AccountID} - {acc.nomeCliente}</option>
-          ))}
-        </optgroup>
-      </select>
+        onChange={(val) => {
+          handleAccountChange({ target: { value: val } });
+          if (typeof val === 'string' && val && !val.startsWith('strategy:') && val !== 'MASTER') {
+            const acc = accounts.find((a:any) => a.AccountID === val);
+            if (acc) setSelectedBroker(acc.BrokerID);
+          }
+        }}
+        accounts={accounts}
+        strategies={strategies}
+      />
+      <div style={{ height: 8 }} />
       {/* Filtros adicionais */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
         {/* Período início */}
@@ -645,14 +916,7 @@ export default function OrdensPage() {
           Limpar
         </button>
       </div>
-      <button
-        type="button"
-        onClick={() => handleListOrders()}
-        disabled={loading}
-        style={{ marginBottom: 16, padding: 10, borderRadius: 4, background: "#0ea5e9", color: "#fff", fontWeight: 600, border: 0 }}
-      >
-        {loading ? "Carregando..." : "Listar ordens"}
-      </button>
+      
       <div style={{ marginTop: 16, color: "#fff", whiteSpace: "pre-wrap" }}>
         <strong>Log/Retorno:</strong>
         <div>{log}</div>
@@ -684,13 +948,20 @@ export default function OrdensPage() {
                 {batchIds.map((batchId, idx) => {
                   const group = batchGroups[batchId];
                   const headerOrder = group[0];
+                  const valoresConsolidados = calcularValoresConsolidados(group);
+                  
                   return (
                     <React.Fragment key={batchId}>
                       <tr style={{ background: idx % 2 === 0 ? '#222' : '#282828' }}>
                         <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700, color: '#0ea5e9' }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', marginRight: 4 }} onClick={() => setExpandedBatches(b => ({ ...b, [batchId]: !b[batchId] }))}>
                             {expandedBatches[batchId] ? <FiChevronDown /> : <FiChevronRight />}
-                            <span style={{ marginLeft: 2 }}>{headerOrder.account_id ?? '-'}</span>
+                            <span style={{ marginLeft: 2 }}>
+                              {headerOrder.account_id ?? '-'}
+                              <span style={{ fontSize: '10px', color: '#10b981', marginLeft: 4 }} title={`${group.length} ordens consolidadas`}>
+                                📊 {group.length}
+                              </span>
+                            </span>
                           </span>
                         </td>
                         <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700 }}>{headerOrder.Status}</td>
@@ -698,9 +969,18 @@ export default function OrdensPage() {
                         <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700 }}>{headerOrder.side ?? '-'}</td>
                         <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700 }}>{headerOrder.ticker ?? '-'}</td>
                         <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700 }}>{headerOrder.price !== undefined && headerOrder.price !== null ? Number(headerOrder.price).toFixed(2) : '-'}</td>
-                        <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700 }}>{headerOrder.quantity ?? '-'}</td>
-                        <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700 }}>{headerOrder.TradedQuantity ?? '-'}</td>
-                        <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700 }}>{headerOrder.LeavesQuantity ?? '-'}</td>
+                        <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700, color: '#10b981' }} 
+                            title={`Consolidado: ${valoresConsolidados.totalQuantity.toLocaleString()} ações (${group.length} ordens)`}>
+                          {valoresConsolidados.totalQuantity.toLocaleString()}
+                        </td>
+                        <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700, color: '#10b981' }}
+                            title={`Consolidado: ${valoresConsolidados.totalTradedQuantity.toLocaleString()} ações executadas (${group.length} ordens)`}>
+                          {valoresConsolidados.totalTradedQuantity.toLocaleString()}
+                        </td>
+                        <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700, color: '#10b981' }}
+                            title={`Consolidado: ${valoresConsolidados.totalLeavesQuantity.toLocaleString()} ações pendentes (${group.length} ordens)`}>
+                          {valoresConsolidados.totalLeavesQuantity.toLocaleString()}
+                        </td>
                         <td style={{ padding: 6, border: '1px solid #444', minWidth: 80, maxWidth: 140, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: headerOrder.master_batch_id ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}
                           title={headerOrder.master_batch_id}
                           onClick={() => headerOrder.master_batch_id && copyToClipboard(headerOrder.master_batch_id)}
@@ -711,12 +991,11 @@ export default function OrdensPage() {
                                 : headerOrder.master_batch_id)
                             : '-'}
                         </td>
-                        <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700 }}>
-                          {headerOrder.preco_medio_executado !== undefined
-                            ? Number(headerOrder.preco_medio_executado).toFixed(2)
-                            : (headerOrder.AveragePrice !== undefined && headerOrder.AveragePrice !== null
-                                ? Number(headerOrder.AveragePrice).toFixed(2)
-                                : '-')}
+                        <td style={{ padding: 6, border: '1px solid #444', fontWeight: 700, color: '#10b981' }}
+                            title={`Preço médio ponderado consolidado: ${valoresConsolidados.precoMedioConsolidado.toFixed(2)} (${group.length} ordens)`}>
+                          {valoresConsolidados.precoMedioConsolidado > 0 
+                            ? valoresConsolidados.precoMedioConsolidado.toFixed(2)
+                            : '-'}
                         </td>
                         <td
                           style={{
@@ -735,10 +1014,28 @@ export default function OrdensPage() {
                           {headerOrder.TextMessage ?? '-'}
                         </td>
                         <td style={{ padding: 6, border: '1px solid #444', textAlign: 'center', fontWeight: 700 }}>
-                          <button title="Editar lote" onClick={() => {
+                          <button title="Editar lote" onClick={async () => {
                             const strategyId = detectStrategyFromOrders(group);
                             const strategyName = strategyId ? strategies.find(s => s.id === strategyId)?.name : undefined;
-                            setEditBatch({ batchId, orders: group, strategyId, strategyName });
+                            const icebergId = detectIcebergFromOrders(group);
+                            let icebergInfo = null;
+                            let isIceberg = false;
+                            let defaultLote = undefined;
+                            
+                            if (icebergId) {
+                              icebergInfo = await fetchIcebergInfo(icebergId);
+                              isIceberg = !!icebergInfo;
+                              defaultLote = icebergInfo?.lote;
+                            }
+                            
+                            setEditBatch({ 
+                              batchId, 
+                              orders: group, 
+                              strategyId, 
+                              strategyName,
+                              isIceberg,
+                              defaultLote
+                            });
                             // Buscar valores corretos para a estratégia
                             fetchValoresForStrategy(strategyId);
                           }} style={{ marginRight: 6, color: '#0ea5e9', background: 'transparent', border: 'none', cursor: 'pointer' }}>
@@ -898,12 +1195,17 @@ export default function OrdensPage() {
               body: JSON.stringify({
                 master_batch_id: editBatch.batchId,
                 price: data.price,
-                baseQty: data.baseQty
+                baseQty: data.baseQty,
+                new_lote: data.lote
               })
             });
             const result = await res.json();
             if (res.ok) {
-              alert(`Edição em lote concluída! Sucesso: ${result.results.filter((r: any) => r.success).length}, Falha: ${result.results.filter((r: any) => !r.success).length}`);
+              let message = `Edição em lote concluída! Sucesso: ${result.results.filter((r: any) => r.success).length}, Falha: ${result.results.filter((r: any) => !r.success).length}`;
+              if (result.iceberg_lote_updated) {
+                message += '\n\n✅ Tamanho do lote da iceberg foi atualizado com sucesso!';
+              }
+              alert(message);
             } else {
               alert(result.detail || "Erro ao editar lote.");
             }
@@ -919,6 +1221,8 @@ export default function OrdensPage() {
         defaultBaseQty={editBatch?.orders[0]?.master_base_qty ?? editBatch?.orders.reduce((sum, o) => sum + (o.quantity || 0), 0)}
         strategyId={editBatch?.strategyId}
         strategyName={editBatch?.strategyName}
+        isIceberg={editBatch?.isIceberg}
+        defaultLote={editBatch?.defaultLote}
       />
       {/* Modal de exclusão em lote */}
       <DeleteBatchModal

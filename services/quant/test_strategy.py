@@ -58,7 +58,7 @@ def generate_test_data(start_price: float = 118000, num_candles: int = 100) -> L
 
 def simulate_strategy(prices: List[float]) -> Dict:
     """Simula a execução da estratégia Voltaamedia_Bollinger"""
-    bb = BollingerBandsTest(period=20, std_dev=2.0)
+    bb = BollingerBandsTest(period=20, std_dev=1.0)
     
     position = 0
     trades = []

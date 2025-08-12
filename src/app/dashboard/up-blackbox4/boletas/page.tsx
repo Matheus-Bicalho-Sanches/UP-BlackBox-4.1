@@ -3,6 +3,36 @@ import { useState, useEffect } from "react";
 import app, { db } from "@/config/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { v4 as uuidv4 } from 'uuid';
+import AccountSelector from "@/components/AccountSelector";
+
+/**
+ * Função helper para calcular quantidades - mesma lógica do backend Python
+ * Garante consistência entre frontend e backend
+ */
+function calcularQuantidade(quantity: number, valorInvestido: number): number {
+  const fator = valorInvestido / 10000;
+  // Usar exatamente a mesma lógica do Python: max(1, int(math.floor(quantity * fator)))
+  return Math.max(1, Math.floor(quantity * fator));
+}
+
+/**
+ * Página de Boletas - UP BlackBox 4.0
+ * 
+ * CONTEXTO:
+ * - Sistema de envio de ordens para execução manual ou automatizada
+ * - Suporte a ordens individuais, em lote (MASTER) e iceberg
+ * - Integração com estratégias para alocação proporcional de capital
+ * 
+ * FUNCIONALIDADES:
+ * - Envio de ordens por conta individual
+ * - Envio de ordens consolidadas (MASTER) com alocação proporcional
+ * - Ordens iceberg para execução gradual
+ * - Fechamento de posições em lote
+ * 
+ * IMPORTANTE:
+ * - MASTER não é conta real, apenas consolidação de ordens
+ * - Alocação proporcional baseada no valor investido por cliente
+ */
 
 const EXCHANGES = [
   { value: "B", label: "B3 (Ações)" },
@@ -51,6 +81,12 @@ export default function BoletasPage() {
   const [closeGroupSize, setCloseGroupSize] = useState(1);
   const [closeLog, setCloseLog] = useState("");
   const [closeLoading, setCloseLoading] = useState(false);
+
+  // Estados para TWAP
+  const [icebergTwapEnabled, setIcebergTwapEnabled] = useState(false);
+  const [icebergTwapInterval, setIcebergTwapInterval] = useState(30);
+  const [icebergMasterTwapEnabled, setIcebergMasterTwapEnabled] = useState(false);
+  const [icebergMasterTwapInterval, setIcebergMasterTwapInterval] = useState(30);
 
   useEffect(() => {
     async function fetchAccounts() {
@@ -104,7 +140,7 @@ export default function BoletasPage() {
     fetchStrategies();
   }, []);
 
-  function handleAccountChange(e: React.ChangeEvent<HTMLSelectElement>) {
+  function handleAccountChange(e: { target: { value: string } }) {
     const value = e.target.value;
     setSelectedAccount(value);
     // only set broker if selecting real account
@@ -130,7 +166,7 @@ export default function BoletasPage() {
     }
   }
 
-  function handleIcebergAccountChange(e: React.ChangeEvent<HTMLSelectElement>) {
+  function handleIcebergAccountChange(e: { target: { value: string } }) {
     const value = e.target.value;
     setIcebergAccount(value);
     if (!value.startsWith('strategy:') && value !== "MASTER") {
@@ -225,9 +261,9 @@ export default function BoletasPage() {
             continue;
           }
           const valorInvestido = Number(registro["Valor Investido"] || 0);
-          const fator = valorInvestido / 10000;
-          const quantidadeEnviada = Math.floor(quantity * fator);
+          const quantidadeEnviada = calcularQuantidade(quantity, valorInvestido);
           if (quantidadeEnviada <= 0) {
+            const fator = valorInvestido / 10000;
             results.push(`Conta ${acc.AccountID} (Broker ${acc.BrokerID}): Valor Investido = R$ ${valorInvestido.toFixed(2)}, fator = ${fator.toFixed(3)}, quantidade = 0 (NÃO ENVIADA)`);
             continue;
           }
@@ -240,6 +276,7 @@ export default function BoletasPage() {
               body: JSON.stringify(orderPayload),
             });
             const data = await res.json();
+            const fator = valorInvestido / 10000;
             if (res.ok) {
               results.push(`Conta ${acc.AccountID}: Valor Investido = R$ ${valorInvestido.toFixed(2)}, fator = ${fator.toFixed(3)}, quantidade = ${quantidadeEnviada} → ${data.log || "Ordem enviada com sucesso!"}`);
             } else {
@@ -281,6 +318,21 @@ export default function BoletasPage() {
     e.preventDefault();
     setIcebergLoading(true);
     setIcebergLog("");
+    
+    // Validação TWAP
+    const isTwapEnabled = icebergAccount.startsWith('strategy:') || icebergAccount === "MASTER" 
+      ? icebergMasterTwapEnabled 
+      : icebergTwapEnabled;
+    const twapInterval = icebergAccount.startsWith('strategy:') || icebergAccount === "MASTER"
+      ? icebergMasterTwapInterval
+      : icebergTwapInterval;
+      
+    if (isTwapEnabled && (twapInterval < 1 || twapInterval > 3600)) {
+      setIcebergLog("Tempo entre ordens deve estar entre 1 e 3600 segundos");
+      setIcebergLoading(false);
+      return;
+    }
+    
     try {
       let endpoint = "http://localhost:8000/order_iceberg";
       let payload: any = {
@@ -291,7 +343,10 @@ export default function BoletasPage() {
         lote: Number(icebergLote),
         price: Number(icebergPrice),
         side: icebergSide,
-        exchange: icebergExchange
+        exchange: icebergExchange,
+        // Parâmetros TWAP
+        twap_enabled: isTwapEnabled,
+        twap_interval: isTwapEnabled ? Number(twapInterval) : null
       };
       if (icebergAccount.startsWith('strategy:')) {
         endpoint = "http://localhost:8000/order_iceberg_master";
@@ -375,30 +430,20 @@ export default function BoletasPage() {
           {boletaAberta && (
             <>
               <form onSubmit={handleOrder} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <label style={{ color: '#fff', fontSize: 14, marginTop: 4 }}>Conta</label>
-                <select
-                  value={selectedAccount}
-                  onChange={handleAccountChange}
-                  required
-                  style={{ padding: 8, borderRadius: 4, border: "1px solid #444" }}
-                >
-                  <option value="" disabled selected>Selecione...</option>
-                  <optgroup label="Estratégias">
-                    {strategies.map(st => (
-                      <option key={st.id} value={`strategy:${st.id}`}>{st.name}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Master">
-                    <option value="MASTER">MASTER - Todas as contas</option>
-                  </optgroup>
-                  <optgroup label="Contas Individuais">
-                    {accounts.map((acc, idx) => (
-                      <option key={idx} value={acc.AccountID}>
-                        {acc.AccountID} - {acc.nomeCliente}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
+                <label style={{ color: '#fff', fontSize: 14, marginTop: 4, display: 'block', marginBottom: 8 }}>Conta</label>
+                <AccountSelector
+                  value={selectedAccount || "MASTER"}
+                  onChange={(val) => {
+                    handleAccountChange({ target: { value: val } });
+                    if (typeof val === 'string' && val && !val.startsWith('strategy:') && val !== 'MASTER') {
+                      const acc = accounts.find((a:any) => a.AccountID === val);
+                      if (acc) setSelectedBroker(acc.BrokerID || 0);
+                    }
+                  }}
+                  accounts={accounts}
+                  strategies={strategies}
+                />
+                <div style={{ height: 8 }} />
                 
                 {/* Campo de estratégia para contas individuais */}
                 {selectedAccount && !selectedAccount.startsWith('strategy:') && selectedAccount !== 'MASTER' && (
@@ -432,7 +477,7 @@ export default function BoletasPage() {
                   type="text"
                   placeholder="Ativo (ex: PETR4)"
                   value={ticker}
-                  onChange={e => setTicker(e.target.value)}
+                  onChange={e => setTicker(e.target.value.toUpperCase())}
                   required
                   style={{ padding: 8, borderRadius: 4, border: "1px solid #444" }}
                 />
@@ -468,20 +513,47 @@ export default function BoletasPage() {
                 <button type="submit" disabled={loading} style={{ padding: 10, borderRadius: 4, background: "#06b6d4", color: "#fff", fontWeight: 600, border: 0 }}>
                   {loading ? "Enviando..." : "Enviar ordem"}
                 </button>
-              </form>
-              <div style={{ marginTop: 24, color: "#fff", whiteSpace: "pre-wrap" }}>
-                <strong>Log/Retorno:</strong>
-                <div>{log}</div>
-              </div>
+                            </form>
+              
+              {/* Mensagem de confirmação/erro */}
+              {log && (
+                <div style={{ 
+                  marginTop: 16, 
+                  padding: 12, 
+                  borderRadius: 4, 
+                  background: (log.includes('sucesso') || log.includes('Sucesso') || log.includes('enviada') || log.includes('Enviada')) ? '#1a1a1a' : '#2a1a1a',
+                  border: (log.includes('sucesso') || log.includes('Sucesso') || log.includes('enviada') || log.includes('Enviada')) ? '1px solid #10b981' : '1px solid #dc2626',
+                  color: (log.includes('sucesso') || log.includes('Sucesso') || log.includes('enviada') || log.includes('Enviada')) ? '#10b981' : '#dc2626',
+                  fontSize: 14,
+                  fontWeight: 500
+                }}>
+                  {(log.includes('sucesso') || log.includes('Sucesso') || log.includes('enviada') || log.includes('Enviada')) ? '✅ Ordem enviada com sucesso.' : '❌ Ordem NÃO enviada. Verifique o que ocorreu!'}
+                </div>
+              )}
+
               {/* resumo alocação */}
               {selectedAccount.startsWith('strategy:') && allocSummary.length > 0 && (
                 <div style={{ maxHeight: 120, overflowY: 'auto', fontSize: 12, color:'#fff', border:'1px solid #333', borderRadius:4, padding:6 }}>
                   <b>Alocação estratégia:</b>
-                  <ul style={{margin:4, paddingLeft:18}}>
-                    {allocSummary.map((al:any)=>(
-                      <li key={al.account_id}>{al.account_id}: R$ {Number(al.valor_investido||0).toLocaleString('pt-BR')}</li>
-                    ))}
-                  </ul>
+                  {(() => {
+                    const totalValor = allocSummary.reduce((sum, al) => sum + Number(al.valor_investido || 0), 0);
+                    const totalQuantidade = allocSummary.reduce((sum, al) => sum + calcularQuantidade(quantity, Number(al.valor_investido || 0)), 0);
+                    const operacao = side === 'buy' ? 'COMPRA' : 'VENDE';
+                    return (
+                      <>
+                        <div style={{marginBottom: 8, fontWeight: 'bold', color: '#06b6d4'}}>
+                          TOTAL: R$ {totalValor.toLocaleString('pt-BR')} - {operacao} {totalQuantidade} unidades
+                        </div>
+                        <ul style={{margin:4, paddingLeft:18}}>
+                          {allocSummary.map((al:any)=>(
+                            <li key={al.account_id}>
+                              {al.account_id}: R$ {Number(al.valor_investido||0).toLocaleString('pt-BR')} - {operacao} {calcularQuantidade(quantity, Number(al.valor_investido || 0))} unidades
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </>
@@ -498,30 +570,20 @@ export default function BoletasPage() {
           {icebergAberta && (
             <>
               <form onSubmit={handleIcebergOrder} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <label style={{ color: '#fff', fontSize: 14, marginTop: 4 }}>Conta</label>
-                <select
-                  value={icebergAccount}
-                  onChange={handleIcebergAccountChange}
-                  required
-                  style={{ padding: 8, borderRadius: 4, border: "1px solid #444" }}
-                >
-                  <option value="" disabled selected>Selecione...</option>
-                  <optgroup label="Estratégias">
-                    {strategies.map(st => (
-                      <option key={st.id} value={`strategy:${st.id}`}>{st.name}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Master">
-                    <option value="MASTER">MASTER - Todas as contas</option>
-                  </optgroup>
-                  <optgroup label="Contas Individuais">
-                    {accounts.map((acc, idx) => (
-                      <option key={idx} value={acc.AccountID}>
-                        {acc.AccountID} - {acc.nomeCliente}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
+                <label style={{ color: '#fff', fontSize: 14, marginTop: 4, display: 'block', marginBottom: 8 }}>Conta</label>
+                <AccountSelector
+                  value={icebergAccount || "MASTER"}
+                  onChange={(val) => {
+                    handleIcebergAccountChange({ target: { value: val } });
+                    if (typeof val === 'string' && val && !val.startsWith('strategy:') && val !== 'MASTER') {
+                      const acc = accounts.find((a:any) => a.AccountID === val);
+                      if (acc) setIcebergBroker(acc.BrokerID || 0);
+                    }
+                  }}
+                  accounts={accounts}
+                  strategies={strategies}
+                />
+                <div style={{ height: 8 }} />
                 
                 {/* Campo de estratégia para contas individuais no iceberg */}
                 {icebergAccount && !icebergAccount.startsWith('strategy:') && icebergAccount !== 'MASTER' && (
@@ -555,7 +617,7 @@ export default function BoletasPage() {
                   type="text"
                   placeholder="Ativo (ex: PETR4)"
                   value={icebergTicker}
-                  onChange={e => setIcebergTicker(e.target.value)}
+                  onChange={e => setIcebergTicker(e.target.value.toUpperCase())}
                   required
                   style={{ padding: 8, borderRadius: 4, border: "1px solid #444" }}
                 />
@@ -593,6 +655,7 @@ export default function BoletasPage() {
                     />
                   </>
                 )}
+                
                 <label style={{ color: '#fff', fontSize: 14, marginTop: 4 }}>Preço</label>
                 <input
                   type="number"
@@ -612,22 +675,139 @@ export default function BoletasPage() {
                   <option value="buy">Compra</option>
                   <option value="sell">Venda</option>
                 </select>
+                
+                {/* Campos TWAP - CORREÇÃO: Apenas um checkbox baseado no tipo de conta */}
+                {/* Evita duplicação do checkbox "Ligar TWAP" */}
+                {(icebergAccount.startsWith('strategy:') || icebergAccount === "MASTER") ? (
+                  // TWAP para Iceberg Master (estratégias ou MASTER)
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                      <input
+                        type="checkbox"
+                        id="icebergMasterTwapEnabled"
+                        checked={icebergMasterTwapEnabled}
+                        onChange={e => setIcebergMasterTwapEnabled(e.target.checked)}
+                        style={{ margin: 0 }}
+                      />
+                      <label htmlFor="icebergMasterTwapEnabled" style={{ color: '#fff', fontSize: 14, margin: 0 }}>
+                        Ligar TWAP
+                      </label>
+                    </div>
+
+                    {icebergMasterTwapEnabled && (
+                      <>
+                        <label style={{ color: '#fff', fontSize: 14, marginTop: 4 }}>
+                          Tempo entre ordens (segundos)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={3600}
+                          placeholder="30"
+                          value={icebergMasterTwapInterval}
+                          onChange={e => setIcebergMasterTwapInterval(Number(e.target.value))}
+                          style={{ padding: 8, borderRadius: 4, border: "1px solid #444" }}
+                        />
+                        <div style={{ 
+                          color: '#06b6d4', 
+                          fontSize: 12, 
+                          marginTop: 4,
+                          padding: 8,
+                          background: '#1a1a1a',
+                          borderRadius: 4
+                        }}>
+                          ⏱️ TWAP ativo: {icebergMasterTwapInterval}s entre ordens
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  // TWAP para Iceberg Simples (contas individuais)
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                      <input
+                        type="checkbox"
+                        id="icebergTwapEnabled"
+                        checked={icebergTwapEnabled}
+                        onChange={e => setIcebergTwapEnabled(e.target.checked)}
+                        style={{ margin: 0 }}
+                      />
+                      <label htmlFor="icebergTwapEnabled" style={{ color: '#fff', fontSize: 14, margin: 0 }}>
+                        Ligar TWAP
+                      </label>
+                    </div>
+
+                    {icebergTwapEnabled && (
+                      <>
+                        <label style={{ color: '#fff', fontSize: 14, marginTop: 4 }}>
+                          Tempo entre ordens (segundos)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={3600}
+                          placeholder="30"
+                          value={icebergTwapInterval}
+                          onChange={e => setIcebergTwapInterval(Number(e.target.value))}
+                          style={{ padding: 8, borderRadius: 4, border: "1px solid #444" }}
+                        />
+                        <div style={{ 
+                          color: '#06b6d4', 
+                          fontSize: 12, 
+                          marginTop: 4,
+                          padding: 8,
+                          background: '#1a1a1a',
+                          borderRadius: 4
+                        }}>
+                          ⏱️ TWAP ativo: {icebergTwapInterval}s entre ordens
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
                 <button type="submit" disabled={icebergLoading} style={{ padding: 10, borderRadius: 4, background: "#06b6d4", color: "#fff", fontWeight: 600, border: 0 }}>
                   {icebergLoading ? "Enviando..." : "Enviar ordem iceberg"}
                 </button>
-              </form>
-              <div style={{ color: '#fff', marginTop: 16 }}>
-                <strong>Log/Retorno:</strong>
-                <div>{icebergLog}</div>
-              </div>
+                            </form>
+              
+              {/* Mensagem de confirmação/erro */}
+              {icebergLog && (
+                <div style={{ 
+                  marginTop: 16, 
+                  padding: 12, 
+                  borderRadius: 4, 
+                  background: (icebergLog.includes('sucesso') || icebergLog.includes('Sucesso') || icebergLog.includes('iniciada') || icebergLog.includes('Iniciada')) ? '#1a1a1a' : '#2a1a1a',
+                  border: (icebergLog.includes('sucesso') || icebergLog.includes('Sucesso') || icebergLog.includes('iniciada') || icebergLog.includes('Iniciada')) ? '1px solid #10b981' : '1px solid #dc2626',
+                  color: (icebergLog.includes('sucesso') || icebergLog.includes('Sucesso') || icebergLog.includes('iniciada') || icebergLog.includes('Iniciada')) ? '#10b981' : '#dc2626',
+                  fontSize: 14,
+                  fontWeight: 500
+                }}>
+                  {(icebergLog.includes('sucesso') || icebergLog.includes('Sucesso') || icebergLog.includes('iniciada') || icebergLog.includes('Iniciada')) ? '✅ Ordem enviada com sucesso.' : '❌ Ordem NÃO enviada. Verifique o que ocorreu!'}
+                </div>
+              )}
+
               {icebergAccount.startsWith('strategy:') && iceAllocSummary.length > 0 && (
                 <div style={{ maxHeight: 120, overflowY: 'auto', fontSize: 12, color:'#fff', border:'1px solid #333', borderRadius:4, padding:6, marginTop:8 }}>
                   <b>Alocação estratégia:</b>
-                  <ul style={{margin:4, paddingLeft:18}}>
-                    {iceAllocSummary.map((al:any)=>(
-                      <li key={al.account_id}>{al.account_id}: R$ {Number(al.valor_investido||0).toLocaleString('pt-BR')}</li>
-                    ))}
-                  </ul>
+                  {(() => {
+                    const totalValor = iceAllocSummary.reduce((sum, al) => sum + Number(al.valor_investido || 0), 0);
+                    const totalQuantidade = iceAllocSummary.reduce((sum, al) => sum + calcularQuantidade(icebergQuantity, Number(al.valor_investido || 0)), 0);
+                    const operacao = icebergSide === 'buy' ? 'COMPRA' : 'VENDE';
+                    return (
+                      <>
+                        <div style={{marginBottom: 8, fontWeight: 'bold', color: '#06b6d4'}}>
+                          TOTAL: R$ {totalValor.toLocaleString('pt-BR')} - {operacao} {totalQuantidade} unidades
+                        </div>
+                        <ul style={{margin:4, paddingLeft:18}}>
+                          {iceAllocSummary.map((al:any)=>(
+                            <li key={al.account_id}>
+                              {al.account_id}: R$ {Number(al.valor_investido||0).toLocaleString('pt-BR')} - {operacao} {calcularQuantidade(icebergQuantity, Number(al.valor_investido || 0))} unidades
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </>
@@ -638,7 +818,7 @@ export default function BoletasPage() {
           <h3 style={{ color: "#fff", marginBottom: 12 }}>Fechar / Reduzir Batch</h3>
           <form onSubmit={handleCloseBatch} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <input type="text" placeholder="Master Batch ID" value={closeBatchId} onChange={e=>setCloseBatchId(e.target.value)} required style={{ padding: 8, borderRadius: 4, border: '1px solid #444' }} />
-            <input type="text" placeholder="Ticker" value={closeTicker} onChange={e=>setCloseTicker(e.target.value)} required style={{ padding: 8, borderRadius: 4, border: '1px solid #444' }} />
+            <input type="text" placeholder="Ticker" value={closeTicker} onChange={e=>setCloseTicker(e.target.value.toUpperCase())} required style={{ padding: 8, borderRadius: 4, border: '1px solid #444' }} />
             <select value={closeExchange} onChange={e=>setCloseExchange(e.target.value)} style={{ padding: 8, borderRadius: 4, border: '1px solid #444' }}>
               {EXCHANGES.map(ex=> <option key={ex.value} value={ex.value}>{ex.label}</option>)}
             </select>

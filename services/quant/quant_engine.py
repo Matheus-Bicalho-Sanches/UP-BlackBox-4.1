@@ -686,7 +686,7 @@ class QuantEngine:
             if result and result.get("order_id"):
                 # Registrar ordem ativa
                 new_order = ActiveOrder(
-                    strategy_id=strategy.id,
+                    strategy_id=strategy.carteira_blackbox,  # Usar carteira_blackbox para consistência
                     ticker=ticker,
                     side=side,
                     quantity=quantity,
@@ -724,18 +724,20 @@ class QuantEngine:
         current_price = closes[-1]
         
         # Calcular Bollinger Bands
-        bb = BollingerBands(period=7, std_dev=2.0)
+        bb = BollingerBands(period=7, std_dev=1.0)
         bands = bb.calculate(closes)
         
         if bands['middle'] == 0:
             logger.warning(f"⚠️ Não foi possível calcular Bollinger Bands para {ticker}")
             return
         
-        # Obter posição atual do Firebase
-        current_qty = await self.get_strategy_position(strategy.id, ticker)
+        # Obter posição atual do Firebase (usar carteira_blackbox ID)
+        logger.info(f"🔧 DEBUG: Buscando posição para strategy_id='{strategy.carteira_blackbox}' ticker='{ticker}'")
+        current_qty = await self.get_strategy_position(strategy.carteira_blackbox, ticker)
+        logger.info(f"🔧 DEBUG: Posição encontrada: {current_qty}")
         
-        # Verificar se tem ordem ativa
-        order_key = f"{strategy.id}_{ticker}"
+        # Verificar se tem ordem ativa (usar carteira_blackbox ID para consistência)
+        order_key = f"{strategy.carteira_blackbox}_{ticker}"
         active_order = self.active_orders.get(order_key)
         
         if active_order:
@@ -743,17 +745,22 @@ class QuantEngine:
         else:
             order_status = "Sem ordem ativa"
         
-        # Calcular quantidade base da estratégia
-        base_quantity = int(strategy.tamanho_position) if strategy.tamanho_position > 0 else 1
+        # Calcular quantidade base da estratégia (1 contrato a cada 10 mil reais alocados)
+        # tamanho_position = valor em reais alocado na estratégia
+        valor_alocado = strategy.tamanho_position
+        base_quantity = max(1, int(valor_alocado / 10000))  # 1 contrato a cada 10 mil reais
+        
+        # IMPORTANTE: O BlackBox vai multiplicar essa quantidade base pelo fator de cada conta
+        # Então enviamos a quantidade base, não a total esperada
         
         # Log das condições atuais
         logger.info(f"📊 {strategy.nome} | {ticker} | Preço: {current_price:.2f} | "
                    f"BB: L={bands['lower']:.2f} M={bands['middle']:.2f} U={bands['upper']:.2f} | "
-                   f"Posição: {current_qty} | Base Qty: {base_quantity} | {order_status}")
+                   f"Posição: {current_qty} | Valor Alocado: R${valor_alocado:,.2f} | Qty: {base_quantity} | {order_status}")
         
         # Debug adicional
         logger.debug(f"🔧 Debug: order_key='{order_key}', ordens_ativas={len(self.active_orders)}, "
-                    f"posição_atual={current_qty}, tamanho_position={strategy.tamanho_position}")
+                    f"posição_atual={current_qty}, valor_alocado=R${valor_alocado:,.2f}, qty_calculada={base_quantity}")
         
         # LÓGICA DE ORDENS LIMITADAS SEMPRE ATIVAS
         
@@ -769,8 +776,8 @@ class QuantEngine:
                 reason=f"Ordem de compra aguardando preço atingir banda inferior ({bands['lower']:.2f})"
             )
             
-        else:
-            # COM POSIÇÃO: Manter ordem de venda na média BB
+        elif current_qty > 0:
+            # COM POSIÇÃO POSITIVA: Manter ordem de venda na média BB
             await self.manage_active_order(
                 strategy=strategy,
                 ticker=ticker,
@@ -780,6 +787,10 @@ class QuantEngine:
                 order_type="sell_limit",
                 reason=f"Ordem de venda aguardando preço atingir média BB ({bands['middle']:.2f})"
             )
+        else:
+            # POSIÇÃO NEGATIVA: Não fazer nada, aguardar posição voltar ao positivo
+            logger.warning(f"⚠️ Posição negativa detectada: {current_qty} contratos. Aguardando posição voltar ao positivo antes de enviar novas ordens.")
+            return
     
     async def process_strategy(self, strategy: QuantStrategy):
         """Processa uma estratégia específica"""

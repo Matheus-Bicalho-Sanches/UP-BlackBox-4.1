@@ -1,3 +1,21 @@
+"""
+Router de Alocações - UP BlackBox 4.0
+
+CONTEXTO:
+- Alocações definem quanto cada cliente investe em cada estratégia
+- Permite alocação proporcional de capital por cliente
+- Base para cálculo de quantidades em ordens consolidadas (MASTER)
+
+FUNCIONALIDADES:
+- Criar/editar/excluir alocações de clientes por estratégia
+- Definir valor investido por cliente
+- Consultar alocações por estratégia ou cliente
+
+IMPORTANTE:
+- Sistema em produção - não usar fallbacks fictícios
+- Valores são usados para cálculo proporcional de ordens
+"""
+
 from fastapi import APIRouter, HTTPException, Body, Query
 from firebase_admin import firestore
 

@@ -3,11 +3,27 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+/**
+ * UP BlackBox 4.0 - Sistema de Gestão de Carteiras
+ * 
+ * ARQUITETURA:
+ * - A gestora trabalha com gestão "manual" de carteiras e estratégias automatizadas
+ * - Carteiras atuais: UP BlackBox FIIs (manual) e UP BlackBox Multi (manual → automatizada)
+ * - "MASTER" é uma abstração para consolidar dados de clientes por estratégia
+ * - Não há contas Master reais, apenas consolidação de dados
+ * 
+ * SEGURANÇA:
+ * - Autenticação via /login (apenas colaboradores da empresa)
+ * - Todos os usuários têm o mesmo nível de permissão
+ * - Sistema já em produção - não usar fallbacks fictícios
+ */
+
 const tabs = [
   { name: "Login", href: "/dashboard/up-blackbox4/login" },
   { name: "Posições", href: "/dashboard/up-blackbox4/posicoes" },
   { name: "Ordens", href: "/dashboard/up-blackbox4/ordens" },
   { name: "Boletas", href: "/dashboard/up-blackbox4/boletas" },
+  { name: "Sync", href: "/dashboard/up-blackbox4/sync" },
   { name: "Saldo", href: "/dashboard/up-blackbox4/saldo" },
   { name: "Estratégias", href: "/dashboard/up-blackbox4/estrategias" },
   { name: "Contas", href: "/dashboard/up-blackbox4/contas" },

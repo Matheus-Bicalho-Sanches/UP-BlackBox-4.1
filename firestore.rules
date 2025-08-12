@@ -178,9 +178,95 @@ service cloud.firestore {
           : true);
     }
 
-    // Default deny all
-    match /{document=**} {
-      allow read, write: if false;
+    // Regras para a coleção strategies (Estratégias do UP BlackBox 4.0)
+    match /strategies/{strategyId} {
+      // Qualquer usuário autenticado pode ler as estratégias
+      allow read: if isAuthenticated();
+      // Usuários autenticados podem criar/editar/excluir estratégias
+      allow write: if isAuthenticated()
+        && (request.method == 'create' ? 
+          request.resource.data.keys().hasAll(['name']) &&
+          request.resource.data.name is string &&
+          request.resource.data.name.size() > 0
+          : true);
     }
-  }
-} 
+
+    // Regras para a coleção strategyAllocations (Alocações de Estratégias)
+    match /strategyAllocations/{allocationId} {
+      // Qualquer usuário autenticado pode ler as alocações de estratégias
+      allow read: if isAuthenticated();
+      // Usuários autenticados podem criar/editar/excluir alocações
+      allow write: if isAuthenticated()
+        && (request.method == 'create' ? 
+          request.resource.data.keys().hasAll(['account_id', 'broker_id', 'strategy_id', 'valor_investido']) &&
+          request.resource.data.account_id is string &&
+          request.resource.data.broker_id is number &&
+          request.resource.data.strategy_id is string &&
+          request.resource.data.valor_investido is number &&
+          request.resource.data.valor_investido > 0
+          : true);
+    }
+
+    // Regras para a coleção posicoesAjusteManual (Ajustes Manuais de Posições)
+    match /posicoesAjusteManual/{ajusteId} {
+      // Qualquer usuário autenticado pode ler os ajustes manuais
+      allow read: if isAuthenticated();
+      // Usuários autenticados podem criar/editar/excluir ajustes manuais
+      allow write: if isAuthenticated()
+        && (request.method == 'create' ? 
+          request.resource.data.keys().hasAll(['account_id', 'ticker', 'strategy_id', 'quantidade_ajuste', 'created_at']) &&
+          request.resource.data.account_id is string &&
+          request.resource.data.ticker is string &&
+          request.resource.data.strategy_id is string &&
+          request.resource.data.quantidade_ajuste is number &&
+          request.resource.data.created_at is string &&
+          request.resource.data.created_at.matches('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$')
+          : true);
+    }
+
+    // Regras para a coleção referencePortfolios (Carteiras de Referência)
+    match /referencePortfolios/{portfolioId} {
+      // Qualquer usuário autenticado pode ler as carteiras de referência
+      allow read: if isAuthenticated();
+      // Usuários autenticados podem criar/editar/excluir carteiras de referência
+      allow write: if isAuthenticated()
+        && (request.method == 'create' ? 
+          request.resource.data.keys().hasAll(['strategy_id', 'strategy_name', 'name', 'positions', 'total_value', 'is_active']) &&
+          request.resource.data.strategy_id is string &&
+          request.resource.data.strategy_name is string &&
+          request.resource.data.name is string &&
+          request.resource.data.name.size() > 0 &&
+          request.resource.data.positions is list &&
+          request.resource.data.total_value is number &&
+          request.resource.data.total_value >= 0 &&
+          request.resource.data.is_active is bool
+          : true);
+    }
+
+    // Regras para a coleção CarteirasDeRefDLL (Carteiras de Referência - Aba Sync)
+    match /CarteirasDeRefDLL/{positionId} {
+      // Qualquer usuário autenticado pode ler as posições de referência
+      allow read: if isAuthenticated();
+      // Usuários autenticados podem criar/editar/excluir posições de referência
+      allow write: if isAuthenticated()
+        && (request.method == 'create' ? 
+          request.resource.data.keys().hasAll(['strategy_id', 'ticker', 'price', 'quantity']) &&
+          request.resource.data.strategy_id is string &&
+          request.resource.data.strategy_id.size() > 0 &&
+          request.resource.data.ticker is string &&
+          request.resource.data.ticker.size() > 0 &&
+          request.resource.data.price is number &&
+          request.resource.data.price > 0 &&
+          request.resource.data.quantity is number &&
+          request.resource.data.quantity != 0 &&
+          (request.resource.data.percentage == null || 
+           (request.resource.data.percentage is number))
+          : true);
+    }
+
+         // Default deny all
+     match /{document=**} {
+       allow read, write: if false;
+     }
+   }
+ }

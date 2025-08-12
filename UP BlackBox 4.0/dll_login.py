@@ -75,7 +75,7 @@ OrderChangeCallbackType = WINFUNCTYPE(
 def order_change_callback(rAssetID, nCorretora, nQtd, nTradedQtd, nLeavesQtd, nSide, dPrice, dStopPrice, dAvgPrice, nProfitID, TipoOrdem, Conta, Titular, ClOrdID, Status, Date, TextMessage):
     try:
         # Importa aqui para evitar import circular
-        from main import atualizar_ordem_firebase, atualizar_posicoes_firebase, atualizar_posicoes_firebase_strategy, db
+        from main import atualizar_ordem_firebase, atualizar_posicao_incremental, atualizar_posicoes_firebase_strategy, db
         # Log reduzido: remover prints detalhados para evitar poluição
         # print(f"[DLL] Alteração de ordem recebida: ProfitID={nProfitID}, Status={Status}, Traded={nTradedQtd}, Leaves={nLeavesQtd}")
         valor_executado = nTradedQtd * dAvgPrice
@@ -96,10 +96,16 @@ def order_change_callback(rAssetID, nCorretora, nQtd, nTradedQtd, nLeavesQtd, nS
         for doc in ordens_ref:
             ordem = doc.to_dict()
             account_id = ordem.get('account_id')
+            ticker = ordem.get('ticker')
+            side = ordem.get('side')
             strategy_id = ordem.get('strategy_id')
-            if account_id:
-                atualizar_posicoes_firebase(account_id)
+            
+            if account_id and ticker and nTradedQtd > 0:
+                # ✅ NOVO: Atualização incremental
+                quantity_change = nTradedQtd if side == 'buy' else -nTradedQtd
+                atualizar_posicao_incremental(account_id, ticker, quantity_change, dAvgPrice, side)
                 updated = True
+                
             if strategy_id:
                 atualizar_posicoes_firebase_strategy(strategy_id)
         if not updated:

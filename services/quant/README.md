@@ -18,7 +18,7 @@ Sistema automatizado para execução de estratégias quantitativas integrado com
 
 **Parâmetros**:
 - Timeframe: 1 minuto
-- Bollinger Bands: 20 períodos, 2 desvios padrão, SMA
+- Bollinger Bands: 20 períodos, 1 desvio padrão, SMA
 - Ativo: WINQ25 (Mini Índice Futuro)
 
 **Lógica**:
