@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 import math
 
-def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_profit=0.10, sair_na_media=False):
+def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_profit=0.10, sair_em_z=False, z_saida=0.0, sair_na_media=False):
     """
     Estratégia:
     - Compra quando o fechamento cruza abaixo da banda inferior de Bollinger (só se não houver posição aberta).
@@ -22,64 +22,143 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
     df['media'] = df['close'].rolling(window=x).mean()
     df['std'] = df['close'].rolling(window=x).std()
     df['banda_inferior'] = df['media'] - y * df['std']
-    sinais = (df['close'] < df['banda_inferior']) & (df['close'].shift(1) >= df['banda_inferior'].shift(1))
     trades = []
     df['retorno_estrategia'] = 0.0
     i = 0
+    has_open = 'open' in df.columns
+    has_low = 'low' in df.columns
+    has_high = 'high' in df.columns
     while i < len(df):
-        if sinais.iloc[i]:
-            entrada_idx = i
-            entrada_data = df.at[entrada_idx, 'date']
-            entrada_preco = df.at[entrada_idx, 'close']
-            saida_idx = None
-            saida_data = None
-            saida_preco = None
+        # Cálculo do gatilho de entrada no candle i
+        preco_gatilho_entrada = df.at[i, 'banda_inferior']
+        media_i = df.at[i, 'media']
+        std_i = df.at[i, 'std']
+        open_i = df.at[i, 'open'] if has_open else df.at[i, 'close']
+        low_i = df.at[i, 'low'] if has_low else df.at[i, 'close']
+        high_i = df.at[i, 'high'] if has_high else df.at[i, 'close']
+
+        entrada_idx = None
+        entrada_data = None
+        entrada_preco = None
+        entrada_tipo = None
+
+        if not pd.isna(preco_gatilho_entrada):
+            if has_open and open_i <= preco_gatilho_entrada:
+                entrada_idx = i
+                entrada_data = df.at[i, 'date']
+                entrada_preco = float(open_i)
+                entrada_tipo = 'open'
+            elif has_low and open_i > preco_gatilho_entrada and low_i <= preco_gatilho_entrada:
+                entrada_idx = i
+                entrada_data = df.at[i, 'date']
+                entrada_preco = float(preco_gatilho_entrada)
+                entrada_tipo = 'low'
+            else:
+                # Fallback: cruzamento por fechamento como antes
+                if i > 0 and df.at[i, 'close'] < preco_gatilho_entrada and df.at[i-1, 'close'] >= df.at[i-1, 'banda_inferior']:
+                    entrada_idx = i
+                    entrada_data = df.at[i, 'date']
+                    entrada_preco = float(df.at[i, 'close'])
+                    entrada_tipo = 'close'
+
+        if entrada_idx is None:
+            i += 1
+            continue
+
+        saida_idx = None
+        saida_data = None
+        saida_preco = None
+
+        # Saídas intrabar no mesmo candle i
+        stop_price_i = entrada_preco * (1 + stop_loss)
+        take_price_i = entrada_preco * (1 + take_profit)
+        efetiva_sair_em_z = bool(sair_em_z or sair_na_media)
+        efetivo_z_saida = float(z_saida if sair_em_z else 0.0)
+        z_exit_price_i = None
+        if efetiva_sair_em_z and not pd.isna(media_i) and not pd.isna(std_i):
+            z_exit_price_i = float(media_i - efetivo_z_saida * std_i)
+
+        stop_trigger_i = has_low and (low_i <= stop_price_i)
+        take_trigger_i = has_high and (high_i >= take_price_i)
+        z_trigger_i = has_high and (z_exit_price_i is not None and high_i >= z_exit_price_i)
+
+        # Regra conservadora: se a entrada ocorreu via toque na mínima,
+        # não permitir ganho intrabar (take/Z) no mesmo candle. Stop continua permitido.
+        if entrada_tipo == 'low':
+            take_trigger_i = False
+            z_trigger_i = False
+
+        def is_ambiguous(exit_price: float) -> bool:
+            if exit_price is None:
+                return False
+            low_bound = min(entrada_preco, exit_price)
+            high_bound = max(entrada_preco, exit_price)
+            close_i = df.at[i, 'close']
+            return (low_i <= low_bound) and (high_i >= high_bound) and (low_bound < open_i < high_bound) and (low_bound < close_i < high_bound)
+
+        ambiguous = any([
+            is_ambiguous(stop_price_i) if stop_trigger_i else False,
+            is_ambiguous(take_price_i) if take_trigger_i else False,
+            is_ambiguous(z_exit_price_i) if z_trigger_i else False
+        ])
+        if ambiguous:
+            i += 1
+            continue
+
+        if stop_trigger_i or take_trigger_i or z_trigger_i:
+            saida_idx = i
+            saida_data = df.at[i, 'date']
+            if stop_trigger_i:
+                saida_preco = float(stop_price_i)
+            elif take_trigger_i:
+                saida_preco = float(take_price_i)
+            else:
+                saida_preco = float(z_exit_price_i)
+        else:
+            # Varredura j=1..w nos candles seguintes
             for j in range(1, w+1):
                 if entrada_idx + j >= len(df):
                     break
-                min_preco = df.at[entrada_idx + j, 'low'] if 'low' in df.columns else df.at[entrada_idx + j, 'close']
-                max_preco = df.at[entrada_idx + j, 'high'] if 'high' in df.columns else df.at[entrada_idx + j, 'close']
+                min_preco = df.at[entrada_idx + j, 'low'] if has_low else df.at[entrada_idx + j, 'close']
+                max_preco = df.at[entrada_idx + j, 'high'] if has_high else df.at[entrada_idx + j, 'close']
                 preco_fechamento = df.at[entrada_idx + j, 'close']
                 media_bollinger = df.at[entrada_idx + j, 'media']
                 stop_price = entrada_preco * (1 + stop_loss)
                 take_price = entrada_preco * (1 + take_profit)
-                
-                # Verificar stop loss
                 if min_preco <= stop_price:
                     saida_idx = entrada_idx + j
                     saida_data = df.at[saida_idx, 'date']
-                    saida_preco = stop_price
+                    saida_preco = float(stop_price)
                     break
-                
-                # Verificar take profit
                 if max_preco >= take_price:
                     saida_idx = entrada_idx + j
                     saida_data = df.at[saida_idx, 'date']
-                    saida_preco = take_price
+                    saida_preco = float(take_price)
                     break
-                
-                # Verificar saída na média de Bollinger (se habilitado)
-                if sair_na_media and not pd.isna(media_bollinger) and preco_fechamento >= media_bollinger:
-                    saida_idx = entrada_idx + j
-                    saida_data = df.at[saida_idx, 'date']
-                    saida_preco = preco_fechamento
-                    break
-            if saida_idx is None and entrada_idx + w < len(df):
-                saida_idx = entrada_idx + w
-                saida_data = df.at[saida_idx, 'date']
-                saida_preco = df.at[saida_idx, 'close']
-            if saida_idx is not None:
-                trades.append({
-                    'entrada_data': entrada_data.strftime('%Y-%m-%d %H:%M'),
-                    'entrada_preco': float(entrada_preco),
-                    'saida_data': saida_data.strftime('%Y-%m-%d %H:%M'),
-                    'saida_preco': float(saida_preco),
-                    'retorno': (saida_preco - entrada_preco) / entrada_preco
-                })
-                df.at[saida_idx, 'retorno_estrategia'] = (saida_preco - entrada_preco) / entrada_preco
-                i = saida_idx + 1
-            else:
-                i += 1
+                efetiva_sair_em_z = bool(sair_em_z or sair_na_media)
+                efetivo_z_saida = float(z_saida if sair_em_z else 0.0)
+                if efetiva_sair_em_z and not pd.isna(media_bollinger) and not pd.isna(df.at[entrada_idx + j, 'std']):
+                    limite_saida = media_bollinger - efetivo_z_saida * df.at[entrada_idx + j, 'std']
+                    if preco_fechamento >= limite_saida:
+                        saida_idx = entrada_idx + j
+                        saida_data = df.at[saida_idx, 'date']
+                        saida_preco = float(preco_fechamento)
+                        break
+
+        if saida_idx is None and entrada_idx + w < len(df):
+            saida_idx = entrada_idx + w
+            saida_data = df.at[saida_idx, 'date']
+            saida_preco = float(df.at[saida_idx, 'close'])
+        if saida_idx is not None:
+            trades.append({
+                'entrada_data': entrada_data.strftime('%Y-%m-%d %H:%M'),
+                'entrada_preco': float(entrada_preco),
+                'saida_data': saida_data.strftime('%Y-%m-%d %H:%M'),
+                'saida_preco': float(saida_preco),
+                'retorno': (saida_preco - entrada_preco) / entrada_preco
+            })
+            df.at[saida_idx, 'retorno_estrategia'] = (saida_preco - entrada_preco) / entrada_preco
+            i = saida_idx + 1
         else:
             i += 1
     df['equity_estrategia'] = (1 + df['retorno_estrategia']).cumprod()
@@ -174,7 +253,7 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
         'parametros_detalhados': {
             'descricao': (
                 'Compra quando o fechamento cruza abaixo da banda inferior de Bollinger. '
-                'Mantém a posição até atingir o take profit, o stop loss, volta à média de Bollinger (se habilitado) ou o tempo máximo (W períodos), o que ocorrer primeiro.'
+                'Mantém a posição até atingir o take profit, o stop loss, a linha média ajustada por Z desvios (se habilitado) ou o tempo máximo (W períodos), o que ocorrer primeiro.'
             ),
             'x': (
                 'Quantidade de períodos para o cálculo da média móvel de Bollinger (X).\n'
@@ -186,7 +265,7 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
             ),
             'w': (
                 'Tempo máximo da operação em períodos (W).\n'
-                'Exemplo: W = 10 → encerra a operação após 10 períodos, se não sair antes por stop, gain ou média.'
+                'Exemplo: W = 10 → encerra a operação após 10 períodos, se não sair antes por stop, gain ou regra de Z desvios.'
             ),
             'stop_loss': (
                 'Stop loss percentual.\n'
@@ -196,9 +275,12 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
                 'Take profit percentual.\n'
                 'Exemplo: 0.10 significa encerrar a operação se subir 10% após a compra.'
             ),
-            'sair_na_media': (
-                'Se habilitado, encerra a operação quando o preço volta à média de Bollinger.\n'
-                'Útil para capturar a reversão à média sem esperar o take profit completo.'
+            'sair_em_z': (
+                'Se habilitado, encerra a operação quando o preço voltar até a média menos Z desvios padrão.\n'
+                'Exemplo: Z = 0 → média (igual à antiga opção "sair na média"). Z = 1 → média - 1*desvio.'
+            ),
+            'z_saida': (
+                'Valor de Z (desvios) para a regra de saída. Deve ser ≥ 0 e idealmente ≤ Y.'
             )
         }
     } 

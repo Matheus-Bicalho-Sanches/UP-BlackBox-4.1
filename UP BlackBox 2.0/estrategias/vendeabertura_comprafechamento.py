@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 import math
 
-def run_vendeabertura_comprafechamento(csv_path):
+def run_vendeabertura_comprafechamento(csv_path, dia_semana=None):
     """
     Estratégia inversa da CompraFechamento_VendeAbertura.
     
@@ -17,12 +17,22 @@ def run_vendeabertura_comprafechamento(csv_path):
     df = pd.read_csv(csv_path, sep=',', on_bad_lines='skip')
     df['date'] = pd.to_datetime(df['date'], format='%d/%m/%Y %H:%M')
     df = df.sort_values('date').reset_index(drop=True)
+    # Dia da semana: Monday=0 ... Sunday=6
+    df['weekday'] = df['date'].dt.weekday
     
     # Estratégia: vende na abertura, compra no fechamento do mesmo dia
     # Como vendemos na abertura e compramos no fechamento:
     # Retorno = (preço_venda - preço_compra) / preço_venda = (open - close) / open
     df['retorno_estrategia'] = (df['open'] - df['close']) / df['open']
     df['retorno_estrategia'] = df['retorno_estrategia'].fillna(0)
+    # Se um dia da semana for especificado, zera retornos nos demais dias para não contar operação
+    if dia_semana is not None:
+        try:
+            dia_semana_int = int(dia_semana)
+        except Exception:
+            dia_semana_int = None
+        if dia_semana_int is not None:
+            df.loc[df['weekday'] != dia_semana_int, 'retorno_estrategia'] = 0
     df['equity_estrategia'] = (1 + df['retorno_estrategia']).cumprod()
     
     equity_curve_estrategia = [
@@ -33,6 +43,13 @@ def run_vendeabertura_comprafechamento(csv_path):
     # Histórico de trades
     trades = []
     for i in range(len(df)):
+        if dia_semana is not None:
+            try:
+                dia_semana_int = int(dia_semana)
+            except Exception:
+                dia_semana_int = None
+            if dia_semana_int is not None and int(df.at[i, 'weekday']) != dia_semana_int:
+                continue
         # Para cada linha, temos um trade completo no mesmo dia
         entrada_data = df.at[i, 'date']  # Venda na abertura
         entrada_preco = df.at[i, 'open']  # Preço de venda (abertura)
@@ -128,5 +145,8 @@ def run_vendeabertura_comprafechamento(csv_path):
         'ganho_medio_vencedores': ganho_medio_vencedores,
         'tempo_medio_vencedores': tempo_medio_vencedores,
         'perda_medio_perdedores': perda_medio_perdedores,
-        'tempo_medio_perdedores': tempo_medio_perdedores
+        'tempo_medio_perdedores': tempo_medio_perdedores,
+        'parametros_detalhados': {
+            'dia_semana': 'Dia da semana permitido para iniciar a operação (0=Seg, 1=Ter, 2=Qua, 3=Qui, 4=Sex).'
+        }
     } 

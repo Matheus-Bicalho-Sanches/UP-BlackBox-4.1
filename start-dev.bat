@@ -51,7 +51,7 @@ start "UPBB4 API" cmd /k cd /d "%BB4_DIR%" ^& uvicorn main:app --reload --port %
 
 REM Sobe o serviço de market data em outra janela  
 echo Iniciando market feed na pasta: "%~dp0"
-start "Market Feed" cmd /k cd /d "%~dp0" ^& uvicorn services.profit.dispatcher:app --reload --port %FEED_PORT%
+start "Market Feed" cmd /k cd /d "%~dp0" ^& python services\profit\run_server.py %FEED_PORT%
 
 REM Sobe o UP BlackBox 2.0 em outra janela
 echo Iniciando UP BlackBox 2.0 na pasta: "%~dp0UP BlackBox 2.0"

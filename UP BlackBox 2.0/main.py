@@ -242,7 +242,9 @@ async def run_backtest(request: Request):
             resultado = run_comprafechamento_vendeabertura(tmp_path)
         
         elif estrategia_nome.lower().replace('_', '').replace('-', '') == 'vendeaberturacomprafechamento':
-            resultado = run_vendeabertura_comprafechamento(tmp_path)
+            # Novo parâmetro opcional: dia_semana (0=Seg, 1=Ter, 2=Qua, 3=Qui, 4=Sex)
+            dia_semana = parametros.get('dia_semana')
+            resultado = run_vendeabertura_comprafechamento(tmp_path, dia_semana=dia_semana)
         elif estrategia_nome.lower() == 'buyifstockupxpercentage':
             x = parametros.get('x', 0.03)
             y = parametros.get('y', 5)
@@ -288,7 +290,11 @@ async def run_backtest(request: Request):
                 take_profit = float(parametros.get('take_profit')) if parametros.get('take_profit') is not None and str(parametros.get('take_profit')).strip() != '' else 0.08
             except Exception:
                 take_profit = 0.08
-            resultado = run_operandomomentum(tmp_path, x, y, w, stop_loss, take_profit)
+            try:
+                dia_semana = parametros.get('dia_semana')
+            except Exception:
+                dia_semana = None
+            resultado = run_operandomomentum(tmp_path, x, y, w, stop_loss, take_profit, dia_semana=dia_semana)
         elif estrategia_nome.lower() == 'operandotoposefundos':
             try:
                 modo = parametros.get('modo', 'topo')
@@ -333,11 +339,24 @@ async def run_backtest(request: Request):
                 take_profit = float(parametros.get('take_profit')) if parametros.get('take_profit') is not None and str(parametros.get('take_profit')).strip() != '' else 0.10
             except Exception:
                 take_profit = 0.10
+            # Novos parâmetros de saída em Z desvios
             try:
-                sair_na_media = bool(parametros.get('sair_na_media', False))
+                sair_em_z = bool(parametros.get('sair_em_z', False))
             except Exception:
-                sair_na_media = False
-            resultado = run_voltaamediabollinger(tmp_path, x, y, w, stop_loss, take_profit, sair_na_media)
+                sair_em_z = False
+            try:
+                z_saida = float(parametros.get('z_saida')) if parametros.get('z_saida') is not None and str(parametros.get('z_saida')).strip() != '' else 0.0
+            except Exception:
+                z_saida = 0.0
+            # Retrocompatibilidade: se vier sair_na_media=true e não vier sair_em_z, tratar como z=0
+            try:
+                sair_na_media_antigo = bool(parametros.get('sair_na_media', False))
+            except Exception:
+                sair_na_media_antigo = False
+            if sair_na_media_antigo and not sair_em_z:
+                sair_em_z = True
+                z_saida = 0.0
+            resultado = run_voltaamediabollinger(tmp_path, x, y, w, stop_loss, take_profit, sair_em_z, z_saida)
         else:
             return {"error": "Estratégia não implementada"}
 
@@ -378,7 +397,9 @@ async def run_backtest(request: Request):
             'estrategia': estrategia_nome,
             'criadoEm': firestore.SERVER_TIMESTAMP,
             'metrics': metrics,
-            'parametros': resultado.get('parametros', {}),
+            # Persistir exatamente os parâmetros utilizados na execução
+            # (normalizados/sanitizados para JSON)
+            'parametros': sanitize_for_json(parametros),
             'tempo_posicionado': resultado.get('tempo_posicionado'),
             'total_linhas': resultado.get('total_linhas'),
             'parametros_detalhados': resultado.get('parametros_detalhados'),

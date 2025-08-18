@@ -11,6 +11,7 @@ import {
   LineSeriesPartialOptions,
 } from "lightweight-charts";
 import { Candle } from "@/hooks/useRealtimeCandles";
+import { formatTime, formatFullDateTime } from "@/lib/timezone";
 
 interface Props {
   candles: Candle[];
@@ -53,10 +54,7 @@ export default function MarketChart({ candles, onRangeChange, syncRange, bolling
         timeScale: {
           timeVisible: true,
           secondsVisible: false,
-          tickMarkFormatter: (ts: number) => {
-            const d = new Date((ts as number) * 1000);
-            return `${two(d.getHours())}:${two(d.getMinutes())}`;
-          },
+          tickMarkFormatter: (ts: number) => formatTime(ts as number),
         },
       });
       seriesRef.current = chartRef.current.addSeries(
@@ -73,32 +71,7 @@ export default function MarketChart({ candles, onRangeChange, syncRange, bolling
       // Exibe horário (HH:MM) junto com a data no label do crosshair
       chartRef.current.applyOptions({
         localization: {
-          timeFormatter: (timestamp: number) => {
-            // `timestamp` chega em segundos (UNIX).
-            const date = new Date((timestamp as number) * 1000);
-            const hours = two(date.getHours());
-            const minutes = two(date.getMinutes());
-
-            const day = two(date.getDate());
-            const monthNames = [
-              "jan",
-              "fev",
-              "mar",
-              "abr",
-              "mai",
-              "jun",
-              "jul",
-              "ago",
-              "set",
-              "out",
-              "nov",
-              "dez",
-            ];
-            const month = monthNames[date.getMonth()];
-            const year = `'${(date.getFullYear() % 100).toString().padStart(2, "0")}`;
-
-            return `${hours}:${minutes} - ${day} ${month}. ${year}`;
-          },
+          timeFormatter: (timestamp: number) => formatFullDateTime(timestamp as number),
         },
       });
 

@@ -45,10 +45,12 @@ export default function BacktestPage() {
   const [paramStopLoss, setParamStopLoss] = useState("-5");
   const [paramTakeProfit, setParamTakeProfit] = useState(8);
   const [paramW, setParamW] = useState<number | null>(null);
+  const [paramDiaSemana, setParamDiaSemana] = useState<number | "">("");
   const [selectedBacktests, setSelectedBacktests] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [paramModo, setParamModo] = useState<'topo' | 'fundo'>('topo');
-  const [paramSairNaMedia, setParamSairNaMedia] = useState(false);
+  const [paramSairEmZ, setParamSairEmZ] = useState(false);
+  const [paramZSaida, setParamZSaida] = useState<number>(0);
 
   async function fetchBacktests() {
     setLoading(true);
@@ -105,7 +107,9 @@ export default function BacktestPage() {
   }, []);
 
   // Filtrar opções
-  const filteredBases = bases.filter(base => base.nome.toLowerCase().includes(baseSearchTerm.toLowerCase()));
+  const filteredBases = bases
+    .filter(base => base.nome.toLowerCase().includes(baseSearchTerm.toLowerCase()))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
   const filteredEstrategias = estrategias.filter(est => est.nome.toLowerCase().includes(estrategiaSearchTerm.toLowerCase()));
 
   // Paginação e filtros agora usam backtests reais
@@ -149,6 +153,10 @@ export default function BacktestPage() {
           stop_loss: -Math.abs(numStopLoss) / 100,
           take_profit: Math.abs(numTakeProfit) / 100
         };
+      } else if (selectedEstrategia.toLowerCase().replace(/[_-]/g, '') === "vendeaberturacomprafechamento") {
+        if (paramDiaSemana !== "" && paramDiaSemana !== null && paramDiaSemana !== undefined) {
+          body.parametros = { dia_semana: Number(paramDiaSemana) };
+        }
       } else if (selectedEstrategia.toLowerCase() === "buysequenciadealtaouqueda") {
         body.parametros = {
           x: numX,
@@ -164,6 +172,9 @@ export default function BacktestPage() {
           stop_loss: numStopLoss / 100,
           take_profit: numTakeProfit / 100,
         };
+        if (paramDiaSemana !== "" && paramDiaSemana !== null && paramDiaSemana !== undefined) {
+          body.parametros.dia_semana = Number(paramDiaSemana);
+        }
       } else if (selectedEstrategia.toLowerCase() === "operandotoposefundos") {
         body.parametros = {
           modo: paramModo,
@@ -174,13 +185,20 @@ export default function BacktestPage() {
           take_profit: numTakeProfit / 100,
         };
       } else if (selectedEstrategia.toLowerCase() === "voltaamediabollinger") {
+        // Validação: Z deve ser menor que Y (permite Z negativo)
+        if (paramSairEmZ && !(paramZSaida < numY)) {
+          setRunError("O valor de Z deve ser menor que Y. Valores negativos são permitidos.");
+          setRunLoading(false);
+          return;
+        }
         body.parametros = {
           x: numX,
           y: numY,
           w: numW ?? 10,
           stop_loss: numStopLoss / 100,
           take_profit: numTakeProfit / 100,
-          sair_na_media: paramSairNaMedia,
+          sair_em_z: paramSairEmZ,
+          z_saida: paramSairEmZ ? Number(paramZSaida) : 0,
         };
       }
       try {
@@ -324,6 +342,32 @@ export default function BacktestPage() {
                 </div>
               </div>
               {/* Inputs de parâmetros para Buyifstockupxpercentage */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase().replace(/[_-]/g, '') === "vendeaberturacomprafechamento" && (
+                <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium mb-1">Dia da semana (opcional)</label>
+                    <select
+                      className="w-full border border-gray-300 rounded px-3 py-2"
+                      value={paramDiaSemana}
+                      onChange={e => {
+                        const v = e.target.value;
+                        setParamDiaSemana(v === '' ? '' : Number(v));
+                      }}
+                    >
+                      <option value="">Todos os dias</option>
+                      <option value={0}>Segunda-feira</option>
+                      <option value={1}>Terça-feira</option>
+                      <option value={2}>Quarta-feira</option>
+                      <option value={3}>Quinta-feira</option>
+                      <option value={4}>Sexta-feira</option>
+                    </select>
+                    <span className="text-xs text-gray-700 block mt-1">
+                      Se selecionado, a operação só ocorrerá quando a entrada for nesse dia da semana.
+                    </span>
+                  </div>
+                </div>
+              )}
+              {/* Inputs de parâmetros para Buyifstockupxpercentage */}
               {selectedEstrategia && selectedEstrategia.toLowerCase() === "buyifstockupxpercentage" && (
                 <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
                   <div>
@@ -440,6 +484,27 @@ export default function BacktestPage() {
                       <b>Exemplo:</b> 8 &rarr; encerra a operação se subir 8% após a compra.
                     </span>
                   </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium mb-1">Dia da semana (opcional)</label>
+                    <select
+                      className="w-full border border-gray-300 rounded px-3 py-2"
+                      value={paramDiaSemana}
+                      onChange={e => {
+                        const v = e.target.value;
+                        setParamDiaSemana(v === '' ? '' : Number(v));
+                      }}
+                    >
+                      <option value="">Todos os dias</option>
+                      <option value={0}>Segunda-feira</option>
+                      <option value={1}>Terça-feira</option>
+                      <option value={2}>Quarta-feira</option>
+                      <option value={3}>Quinta-feira</option>
+                      <option value={4}>Sexta-feira</option>
+                    </select>
+                    <span className="text-xs text-gray-700 block mt-1">
+                      Se selecionado, a operação só ocorrerá quando a entrada for nesse dia da semana.
+                    </span>
+                  </div>
                 </div>
               )}
               {/* Inputs para Operandotoposefundos */}
@@ -542,20 +607,33 @@ export default function BacktestPage() {
                   </div>
                   <div className="col-span-2">
                     <label className="flex items-center gap-2 cursor-pointer">
-                      <input 
-                        type="checkbox" 
-                        checked={paramSairNaMedia} 
-                        onChange={e => setParamSairNaMedia(e.target.checked)} 
+                      <input
+                        type="checkbox"
+                        checked={paramSairEmZ}
+                        onChange={e => setParamSairEmZ(e.target.checked)}
                         className="accent-cyan-600"
                       />
-                      <span className="text-sm font-medium">Sair na média de Bollinger</span>
+                      <span className="text-sm font-medium">Sair a Z desvios padrão</span>
                     </label>
                     <span className="text-xs text-gray-700 block mt-1 ml-6">
-                      <b>O que é?</b> Se habilitado, encerra a operação quando o preço volta à média de Bollinger (linha do meio), 
-                      ao invés de esperar apenas o take profit ou stop loss.<br />
-                      <b>Útil para:</b> Capturar a reversão à média sem esperar o take profit completo.
+                      Quando habilitado, encerra a operação quando o preço atinge a linha: média - Z*desvio padrão. Z=0 equivale a sair na média.
                     </span>
                   </div>
+                  {paramSairEmZ && (
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium mb-1">Desvio padrão para saída (Z)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={paramZSaida}
+                        onChange={e => setParamZSaida(Number(e.target.value))}
+                        className="w-full border border-gray-300 rounded px-3 py-2"
+                      />
+                      <span className="text-xs text-gray-700 block mt-1">
+                        Z deve ser &lt; Y. Valores negativos são permitidos (Z negativo ⇒ média + |Z| × desvio).
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
               {/* Mensagens de erro/sucesso e botões centralizados */}

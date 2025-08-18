@@ -4,21 +4,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const tabs = [
-  { name: "Acomp. Ativos", href: "/dashboard/market-data/acompativos" },
-  { name: "Estratégias Quant", href: "/dashboard/market-data/teste-2" },
-  { name: "Monitor de Sinais", href: "/dashboard/market-data/teste-3" },
+  { name: "Dashboard", href: "/dashboard/blackbox-multi/dashboard" },
+  { name: "MarketData", href: "/dashboard/blackbox-multi/marketdata" },
+  { name: "Backtests", href: "/dashboard/blackbox-multi/backtests" },
+  { name: "Estratégias", href: "/dashboard/blackbox-multi/estrategias" },
+  { name: "Ordens", href: "/dashboard/blackbox-multi/ordens" },
+  { name: "Posições", href: "/dashboard/blackbox-multi/posicoes" },
+  { name: "Contas", href: "/dashboard/blackbox-multi/contas" },
 ];
 
-export default function MarketDataLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function BlackBoxMultiLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   return (
     <div className="bg-gray-900 min-h-screen rounded-lg shadow p-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">BlackBox Multi</h1>
+        <p className="text-gray-400">Execução quantitativa multi-contas</p>
+      </div>
       <nav className="mb-8 border-b border-gray-700">
-        <ul className="flex space-x-8">
+        <ul className="flex flex-wrap gap-4">
           {tabs.map((tab) => (
             <li key={tab.href}>
               <Link
@@ -38,4 +42,6 @@ export default function MarketDataLayout({
       <div>{children}</div>
     </div>
   );
-} 
+}
+
+

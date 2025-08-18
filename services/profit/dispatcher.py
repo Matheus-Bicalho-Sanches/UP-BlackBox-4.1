@@ -1,10 +1,17 @@
 from fastapi import FastAPI
+import sys, asyncio
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
 from pydantic import BaseModel
 from services.profit.profit_feed import (
     SubscribeTicker,
     start_background_feed,
     db,
     current_candles,
+    initialize_market_session,
 )  # type: ignore
 import asyncio
 import logging
@@ -47,6 +54,8 @@ def get_current_candle(ticker: str):
 @app.on_event("startup")
 async def _startup():
     loop = asyncio.get_event_loop()
+    # Inicializa sessão de market antes de iniciar as tasks de background
+    initialize_market_session()
     start_background_feed(loop)
 
     # Reinscrever tickers persistidos

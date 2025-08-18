@@ -45,6 +45,13 @@ next-env.d.ts
 # secrets
 secrets/
 
+# local IDE/editor
+.vscode/
+.idea/
+
+# Windows shortcuts
+*.lnk
+
 # Profit DLL logs
 Dll_Profit/Logs/
 Dll_Profit/LOGS_Temp.zip
@@ -81,7 +88,7 @@ quant_engine.log
 # Cursor IDE files
 .cursor/
 
-# Dll_Profit - ignore only logs, temp and cache files, keep source code and DLLs
+# Dll_Profit - ignore logs, temp e binários pesados; manter apenas código-fonte
 Dll_Profit/Logs/
 Dll_Profit/Temp/
 Dll_Profit/__pycache__/
@@ -94,12 +101,24 @@ Dll_Profit/Exemplo\ Python/Erro.log
 "UP BlackBox 2.0/venv_bb2/"
 "UP BlackBox 2.0/__pycache__/"
 "UP BlackBox 2.0/.env"
+"UP BlackBox 2.0/secrets/"
+"UP BlackBox 2.0/**/*.log"
+"UP BlackBox 2.0/**/*.zip"
+"UP BlackBox 2.0/**/*.dat"
+"UP BlackBox 2.0/**/*.exe"
+"UP BlackBox 2.0/**/*.dll"
 
 # UP BlackBox 4.0 - similar protection
 "UP BlackBox 4.0/venv/"
 "UP BlackBox 4.0/venv_bb4/"
 "UP BlackBox 4.0/__pycache__/"
 "UP BlackBox 4.0/.env"
+"UP BlackBox 4.0/secrets/"
+"UP BlackBox 4.0/**/*.log"
+"UP BlackBox 4.0/**/*.zip"
+"UP BlackBox 4.0/**/*.dat"
+"UP BlackBox 4.0/**/*.exe"
+"UP BlackBox 4.0/**/*.dll"
 
 # Backend homepage - ignore only node_modules and logs, keep source code
 backendhomepagesiteUP/node_modules/
@@ -112,3 +131,22 @@ git pull .bat
 otimizacao home.md
 sugestoeshomepage.md
 teste_backtest_manual.py
+
+# Services (Python) environments, caches and logs
+services/**/venv/
+services/**/venv_*/
+services/**/__pycache__/
+services/**/Logs/
+services/**/logs/
+
+# Dll_Profit heavy binaries and data (keep examples' source code only)
+Dll_Profit/**/*.exe
+Dll_Profit/**/*.dll
+Dll_Profit/**/*.dat
+Dll_Profit/**/*.accsd
+Dll_Profit/**/*.broker
+Dll_Profit/bin/**
+Dll_Profit/database/**
+Dll_Profit/MarketHours2/**
+Dll_Profit/roteamento/**
+

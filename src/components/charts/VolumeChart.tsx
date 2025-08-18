@@ -9,6 +9,7 @@ import {
   LogicalRange,
 } from "lightweight-charts";
 import { Candle } from "@/hooks/useRealtimeCandles";
+import { formatTime } from "@/lib/timezone";
 
 interface Props {
   candles: Candle[];
@@ -39,10 +40,7 @@ export default function VolumeChart({ candles, syncRange }: Props) {
         timeScale: {
           timeVisible: true,
           secondsVisible: false,
-          tickMarkFormatter: (ts: number) => {
-            const d = new Date((ts as number) * 1000);
-            return `${two(d.getHours())}:${two(d.getMinutes())}`;
-          },
+          tickMarkFormatter: (ts: number) => formatTime(ts as number),
         },
       });
       seriesRef.current = chartRef.current.addSeries(

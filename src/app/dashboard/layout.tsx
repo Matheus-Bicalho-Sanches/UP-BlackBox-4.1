@@ -97,6 +97,18 @@ export default function DashboardLayout({
               {isSidebarOpen && <span className="ml-3">Market data</span>}
             </Link>
 
+            {/* BlackBox Multi */}
+            <Link
+              href="/dashboard/blackbox-multi"
+              title="BlackBox Multi"
+              className="flex items-center px-6 py-3 text-gray-300 hover:bg-gray-700 hover:text-white"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-6a2 2 0 012-2h2a2 2 0 012 2v6m4 0V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10" />
+              </svg>
+              {isSidebarOpen && <span className="ml-3">BlackBox Multi</span>}
+            </Link>
+
             <Link
               href="/dashboard/clients"
               title="Clientes"

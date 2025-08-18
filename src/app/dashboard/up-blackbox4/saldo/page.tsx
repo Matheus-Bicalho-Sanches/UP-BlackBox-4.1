@@ -16,7 +16,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayValues, setDisplayValues, loading, clientName, clientAccountId }: any) {
+function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayValues, setDisplayValues, loading, clientName, clientAccountId, indicators }: any) {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -42,14 +42,19 @@ function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayVal
                   value={displayValues["Saldo Hoje"]}
                   onChange={e => {
                     const inputValue = e.target.value;
-                    setDisplayValues((v: any) => ({ ...v, "Saldo Hoje": inputValue }));
-                    
-                    // Converter para number apenas quando necessário
-                    const numericValue = parseFloat(inputValue) || 0;
+                    const normalized = inputValue.replace(/\./g, ',');
+                    setDisplayValues((v: any) => ({ ...v, "Saldo Hoje": normalized }));
+                    // parse estilo pt-BR: remove milhares e troca vírgula por ponto
+                    const numericValue = parseFloat(inputValue.replace(/\./g, '').replace(',', '.')) || 0;
                     setValues((v: any) => ({ ...v, "Saldo Hoje": numericValue }));
                   }}
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
                 />
+                {values && (
+                  <p className="text-gray-400 text-xs mt-1">
+                    Projetado D+1: {(Number(values["Saldo Hoje"] || 0) + Number(values["Saldo D+1"] || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-gray-300 mb-1">Saldo D+1</label>
@@ -58,14 +63,23 @@ function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayVal
                   value={displayValues["Saldo D+1"]}
                   onChange={e => {
                     const inputValue = e.target.value;
-                    setDisplayValues((v: any) => ({ ...v, "Saldo D+1": inputValue }));
-                    
-                    // Converter para number apenas quando necessário
-                    const numericValue = parseFloat(inputValue) || 0;
+                    const normalized = inputValue.replace(/\./g, ',');
+                    setDisplayValues((v: any) => ({ ...v, "Saldo D+1": normalized }));
+                    // Converter pt-BR para número
+                    const numericValue = parseFloat(inputValue.replace(/\./g, '').replace(',', '.')) || 0;
                     setValues((v: any) => ({ ...v, "Saldo D+1": numericValue }));
                   }}
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
                 />
+                {indicators && (
+                  <p className="text-gray-400 text-xs mt-1">
+                    Calculado: {Number(indicators.calcD1 || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {" • "}
+                    Ajuste manual: {Number(indicators.ajusteD1 || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {" • "}
+                    Final: {Number(values["Saldo D+1"] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-gray-300 mb-1">Saldo D+2</label>
@@ -74,14 +88,23 @@ function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayVal
                   value={displayValues["Saldo D+2"]}
                   onChange={e => {
                     const inputValue = e.target.value;
-                    setDisplayValues((v: any) => ({ ...v, "Saldo D+2": inputValue }));
-                    
-                    // Converter para number apenas quando necessário
-                    const numericValue = parseFloat(inputValue) || 0;
+                    const normalized = inputValue.replace(/\./g, ',');
+                    setDisplayValues((v: any) => ({ ...v, "Saldo D+2": normalized }));
+                    // Converter pt-BR para número
+                    const numericValue = parseFloat(inputValue.replace(/\./g, '').replace(',', '.')) || 0;
                     setValues((v: any) => ({ ...v, "Saldo D+2": numericValue }));
                   }}
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
                 />
+                {indicators && (
+                  <p className="text-gray-400 text-xs mt-1">
+                    Calculado: {Number(indicators.calcD2 || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {" • "}
+                    Ajuste manual: {Number(indicators.ajusteD2 || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    {" • "}
+                    Final: {Number(values["Saldo D+2"] || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -91,10 +114,10 @@ function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayVal
                     value={displayValues.PctSaldoMin}
                     onChange={e => {
                       const inputValue = e.target.value;
-                      setDisplayValues((v: any) => ({ ...v, PctSaldoMin: inputValue }));
-                      
-                      // Converter para number apenas quando necessário
-                      const numericValue = parseFloat(inputValue) || 0;
+                      const normalized = inputValue.replace(/\./g, ',');
+                      setDisplayValues((v: any) => ({ ...v, PctSaldoMin: normalized }));
+                      // Converter pt-BR para número
+                      const numericValue = parseFloat(inputValue.replace(/\./g, '').replace(',', '.')) || 0;
                       setValues((v: any) => ({ ...v, PctSaldoMin: numericValue }));
                     }}
                     className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
@@ -107,10 +130,10 @@ function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayVal
                     value={displayValues.PctSaldoMax}
                     onChange={e => {
                       const inputValue = e.target.value;
-                      setDisplayValues((v: any) => ({ ...v, PctSaldoMax: inputValue }));
-                      
-                      // Converter para number apenas quando necessário
-                      const numericValue = parseFloat(inputValue) || 0;
+                      const normalized = inputValue.replace(/\./g, ',');
+                      setDisplayValues((v: any) => ({ ...v, PctSaldoMax: normalized }));
+                      // Converter pt-BR para número
+                      const numericValue = parseFloat(inputValue.replace(/\./g, '').replace(',', '.')) || 0;
                       setValues((v: any) => ({ ...v, PctSaldoMax: numericValue }));
                     }}
                     className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
@@ -1188,6 +1211,17 @@ export default function SaldoPage() {
         setDisplayValues={setEditDisplayValues}
         clientName={editIdx !== null ? (clientes[editIdx]?.["Nome Cliente"] || '') : ''}
         clientAccountId={editIdx !== null ? (clientes[editIdx]?.AccountID || '') : ''}
+        indicators={(() => {
+          if (editIdx === null) return null as any;
+          const item = clientes[editIdx];
+          if (!item) return null as any;
+          const accId = item.AccountID;
+          const calcD1 = saldosFuturos[accId]?.d1 ?? 0;
+          const calcD2 = saldosFuturos[accId]?.d2 ?? 0;
+          const ajusteD1 = item["AjusteSaldoD1"] ?? 0;
+          const ajusteD2 = item["AjusteSaldoD2"] ?? 0;
+          return { calcD1, calcD2, ajusteD1, ajusteD2 };
+        })()}
         onSave={async () => {
           if (editIdx !== null) {
             setEditLoading(true);

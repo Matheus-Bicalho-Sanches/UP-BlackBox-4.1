@@ -14,6 +14,7 @@ const milestones = [
   { year: 'maio/2025', title: 'Homologação CVM', desc: 'Gestora recebe aprovação da CVM para operar' },
   { year: 'junho/2025', title: 'Desenvolvimento robô', desc: 'Primeiros testes de operações completamente automatizadas' },
   { year: 'junho/2025', title: 'Novas estratégias', desc: 'Desenvolvimento de estratégias em outras classes de ativo' },
+  { year: 'jul/2025', title: 'BlackBox Multi', desc: 'Início da carteira multimercado em contas reais' },
   { year: 'Em breve', title: 'Automação completa', desc: 'Lançamento das primeiras estratégias 100% automatizadas' },
 ];
 

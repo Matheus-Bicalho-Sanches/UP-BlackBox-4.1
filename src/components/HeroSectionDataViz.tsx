@@ -95,6 +95,10 @@ export default function HeroSectionDataViz() {
 
   // Estado para armazenar dados carregados
   const [retornoData, setRetornoData] = useState<{date:string; tatica:number; ifix:number; cdi:number;}[]>([]);
+  const [retornoDataMulti, setRetornoDataMulti] = useState<{date:string; tatica:number; cdi:number;}[]>([]);
+  
+  // Estado para controlar qual carteira está selecionada
+  const [selectedCarteira, setSelectedCarteira] = useState<'fii' | 'multi'>('fii');
 
   useEffect(() => {
     const updateAspect = () => {
@@ -126,17 +130,31 @@ export default function HeroSectionDataViz() {
         }
       })
       .catch(err => console.error('Erro carregando retorno-carteira', err));
+    
+    fetch('/data/retorno-carteira-multi.json')
+      .then(res => res.json())
+      .then((d) => {
+        setRetornoDataMulti(d);
+        if (typeof window !== 'undefined') {
+          // @ts-ignore exposição para debugging
+          window.retornoCarteiraMulti = d;
+        }
+      })
+      .catch(err => console.error('Erro carregando retorno-carteira-multi', err));
   }, []);
 
   // Gera array de ticks para eixo X quando dados disponíveis
-  const ticks = retornoData.length ? [
-    retornoData[0].date,
-    retornoData[Math.floor(retornoData.length / 2)].date,
-    retornoData[retornoData.length - 1].date,
+  const getCurrentData = () => selectedCarteira === 'fii' ? retornoData : retornoDataMulti;
+  const currentData = getCurrentData();
+  
+  const ticks = currentData.length ? [
+    currentData[0].date,
+    currentData[Math.floor(currentData.length / 2)].date,
+    currentData[currentData.length - 1].date,
   ] : [];
 
   // Se dados ainda não carregaram mostra skeleton simples
-  if (!retornoData.length) {
+  if (!retornoData.length || !retornoDataMulti.length) {
     return (
       <section className="min-h-[50vh] flex items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-cyan-900">
         <p className="text-gray-300">Carregando dados…</p>
@@ -159,15 +177,43 @@ export default function HeroSectionDataViz() {
           Histórico e estatísticas
         </h1>
         <p className="text-lg sm:text-xl text-gray-300 mb-8">
-          Veja o retorno da nossa principal carteira e algumas estatísticas da estratégia
+          Veja o retorno das nossas principais carteiras e suas estatísticas
         </p>
         {/* Gráfico + métricas de performance (agora empilhados verticalmente para evitar áreas vazias em telas grandes) */}
         <div className="grid grid-cols-1 gap-8 mb-10">
+          {/* Tabs para seleção de carteira */}
+          <div className="flex justify-center mb-4">
+            <div className="bg-gray-800/60 rounded-lg p-1 backdrop-blur-md">
+              <button
+                onClick={() => setSelectedCarteira('fii')}
+                className={`px-6 py-2 rounded-md font-medium transition-all duration-200 ${
+                  selectedCarteira === 'fii'
+                    ? 'bg-cyan-500 text-white shadow-lg'
+                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50'
+                }`}
+              >
+                BlackBox FIIs
+              </button>
+              <button
+                onClick={() => setSelectedCarteira('multi')}
+                className={`px-6 py-2 rounded-md font-medium transition-all duration-200 ${
+                  selectedCarteira === 'multi'
+                    ? 'bg-cyan-500 text-white shadow-lg'
+                    : 'text-gray-300 hover:text-white hover:bg-gray-700/50'
+                }`}
+              >
+                BlackBox Multi
+              </button>
+            </div>
+          </div>
+          
           {/* Gráfico de retorno da carteira (agora na primeira coluna) */}
           <div className="bg-white/10 rounded-xl p-6 shadow-lg backdrop-blur-md">
-            <h3 className="text-lg font-semibold text-cyan-300 mb-2">Retorno da Carteira UP</h3>
+            <h3 className="text-lg font-semibold text-cyan-300 mb-2">
+              Retorno da carteira {selectedCarteira === 'fii' ? 'BlackBox FIIs' : 'BlackBox Multi'}
+            </h3>
             <ResponsiveContainer width="100%" aspect={chartAspect}>
-              <ComposedChart key={chartKey} data={retornoData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+              <ComposedChart key={`${chartKey}-${selectedCarteira}`} data={currentData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2dd4bf33" />
                 <XAxis
                   dataKey="date"
@@ -207,19 +253,21 @@ export default function HeroSectionDataViz() {
                   isAnimationActive
                   animationDuration={3500}
                 />
-                <Line
-                  type="monotone"
-                  dataKey="ifix"
-                  name="IFIX"
-                  stroke="#2dd4bf"
-                  strokeWidth={2.2}
-                  dot={false}
-                  strokeDasharray="5 5"
-                  connectNulls
-                  legendType="line"
-                  isAnimationActive
-                  animationDuration={3500}
-                />
+                {selectedCarteira === 'fii' && (
+                  <Line
+                    type="monotone"
+                    dataKey="ifix"
+                    name="IFIX"
+                    stroke="#2dd4bf"
+                    strokeWidth={2.2}
+                    dot={false}
+                    strokeDasharray="5 5"
+                    connectNulls
+                    legendType="line"
+                    isAnimationActive
+                    animationDuration={3500}
+                  />
+                )}
                 <Line
                   type="monotone"
                   dataKey="cdi"
@@ -237,39 +285,51 @@ export default function HeroSectionDataViz() {
             </ResponsiveContainer>
           </div>
 
-          {/* Estatísticas de Performance (segunda coluna) */}
-          <div className="bg-white/10 rounded-xl p-4 sm:p-6 shadow-lg backdrop-blur-md flex flex-col justify-center">
-            <h3 className="text-base sm:text-lg font-semibold text-cyan-300 mb-4 sm:mb-6 text-center">Desempenho Operacional</h3>
-            {/* Nos desktops (lg) exibir todos os 6 cards em uma única linha */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 sm:gap-6">
-              {[
-                { label: 'Total de Operações', value: 631, suffix: '' },
-                { label: 'Tempo Médio por Posição', value: '7d23h', isString: true },
-                { label: 'Operações com Ganhos', value: 80.51, suffix: '%', decimals: 2 },
-                { label: 'Operações com Perdas', value: 19.49, suffix: '%', decimals: 2 },
-                { label: 'Maior Ganho por Operação', value: 25, prefix: '+', suffix: '%', decimals: 0 },
-                { label: 'Fator de Lucro', value: 4.79, suffix: 'x', decimals: 2 },
-              ].map((stat, idx) => (
-                <div key={`${idx}-${chartKey}`} className="bg-gray-800/60 rounded-lg p-3 sm:p-4 shadow-md flex flex-col items-center transform transition duration-300 ease-out hover:-translate-y-1 hover:scale-105 hover:bg-gray-800/80">
-                  <span className="text-xl sm:text-2xl md:text-3xl font-extrabold text-cyan-400 mb-1">
-                    {stat.isString ? (
-                      stat.value
-                    ) : (
-                      <CountUp
-                        key={chartKey}
-                        end={stat.value as number}
-                        duration={3.5}
-                        decimals={stat.decimals || 0}
-                        prefix={stat.prefix || ''}
-                        suffix={stat.suffix || ''}
-                        decimal="," />
-                    )}
-                  </span>
-                  <span className="text-gray-200 text-xs md:text-sm text-center font-medium leading-tight">
-                    {stat.label}
-                  </span>
-                </div>
-              ))}
+                      {/* Estatísticas de Performance (segunda coluna) */}
+            <div className="bg-white/10 rounded-xl p-4 sm:p-6 shadow-lg backdrop-blur-md flex flex-col justify-center">
+              <h3 className="text-base sm:text-lg font-semibold text-cyan-300 mb-4 sm:mb-6 text-center">Desempenho Operacional</h3>
+              {/* Nos desktops (lg) exibir todos os 6 cards em uma única linha */}
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 sm:gap-6">
+                {(() => {
+                  // Estatísticas específicas para cada carteira
+                  const stats = selectedCarteira === 'fii' ? [
+                    { label: 'Total de Operações', value: 631, suffix: '' },
+                    { label: 'Tempo Médio por Posição', value: '7d23h', isString: true },
+                    { label: 'Operações com Ganhos', value: 80.51, suffix: '%', decimals: 2 },
+                    { label: 'Operações com Perdas', value: 19.49, suffix: '%', decimals: 2 },
+                    { label: 'Maior Ganho por Operação', value: 25, prefix: '+', suffix: '%', decimals: 0 },
+                    { label: 'Fator de Lucro', value: 4.79, suffix: 'x', decimals: 2 },
+                  ] : [
+                    { label: 'Total de Operações', value: 164, suffix: '' },
+                    { label: 'Tempo Médio por Posição', value: '16h56m', isString: true },
+                    { label: 'Operações com Ganhos', value: 53.05, suffix: '%', decimals: 2 },
+                    { label: 'Operações com Perdas', value: 46.95, suffix: '%', decimals: 2 },
+                    { label: 'Maior Ganho por Operação', value: 1.92, prefix: '+', suffix: '%', decimals: 2 },
+                    { label: 'Fator de Lucro', value: 1.38, suffix: 'x', decimals: 2 },
+                  ];
+                  
+                  return stats.map((stat, idx) => (
+                    <div key={`${idx}-${chartKey}-${selectedCarteira}`} className="bg-gray-800/60 rounded-lg p-3 sm:p-4 shadow-md flex flex-col items-center transform transition duration-300 ease-out hover:-translate-y-1 hover:scale-105 hover:bg-gray-800/80">
+                      <span className="text-xl sm:text-2xl md:text-3xl font-extrabold text-cyan-400 mb-1">
+                        {stat.isString ? (
+                          stat.value
+                        ) : (
+                          <CountUp
+                            key={`${chartKey}-${selectedCarteira}`}
+                            end={stat.value as number}
+                            duration={3.5}
+                            decimals={stat.decimals || 0}
+                            prefix={stat.prefix || ''}
+                            suffix={stat.suffix || ''}
+                            decimal="," />
+                        )}
+                      </span>
+                      <span className="text-gray-200 text-xs md:text-sm text-center font-medium leading-tight">
+                        {stat.label}
+                      </span>
+                    </div>
+                  ));
+                })()}
             </div>
           </div>
         </div>

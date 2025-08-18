@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 import math
 
-def run_operandomomentum(csv_path, x=0.05, y=5, w=5, stop_loss=-0.05, take_profit=0.08):
+def run_operandomomentum(csv_path, x=0.05, y=5, w=5, stop_loss=-0.05, take_profit=0.08, dia_semana=None):
     """
     Estratégia Operandomomentum:
     - Compra no fechamento quando a ação tiver subido (x>0) ou caído (x<0) pelo menos x% nos últimos y períodos.
@@ -23,6 +23,8 @@ def run_operandomomentum(csv_path, x=0.05, y=5, w=5, stop_loss=-0.05, take_profi
     print(df.shape)
     df['date'] = pd.to_datetime(df['date'], format='%d/%m/%Y %H:%M')
     df = df.sort_values('date').reset_index(drop=True)
+    # Dia da semana: Monday=0 ... Sunday=6
+    df['weekday'] = df['date'].dt.weekday
 
     print('==== DEBUG: Ordem das datas após sort ===')
     print("Primeiras 3 datas:", df['date'].head(3).tolist())
@@ -50,6 +52,15 @@ def run_operandomomentum(csv_path, x=0.05, y=5, w=5, stop_loss=-0.05, take_profi
     trades_processados = 0
     while i < len(df):
         if sinais.iloc[i]:
+            # Se dia da semana foi especificado, só entra se coincidir
+            if dia_semana is not None:
+                try:
+                    dia_semana_int = int(dia_semana)
+                except Exception:
+                    dia_semana_int = None
+                if dia_semana_int is not None and int(df.at[i, 'weekday']) != dia_semana_int:
+                    i += 1
+                    continue
             entrada_idx = i
             entrada_data = df.at[entrada_idx, 'date']
             entrada_preco = df.at[entrada_idx, 'close']
@@ -200,6 +211,7 @@ def run_operandomomentum(csv_path, x=0.05, y=5, w=5, stop_loss=-0.05, take_profi
             'y': "Quantidade de períodos (dias) para calcular a variação percentual.",
             'w': "Quantidade máxima de períodos (dias) para segurar a posição (hold máximo).",
             'stop_loss': "Stop loss percentual. Exemplo: -0.05 significa vender se cair 5% ou mais.",
-            'take_profit': "Take profit percentual. Exemplo: 0.08 significa vender se subir 8% ou mais."
+            'take_profit': "Take profit percentual. Exemplo: 0.08 significa vender se subir 8% ou mais.",
+            'dia_semana': 'Dia da semana permitido para iniciar a operação (0=Seg, 1=Ter, 2=Qua, 3=Qui, 4=Sex).'
         }
     } 

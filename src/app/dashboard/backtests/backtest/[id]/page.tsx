@@ -1,8 +1,8 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useRouter } from "next/router";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
-import { FiEye } from "react-icons/fi";
+import { FiEye, FiDownload } from "react-icons/fi";
 import { db } from '@/config/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 
@@ -29,6 +29,38 @@ function calcularRetornoMovel(data: { data: string; valor: number }[], window: n
   return result;
 }
 
+function formatParamLabel(key: string): string {
+  const map: Record<string, string> = {
+    x: 'X',
+    y: 'Y',
+    w: 'W',
+    modo: 'Modo',
+    stop_loss: 'Stop Loss',
+    take_profit: 'Take Profit',
+    sair_na_media: 'Sair na média',
+  };
+  return map[key] || key;
+}
+
+function formatNumberDisplay(n: number): string {
+  const fixed = Number(n.toFixed(6));
+  return Number.isInteger(fixed) ? String(fixed) : String(Number(fixed.toFixed(4)));
+}
+
+function formatParamValue(key: string, value: any): string {
+  if (typeof value === 'boolean') return value ? 'Sim' : 'Não';
+  if (typeof value === 'number') {
+    const percentKeys = new Set(['x', 'stop_loss', 'take_profit']);
+    let v = value;
+    if (percentKeys.has(key) && Math.abs(v) <= 1) v = v * 100;
+    return formatNumberDisplay(v);
+  }
+  if (typeof value === 'string' && key === 'modo') {
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+  return String(value);
+}
+
 export default function BacktestDetailPage({ params }: { params: { id: string } }) {
   const { id } = params;
   const [backtest, setBacktest] = useState<any>(null);
@@ -37,6 +69,10 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
   const [showStrategyInfo, setShowStrategyInfo] = useState(false);
   const [estrategiaInfo, setEstrategiaInfo] = useState<any>(null);
   const [windowSize, setWindowSize] = useState(100);
+  const [exporting, setExporting] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
+  const [tradesPage, setTradesPage] = useState(1);
+  const TRADES_PER_PAGE = 100;
 
   useEffect(() => {
     async function fetchBacktest() {
@@ -84,6 +120,70 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
     setShowStrategyInfo(true);
   }
 
+  async function handleExportPDF() {
+    if (!exportRef.current) return;
+    try {
+      setExporting(true);
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+      const element = exportRef.current;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: null,
+        logging: false,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+      });
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+      const safeName = `Backtest_${backtest?.estrategia || ''}_${backtest?.base_dados || ''}`
+        .replace(/\s+/g, "_")
+        .replace(/[^a-zA-Z0-9_\-\.]/g, "")
+        .slice(0, 120) || "Backtest";
+      pdf.save(`${safeName}.pdf`);
+    } catch (e) {
+      console.error("Erro ao exportar PDF:", e);
+      alert("Não foi possível exportar o PDF. Tente novamente.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  useEffect(() => {
+    setTradesPage(1);
+  }, [backtest?.trades]);
+
+  const sortedTrades = useMemo(() => {
+    if (!backtest?.trades || !Array.isArray(backtest.trades)) return [];
+    const toTime = (s: any) => {
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? 0 : d.getTime();
+    };
+    return [...backtest.trades].sort((a: any, b: any) => toTime(b.entrada_data) - toTime(a.entrada_data));
+  }, [backtest?.trades]);
+
+  const totalTradePages = Math.ceil((sortedTrades?.length || 0) / TRADES_PER_PAGE) || 1;
+  const paginatedTrades = useMemo(() => {
+    const start = (tradesPage - 1) * TRADES_PER_PAGE;
+    const end = start + TRADES_PER_PAGE;
+    return sortedTrades.slice(start, end);
+  }, [sortedTrades, tradesPage]);
+
   return (
     <div className="bg-gray-900 min-h-screen rounded-lg shadow p-8 text-white">
       {loading ? (
@@ -103,101 +203,34 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
             >
               <FiEye size={26} />
             </button>
+            <button
+              className="text-cyan-400 hover:text-cyan-300 focus:outline-none"
+              title="Exportar PDF"
+              onClick={handleExportPDF}
+              disabled={exporting}
+            >
+              <FiDownload size={26} />
+            </button>
           </div>
+          <div ref={exportRef}>
           {/* Parâmetros e Estatísticas em duas colunas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
             {/* Parâmetros */}
             <div>
-              {backtest.parametros && Object.keys(backtest.parametros).length > 0 && (
-                <div className="mb-4">
-                  <span className="font-semibold">Parâmetros:</span>
-                  {backtest.estrategia && backtest.estrategia.toLowerCase() === "buyifstockupxpercentage" && backtest.parametros.x !== undefined && backtest.parametros.y !== undefined ? (
-                    <div className="ml-4 mt-1 text-sm text-cyan-300">
-                      Compra a ação no fechamento caso ela <b>{Number(backtest.parametros.x) >= 0 ? 'suba' : 'caia'}</b> mais que <b>{Math.abs(Number(backtest.parametros.x) * 100).toFixed(2)}%</b> em um determinado dia (comparação entre fechamento de D-1 e fechamento de D0).<br />
-                      Sai da posição após <b>{backtest.parametros.y}</b> períodos, ou antes se atingir o Stop Loss ({backtest.parametros.stop_loss != null ? (Number(backtest.parametros.stop_loss) * 100).toFixed(2) + '%' : '-'}) ou Take Profit ({backtest.parametros.take_profit != null ? (Number(backtest.parametros.take_profit) * 100).toFixed(2) + '%' : '-'}).
-                    </div>
-                  ) : backtest.estrategia && backtest.estrategia.toLowerCase() === "buysequenciadealtaouqueda" && backtest.parametros.x !== undefined && backtest.parametros.y !== undefined ? (
-                    <div className="ml-4 mt-1 text-sm text-cyan-300">
-                      Compra no fechamento após uma sequência de <b>{Math.abs(backtest.parametros.x)}</b> {backtest.parametros.x > 0 ? 'altas' : 'quedas'} consecutivas.<br />
-                      <span className="block mt-1 text-cyan-200">
-                        <b>X</b>: Número de dias seguidos de alta (positivo) ou queda (negativo) necessários para gerar o sinal de compra.<br />
-                        <b>Exemplo:</b> X = 3 &rarr; compra após 3 altas seguidas. X = -2 &rarr; compra após 2 quedas seguidas.
-                      </span>
-                      Venda após <b>{backtest.parametros.y}</b> períodos, ou antes se atingir o Stop Loss ({backtest.parametros.stop_loss != null ? (Number(backtest.parametros.stop_loss) * 100).toFixed(2) + '%' : '-'}) ou Take Profit ({backtest.parametros.take_profit != null ? (Number(backtest.parametros.take_profit) * 100).toFixed(2) + '%' : '-'}).<br />
-                      <span className="block mt-1 text-cyan-200">
-                        <b>Y</b>: Quantidade máxima de dias que a posição ficará aberta, caso não atinja stop ou gain.<br />
-                        <b>Exemplo:</b> Y = 5 &rarr; vende no 5º dia após a compra, se não sair antes por stop ou gain.
-                      </span>
-                    </div>
-                  ) : backtest.estrategia && backtest.estrategia.toLowerCase() === "operandomomentum" && backtest.parametros.x !== undefined && backtest.parametros.y !== undefined ? (
-                    <div className="ml-4 mt-1 text-sm text-cyan-300">
-                      <div>
-                        Alta ou queda em percentual em y períodos para ativar a compra (x): <b>{Math.abs(Number(backtest.parametros.x) * 100).toFixed(2)}% {Number(backtest.parametros.x) >= 0 ? 'de alta' : 'de queda'}</b>
-                      </div>
-                      <div>
-                        Períodos para cálculo do x acumulado (y): <b>{backtest.parametros.y}</b>
-                      </div>
-                      <div>
-                        Tempo máximo que uma operação pode durar em períodos (w): <b>{typeof backtest.parametros.w === 'number' ? backtest.parametros.w : String(backtest.parametros.w)}</b>
-                      </div>
-                      <div>
-                        Stop Loss: <b>{typeof backtest.parametros.stop_loss === 'number' ? backtest.parametros.stop_loss : String(backtest.parametros.stop_loss)}</b>
-                      </div>
-                      <div>
-                        Take Profit: <b>{typeof backtest.parametros.take_profit === 'number' ? backtest.parametros.take_profit : String(backtest.parametros.take_profit)}</b>
-                      </div>
-                    </div>
-                  ) : backtest.estrategia && backtest.estrategia.toLowerCase() === "voltaamediabollinger" && backtest.parametros.x !== undefined && backtest.parametros.y !== undefined ? (
-                    <div className="ml-4 mt-1 text-sm text-cyan-300">
-                      <div>
-                        Média móvel de Bollinger (x períodos): <b>{typeof backtest.parametros.x === 'number' ? backtest.parametros.x : String(backtest.parametros.x)}</b>
-                      </div>
-                      <div>
-                        Desvio padrão multiplicador (y): <b>{typeof backtest.parametros.y === 'number' ? backtest.parametros.y : String(backtest.parametros.y)}</b>
-                      </div>
-                      <div>
-                        Tempo máximo da operação (w): <b>{typeof backtest.parametros.w === 'number' ? backtest.parametros.w : String(backtest.parametros.w)}</b>
-                      </div>
-                      <div>
-                        Stop Loss: <b>{typeof backtest.parametros.stop_loss === 'number' ? backtest.parametros.stop_loss : String(backtest.parametros.stop_loss)}</b>
-                      </div>
-                      <div>
-                        Take Profit: <b>{typeof backtest.parametros.take_profit === 'number' ? backtest.parametros.take_profit : String(backtest.parametros.take_profit)}</b>
-                      </div>
-                      <div>
-                        Sair na média de Bollinger: <b>{backtest.parametros.sair_na_media ? 'Sim' : 'Não'}</b>
-                      </div>
-                    </div>
-                  ) : backtest.estrategia && backtest.estrategia.toLowerCase() === "operandotoposefundos" && backtest.parametros.x !== undefined && backtest.parametros.y !== undefined ? (
-                    <div className="ml-4 mt-1 text-sm text-cyan-300">
-                      <div>
-                        Modo de operação: <b>{backtest.parametros.modo ? String(backtest.parametros.modo) : '-'}</b>
-                      </div>
-                      <div>
-                        Percentual para sinalizar topo/fundo (x): <b>{typeof backtest.parametros.x === 'number' ? backtest.parametros.x : String(backtest.parametros.x)}</b>
-                      </div>
-                      <div>
-                        Períodos para buscar topo/fundo (y): <b>{typeof backtest.parametros.y === 'number' ? backtest.parametros.y : String(backtest.parametros.y)}</b>
-                      </div>
-                      <div>
-                        Tempo máximo da operação (w): <b>{typeof backtest.parametros.w === 'number' ? backtest.parametros.w : String(backtest.parametros.w)}</b>
-                      </div>
-                      <div>
-                        Stop Loss: <b>{typeof backtest.parametros.stop_loss === 'number' ? backtest.parametros.stop_loss : String(backtest.parametros.stop_loss)}</b>
-                      </div>
-                      <div>
-                        Take Profit: <b>{typeof backtest.parametros.take_profit === 'number' ? backtest.parametros.take_profit : String(backtest.parametros.take_profit)}</b>
-                      </div>
-                    </div>
-                  ) : (
-                    <ul className="ml-4 mt-1 text-sm text-cyan-300">
-                      {Object.entries(backtest.parametros).map(([key, value]) => (
-                        <li key={key}>{key}: {String(value)}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
+              <div className="mb-4">
+                <span className="font-semibold">Parâmetros:</span>
+                {backtest.parametros && Object.keys(backtest.parametros).length > 0 ? (
+                  <ul className="ml-4 mt-1 text-sm text-cyan-300">
+                    {Object.entries(backtest.parametros).map(([key, value]) => (
+                      <li key={key}>
+                        {formatParamLabel(key)} = {formatParamValue(key, value)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="ml-4 mt-1 text-sm text-cyan-300">-</div>
+                )}
+              </div>
             </div>
             {/* Estatísticas */}
             <div>
@@ -208,6 +241,24 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
                     ? backtest.metrics.retorno_por_trade_percent.toFixed(3) + '%'
                     : backtest.metrics?.retorno_por_trade != null && typeof backtest.metrics.retorno_por_trade === 'number'
                       ? (backtest.metrics.retorno_por_trade * 100).toFixed(3) + '%'
+                      : '-'}
+                </li>
+                <li>
+                  Mediana de retorno por trade: {Array.isArray(backtest.trades) && backtest.trades.length > 0
+                    ? (() => {
+                        const rets = backtest.trades
+                          .map((t: any) => typeof t.entrada_preco === 'number' && typeof t.saida_preco === 'number'
+                            ? (t.saida_preco - t.entrada_preco) / t.entrada_preco
+                            : null)
+                          .filter((v: number | null) => v != null);
+                        if (rets.length === 0) return '-';
+                        const sorted = rets.sort((a: number, b: number) => a - b);
+                        const mid = Math.floor(sorted.length / 2);
+                        const median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+                        return (median * 100).toFixed(3) + '%';
+                      })()
+                    : backtest.metrics?.retorno_mediano_por_trade != null
+                      ? (backtest.metrics.retorno_mediano_por_trade * 100).toFixed(3) + '%'
                       : '-'}
                 </li>
                 <li>
@@ -352,7 +403,7 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
             </div>
           )}
           {/* Tabela de trades realizados */}
-          {backtest.trades && Array.isArray(backtest.trades) && backtest.trades.length > 0 && (
+          {sortedTrades && Array.isArray(sortedTrades) && sortedTrades.length > 0 && (
             <div className="mt-10">
               <h2 className="text-xl font-semibold mb-2">Histórico de Trades Realizados</h2>
               <div className="overflow-x-auto">
@@ -367,7 +418,7 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
                     </tr>
                   </thead>
                   <tbody>
-                    {backtest.trades.map((trade: any, idx: number) => (
+                    {paginatedTrades.map((trade: any, idx: number) => (
                       <tr key={idx} className="border-b border-gray-700 hover:bg-gray-700/30">
                         <td className="px-6 py-4 whitespace-nowrap">{trade.entrada_data}</td>
                         <td className="px-6 py-4 whitespace-nowrap">{trade.entrada_preco}</td>
@@ -383,8 +434,28 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
                   </tbody>
                 </table>
               </div>
+              <div className="flex justify-center items-center gap-4 mt-4">
+                <button
+                  className="px-3 py-1 rounded bg-cyan-600 text-white font-semibold disabled:opacity-50"
+                  onClick={() => setTradesPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={tradesPage === 1}
+                >
+                  Anterior
+                </button>
+                <span className="text-white">
+                  Página {tradesPage} de {totalTradePages}
+                </span>
+                <button
+                  className="px-3 py-1 rounded bg-cyan-600 text-white font-semibold disabled:opacity-50"
+                  onClick={() => setTradesPage((prev) => Math.min(prev + 1, totalTradePages))}
+                  disabled={tradesPage === totalTradePages}
+                >
+                  Próxima
+                </button>
+              </div>
             </div>
           )}
+          </div>
           {/* Pop-up de detalhes da estratégia */}
           {showStrategyInfo && estrategiaInfo && (
             <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">

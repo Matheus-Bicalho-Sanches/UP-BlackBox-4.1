@@ -1,27 +1,30 @@
 import { NextResponse } from 'next/server'
 import { CreateCustomerData } from '@/lib/asaas'
 
-// Fallback caso a variável de ambiente não seja carregada
-const FALLBACK_API_KEY = '$aact_prod_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6Ojc2ODAwZTVmLTEwMzYtNDdiYi04OWIzLTBmNGFjY2NmMGM4Nzo6JGFhY2hfYjc3NGQ5MmMtMTEyNi00Y2U5LWE4MGUtODdjMWE3ZmVkNTcx';
-
-// Configuração do Asaas
+// Configuração do Asaas (exige variável de ambiente)
 const config = {
-  apiKey: process.env.ASAAS_API_KEY || FALLBACK_API_KEY,
+  apiKey: process.env.ASAAS_API_KEY || '',
   environment: process.env.ASAAS_ENVIRONMENT || 'production',
   baseUrl: 'https://api.asaas.com/v3'
 }
 
-// Log da configuração (sem expor a chave completa)
+// Log seguro da configuração (sem expor a chave)
 console.log('DEBUG - Configuração:', {
   baseUrl: config.baseUrl,
   environment: config.environment,
-  apiKeyLength: config.apiKey.length,
-  apiKeyStart: `${config.apiKey.substring(0, 20)}...`,
-  usingEnvVar: config.apiKey === process.env.ASAAS_API_KEY
+  apiKeyLength: config.apiKey ? config.apiKey.length : 0,
+  usingEnvVar: Boolean(process.env.ASAAS_API_KEY)
 });
 
 export async function POST(request: Request) {
   try {
+    if (!config.apiKey) {
+      return NextResponse.json(
+        { error: 'ASAAS_API_KEY ausente no ambiente' },
+        { status: 500 }
+      );
+    }
+
     const data: CreateCustomerData = await request.json();
 
     const payload = {
