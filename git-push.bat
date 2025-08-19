@@ -2,6 +2,23 @@
 echo Starting Git Push Process...
 echo.
 
+echo Ensuring correct Git author (local repo)...
+for /f "delims=" %%e in ('git config --get user.email 2^>nul') do set current_email=%%e
+if not defined current_email (
+    echo No email configured. Setting to "matheussancheslondrina@gmail.com".
+    git config user.email "matheussancheslondrina@gmail.com"
+    git config user.name "Matheus Sanches"
+) else (
+    if /I not "%current_email%"=="matheussancheslondrina@gmail.com" (
+        echo Current email is "%current_email%". Updating to "matheussancheslondrina@gmail.com".
+        git config user.email "matheussancheslondrina@gmail.com"
+        git config user.name "Matheus Sanches"
+    ) else (
+        echo Email already correct: %current_email%
+    )
+)
+echo.
+
 echo Checking Git status...
 git status
 echo.
