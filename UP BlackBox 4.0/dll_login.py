@@ -78,6 +78,22 @@ def order_change_callback(rAssetID, nCorretora, nQtd, nTradedQtd, nLeavesQtd, nS
         from main import atualizar_ordem_firebase, atualizar_posicao_incremental, atualizar_posicoes_firebase_strategy, db
         # Log reduzido: remover prints detalhados para evitar poluição
         # print(f"[DLL] Alteração de ordem recebida: ProfitID={nProfitID}, Status={Status}, Traded={nTradedQtd}, Leaves={nLeavesQtd}")
+
+        # Buscar ordem atual no Firestore ANTES de atualizar, para calcular delta de execução corretamente
+        ordens_cursor = db.collection('ordensDLL').where('OrderID', '==', str(nProfitID)).stream()
+        ordens_docs = []
+        prev_traded_qty = 0.0
+        for _doc in ordens_cursor:
+            d = _doc.to_dict()
+            ordens_docs.append(d)
+            try:
+                prev_traded_qty = float(d.get('TradedQuantity', 0) or 0)
+            except Exception:
+                prev_traded_qty = 0.0
+            # Considera apenas o primeiro documento (OrderID é único)
+            break
+
+        # Atualiza a ordem com os novos campos vindos do callback
         valor_executado = nTradedQtd * dAvgPrice
         atualizar_ordem_firebase(nProfitID, {
             "Status": Status,
@@ -90,26 +106,35 @@ def order_change_callback(rAssetID, nCorretora, nQtd, nTradedQtd, nLeavesQtd, nS
             "price": dPrice,
             "quantity": nQtd
         })
-        # Buscar o account_id / strategy_id da ordem para atualizar as posições
-        ordens_ref = db.collection('ordensDLL').where('OrderID', '==', str(nProfitID)).stream()
-        updated = False
-        for doc in ordens_ref:
-            ordem = doc.to_dict()
-            account_id = ordem.get('account_id')
-            ticker = ordem.get('ticker')
-            side = ordem.get('side')
-            strategy_id = ordem.get('strategy_id')
-            
-            if account_id and ticker and nTradedQtd > 0:
-                # ✅ NOVO: Atualização incremental
-                quantity_change = nTradedQtd if side == 'buy' else -nTradedQtd
-                atualizar_posicao_incremental(account_id, ticker, quantity_change, dAvgPrice, side)
-                updated = True
-                
-            if strategy_id:
-                atualizar_posicoes_firebase_strategy(strategy_id)
-        if not updated:
-            # Evitar spam nos logs se a ordem ainda não estiver no Firestore
+
+        # Calcula delta executado (nTradedQtd é cumulativo). Evita aplicar execução repetida.
+        try:
+            delta_traded = float(nTradedQtd) - float(prev_traded_qty)
+        except Exception:
+            delta_traded = float(nTradedQtd)
+        if delta_traded < 0:
+            # Callback pode chegar fora de ordem; nunca debitar negativo de novo
+            delta_traded = 0.0
+
+        updated_position = False
+        # Usar os dados da ordem obtidos acima, se disponíveis; se não, tentar buscar novamente a lista completa
+        if ordens_docs:
+            for ordem in ordens_docs:
+                account_id = ordem.get('account_id')
+                ticker = ordem.get('ticker')
+                side = ordem.get('side')
+                strategy_id = ordem.get('strategy_id')
+
+                if account_id and ticker and delta_traded > 0:
+                    quantity_change = delta_traded if side == 'buy' else -delta_traded
+                    atualizar_posicao_incremental(account_id, ticker, quantity_change, dAvgPrice, side)
+                    updated_position = True
+
+                if strategy_id:
+                    atualizar_posicoes_firebase_strategy(strategy_id)
+        else:
+            # Se a ordem ainda não estiver gravada no Firestore, evita log de spam
+            updated_position = False
             pass
     except Exception:
         # Erros silenciosos para não poluir o log

@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 import math
 
-def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_profit=0.10, sair_em_z=False, z_saida=0.0, sair_na_media=False):
+def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_profit=0.10, sair_em_z=False, z_saida=0.0, sair_na_media=False, z_somente_fechamento=True):
     """
     Estratégia:
     - Compra quando o fechamento cruza abaixo da banda inferior de Bollinger (só se não houver posição aberta).
@@ -14,6 +14,8 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
       stop_loss: stop loss percentual (ex: -0.05)
       take_profit: take profit percentual (ex: 0.10)
       sair_na_media: se True, sai quando o preço volta à média de Bollinger
+      z_somente_fechamento: se True (padrão), a saída por Z (ou média) é verificada só no fechamento dos candles seguintes à entrada.
+                            Se False, permite saída intrabar por Z em todos os candles (além do primeiro).
     """
     df = pd.read_csv(csv_path, sep=',', on_bad_lines='skip')
     df['date'] = pd.to_datetime(df['date'], format='%d/%m/%Y %H:%M')
@@ -139,6 +141,13 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
                 efetivo_z_saida = float(z_saida if sair_em_z else 0.0)
                 if efetiva_sair_em_z and not pd.isna(media_bollinger) and not pd.isna(df.at[entrada_idx + j, 'std']):
                     limite_saida = media_bollinger - efetivo_z_saida * df.at[entrada_idx + j, 'std']
+                    # Se permitido, saída intrabar por Z usando a máxima do candle
+                    if not z_somente_fechamento and has_high and max_preco >= limite_saida:
+                        saida_idx = entrada_idx + j
+                        saida_data = df.at[saida_idx, 'date']
+                        saida_preco = float(limite_saida)
+                        break
+                    # Caso contrário, considera somente fechamento
                     if preco_fechamento >= limite_saida:
                         saida_idx = entrada_idx + j
                         saida_data = df.at[saida_idx, 'date']
@@ -281,6 +290,10 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
             ),
             'z_saida': (
                 'Valor de Z (desvios) para a regra de saída. Deve ser ≥ 0 e idealmente ≤ Y.'
+            ),
+            'z_somente_fechamento': (
+                'Se verdadeiro, a verificação de saída por Z (ou média) nos candles após a entrada ocorre apenas no fechamento.\n'
+                'Se falso, a saída por Z também pode acontecer intrabar (se a máxima do candle tocar a linha alvo).'
             )
         }
     } 

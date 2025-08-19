@@ -51,6 +51,7 @@ export default function BacktestPage() {
   const [paramModo, setParamModo] = useState<'topo' | 'fundo'>('topo');
   const [paramSairEmZ, setParamSairEmZ] = useState(false);
   const [paramZSaida, setParamZSaida] = useState<number>(0);
+  const [paramZSomenteFechamento, setParamZSomenteFechamento] = useState<boolean>(true);
 
   async function fetchBacktests() {
     setLoading(true);
@@ -199,6 +200,7 @@ export default function BacktestPage() {
           take_profit: numTakeProfit / 100,
           sair_em_z: paramSairEmZ,
           z_saida: paramSairEmZ ? Number(paramZSaida) : 0,
+          z_somente_fechamento: paramZSomenteFechamento,
         };
       }
       try {
@@ -253,7 +255,7 @@ export default function BacktestPage() {
       {/* Modal de novo backtest */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-          <div className="bg-white text-gray-900 rounded-lg shadow-lg max-w-3xl w-full p-10 relative">
+          <div className="bg-white text-gray-900 rounded-lg shadow-lg w-full max-w-6xl p-10 relative">
             <button
               className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 text-2xl"
               onClick={() => setShowModal(false)}
@@ -617,6 +619,20 @@ export default function BacktestPage() {
                     </label>
                     <span className="text-xs text-gray-700 block mt-1 ml-6">
                       Quando habilitado, encerra a operação quando o preço atinge a linha: média - Z*desvio padrão. Z=0 equivale a sair na média.
+                    </span>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={paramZSomenteFechamento}
+                        onChange={e => setParamZSomenteFechamento(e.target.checked)}
+                        className="accent-cyan-600"
+                      />
+                      <span className="text-sm font-medium">Sair somente no fechamento do candle</span>
+                    </label>
+                    <span className="text-xs text-gray-700 block mt-1 ml-6">
+                      Desmarque para permitir saída intrabar por Z em todos os candles (se o preço tocar a linha alvo durante o candle).
                     </span>
                   </div>
                   {paramSairEmZ && (

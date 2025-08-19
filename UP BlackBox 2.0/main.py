@@ -348,6 +348,11 @@ async def run_backtest(request: Request):
                 z_saida = float(parametros.get('z_saida')) if parametros.get('z_saida') is not None and str(parametros.get('z_saida')).strip() != '' else 0.0
             except Exception:
                 z_saida = 0.0
+            # Controle de verificação de Z apenas no fechamento (padrão True)
+            try:
+                z_somente_fechamento = bool(parametros.get('z_somente_fechamento', True))
+            except Exception:
+                z_somente_fechamento = True
             # Retrocompatibilidade: se vier sair_na_media=true e não vier sair_em_z, tratar como z=0
             try:
                 sair_na_media_antigo = bool(parametros.get('sair_na_media', False))
@@ -356,7 +361,7 @@ async def run_backtest(request: Request):
             if sair_na_media_antigo and not sair_em_z:
                 sair_em_z = True
                 z_saida = 0.0
-            resultado = run_voltaamediabollinger(tmp_path, x, y, w, stop_loss, take_profit, sair_em_z, z_saida)
+            resultado = run_voltaamediabollinger(tmp_path, x, y, w, stop_loss, take_profit, sair_em_z, z_saida, False, z_somente_fechamento)
         else:
             return {"error": "Estratégia não implementada"}
 
