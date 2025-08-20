@@ -43,7 +43,6 @@ if errorlevel 1 (
     echo.
 )
 
-REM Inicia o backend
 echo.
 echo Iniciando High Frequency Backend...
 echo Porta: 8002
@@ -61,6 +60,14 @@ echo.
 echo Pressione Ctrl+C para parar
 echo.
 
-python main.py
+REM Usa o argumento 1 como raiz do projeto; se não vier, infere duas pastas acima
+set "PROJECT_ROOT=%~1"
+if "%PROJECT_ROOT%"=="" set "PROJECT_ROOT=%~dp0..\.."
+
+REM Garante que rodamos a partir da raiz do projeto
+cd /d "%PROJECT_ROOT%"
+
+REM Inicia o app usando script customizado que força o SelectorEventLoop
+python services\high_frequency\start_uvicorn.py
 
 pause

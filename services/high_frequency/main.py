@@ -5,9 +5,32 @@ Backend otimizado para 70-150 ativos com 50K+ ticks/segundo.
 Sistema independente com zero perdas e agregação em tempo real.
 """
 
+import os
+import sys
+from pathlib import Path
+
+# Ensure project root is on sys.path so that 'services.*' absolute imports work
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_PROJECT_ROOT_STR = str(_PROJECT_ROOT)
+if _PROJECT_ROOT_STR not in sys.path:
+	sys.path.insert(0, _PROJECT_ROOT_STR)
+
+# Carrega variáveis do .env (procura em vários locais)
+from dotenv import load_dotenv
+# Tenta carregar .env da raiz do projeto
+load_dotenv()
+# Carrega .env.local onde estão as variáveis do Firebase Admin
+env_local = _PROJECT_ROOT / ".env.local"
+if env_local.exists():
+    load_dotenv(env_local)
+# Também tenta carregar da pasta Dll_Profit onde estão as configurações da DLL
+dll_profit_env = _PROJECT_ROOT / "Dll_Profit" / ".env"
+if dll_profit_env.exists():
+    load_dotenv(dll_profit_env)
+
+# Now we can safely do the other imports
 import asyncio
 import logging
-import os
 import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Any
@@ -19,13 +42,22 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import httpx
 
-# Importa nossos sistemas de alta frequência
-from high_frequency_buffer import HighFrequencyBuffer, Tick
-from high_frequency_persistence import HighFrequencyPersistence, PersistenceConfig
+# Event Loop policy já deve ter sido configurada pelo start_uvicorn.py
+
+# Alterado para imports absolutos para evitar problemas de PYTHONPATH
+from services.high_frequency.models import Tick, Subscription, SystemStatus, TickerMetrics
+from services.high_frequency.config import (
+    HF_DISABLE_SIM, PROFIT_FEED_URL, LOG_LEVEL, DATABASE_URL,
+    FIREBASE_SERVICE_ACCOUNT_PATH
+)
+from services.high_frequency.persistence import initialize_db, get_db_pool, persist_ticks, get_ticks_from_db
+from services.high_frequency.buffer import buffer_queue, subscriptions, tick_counters, start_buffer_processor, add_tick_to_buffer
+from services.high_frequency.firestore_utils import init_firebase, load_subscriptions_from_firestore
+from services.high_frequency.simulation import simulate_ticks
 
 # Configuração de logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=LOG_LEVEL,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -95,15 +127,14 @@ FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-cre
 PROFIT_FEED_URL = os.getenv("PROFIT_FEED_URL", "http://localhost:8001")
 HF_DISABLE_SIM = os.getenv("HF_DISABLE_SIM", "0").lower() in ("1", "true", "yes")
 
-# Sistemas principais
-high_freq_buffer: Optional[HighFrequencyBuffer] = None
-high_freq_persistence: Optional[HighFrequencyPersistence] = None
+# Estado do sistema
+system_initialized = False
 
 # Estado global
 active_subscriptions: Dict[str, Dict[str, Any]] = {}
 subscription_stats: Dict[str, Dict[str, Any]] = {}
 simulation_task: Optional[asyncio.Task] = None
-simulation_enabled: bool = not HF_DISABLE_SIM
+simulation_enabled: bool = False
 
 # Inicialização do Firebase
 def init_firebase():
@@ -119,60 +150,23 @@ def init_firebase():
     except Exception as e:
         logger.error(f"Failed to initialize Firebase: {e}")
 
-# Inicialização dos sistemas de alta frequência
+# Função simplificada de inicialização
 def init_high_frequency_systems():
     """Inicializa os sistemas de alta frequência."""
-    global high_freq_buffer, high_freq_persistence
+    global system_initialized
     
     try:
-        # Configuração otimizada para 70-150 ativos
-        buffer_config = {
-            'max_ticks_per_symbol': 5_000_000,  # 5M ticks por símbolo
-            'processing_interval_ms': 50,  # 50ms para latência ultra-baixa
-            'batch_size': 2000  # Lotes maiores para eficiência
-        }
-        
-        # Configuração de persistência otimizada
-        persistence_config = PersistenceConfig(
-            batch_size=2000,  # 2K ticks por lote
-            batch_timeout_ms=50,  # 50ms timeout
-            max_retries=5,  # Mais retries para zero perdas
-            retry_delay_ms=50,  # Delay menor
-            connection_pool_size=20,  # Mais conexões para alta frequência
-            enable_compression=True,
-            enable_backup=True
-        )
-        
-        # Inicializa buffer
-        high_freq_buffer = HighFrequencyBuffer(**buffer_config)
-        
-        # Inicializa persistência
-        high_freq_persistence = HighFrequencyPersistence(DATABASE_URL, persistence_config)
-        
-        # Configura callbacks
-        high_freq_buffer.on_tick_processed = on_tick_processed_callback
-        high_freq_buffer.on_candle_updated = on_candle_updated_callback
-        high_freq_buffer.on_gap_detected = on_gap_detected_callback
-        
-        # Inicia processamento
-        high_freq_buffer.start_processing()
-        high_freq_persistence.start_processing()
-        
+        system_initialized = True
         logger.info("High frequency systems initialized successfully")
         
     except Exception as e:
         logger.error(f"Failed to initialize high frequency systems: {e}")
         raise
 
-# Callbacks do sistema
-def on_tick_processed_callback(tick: Tick):
-    """Callback executado quando um tick é processado."""
+# Callbacks simplificados do sistema
+def update_tick_stats(tick: Tick):
+    """Atualiza estatísticas de tick."""
     try:
-        # Adiciona para persistência em lote
-        if high_freq_persistence:
-            high_freq_persistence.add_tick(tick.to_dict())
-        
-        # Atualiza estatísticas
         symbol = tick.symbol
         if symbol in subscription_stats:
             stats = subscription_stats[symbol]
@@ -182,97 +176,47 @@ def on_tick_processed_callback(tick: Tick):
             stats['last_volume'] = tick.volume
             
     except Exception as e:
-        logger.error(f"Error in tick callback: {e}")
-
-def on_candle_updated_callback(candle: CandleData):
-    """Callback executado quando um candle é atualizado."""
-    try:
-        # Adiciona para persistência em lote
-        if high_freq_persistence:
-            high_freq_persistence.add_candle(candle.dict())
-            
-    except Exception as e:
-        logger.error(f"Error in candle callback: {e}")
-
-def on_gap_detected_callback(symbol: str, start_time: float, end_time: float):
-    """Callback executado quando um gap é detectado."""
-    try:
-        gap_duration = end_time - start_time
-        logger.warning(f"Gap detected for {symbol}: {gap_duration:.2f}s from {start_time} to {end_time}")
-        
-        # Atualiza estatísticas
-        if symbol in subscription_stats:
-            subscription_stats[symbol]['gaps_detected'] = subscription_stats[symbol].get('gaps_detected', 0) + 1
-            
-    except Exception as e:
-        logger.error(f"Error in gap callback: {e}")
-
-# Simulação de ticks para teste
-async def simulate_ticks():
-    """Simula ticks para teste do sistema."""
-    if not high_freq_buffer:
-        return
-    
-    logger.info("Starting tick simulation...")
-    
-    # Símbolos de teste
-    test_symbols = ["PETR4", "VALE3", "ITUB4", "BBDC4", "ABEV3"]
-    
-    while True:
-        try:
-            produced_any = False
-            for symbol in test_symbols:
-                if symbol in active_subscriptions:
-                    # Simula tick com dados realistas
-                    import random
-                    
-                    tick = Tick(
-                        symbol=symbol,
-                        exchange="B",
-                        price=random.uniform(10.0, 100.0),
-                        volume=random.randint(100, 10000),
-                        timestamp=time.time(),
-                        trade_id=random.randint(1, 1000000),
-                        buyer_maker=random.choice([True, False])
-                    )
-                    
-                    # Adiciona ao buffer
-                    high_freq_buffer.add_tick(tick)
-                    produced_any = True
-                    
-                    # Aguarda um pouco para não sobrecarregar
-                    await asyncio.sleep(0.001)  # 1ms entre ticks
-            # Se não produziu nenhum tick (sem assinaturas), cede o loop
-            if not produced_any:
-                await asyncio.sleep(0.05)  # 50ms de espera quando ocioso
-            
-        except Exception as e:
-            logger.error(f"Error in tick simulation: {e}")
-            await asyncio.sleep(1)
+        logger.error(f"Error updating tick stats: {e}")
 
 # Eventos de startup/shutdown
 @app.on_event("startup")
 async def startup_event():
-    """Evento executado na inicialização."""
-    logger.info("Starting High Frequency Market Data Backend...")
+    """Inicializa todos os sistemas do backend na ordem correta."""
+    logger.info("Iniciando o High Frequency Market Data Backend...")
     
+    # PASSO 1: Inicializa o pool de conexões com o DB
+    db_pool = await get_db_pool(retries=5, delay=2)
+    if not db_pool:
+        logger.error("Falha crítica: não foi possível conectar ao banco de dados após várias tentativas. Encerrando.")
+        return
+
+    # PASSO 2: Garante que o esquema do DB (tabelas) esteja criado ANTES de tudo
     try:
-        # Inicializa Firebase
-        init_firebase()
-        
-        # Inicializa sistemas de alta frequência
-        init_high_frequency_systems()
-        
-        # Inicia simulação de ticks em background (se habilitado)
-        if simulation_enabled:
-            global simulation_task
-            simulation_task = asyncio.create_task(simulate_ticks())
-        
-        logger.info("Backend started successfully")
-        
+        await initialize_db(db_pool)
     except Exception as e:
-        logger.error(f"Failed to start backend: {e}")
-        raise
+        logger.error(f"Falha crítica ao inicializar o esquema do banco de dados: {e}. Encerrando.")
+        return
+
+    # PASSO 3: Agora sim, inicia os processos de buffer e persistência
+    logger.info("Iniciando o processamento de buffer e a persistência de dados...")
+    asyncio.create_task(start_buffer_processor(db_pool))
+    
+    # PASSO 4: Inicializa sistemas de alta frequência
+    try:
+        init_high_frequency_systems()
+    except Exception as e:
+        logger.error(f"Falha crítica ao inicializar sistemas de alta frequência: {e}")
+        return
+
+    # PASSO 5: Auto-subscribe de tickers do Firestore
+    try:
+        init_firebase()
+        asyncio.create_task(load_subscriptions_from_firestore())
+    except Exception as e:
+        logger.warning(f"Erro ao inicializar Firestore (não crítico): {e}")
+
+    logger.info("Sistemas de alta frequência inicializados com sucesso.")
+    logger.info("Backend iniciado com sucesso - pronto para receber conexões!")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -280,12 +224,8 @@ async def shutdown_event():
     logger.info("Shutting down High Frequency Market Data Backend...")
     
     try:
-        if high_freq_buffer:
-            high_freq_buffer.stop_processing()
-        
-        if high_freq_persistence:
-            high_freq_persistence.stop_processing()
-            
+        global system_initialized
+        system_initialized = False
         logger.info("Backend shutdown completed")
         
     except Exception as e:
@@ -401,10 +341,11 @@ async def unsubscribe_symbol(request: UnsubscribeRequest):
 async def ingest_tick(tick: IngestTick):
     """Ingestão de 1 tick (via ProfitDLL)."""
     try:
-        if not high_freq_buffer:
-            raise HTTPException(status_code=503, detail="buffer_unavailable")
+        if not system_initialized:
+            raise HTTPException(status_code=503, detail="system_not_initialized")
+        
         ts = tick.timestamp or time.time()
-        high_freq_buffer.add_tick(Tick(
+        tick_obj = Tick(
             symbol=tick.symbol.upper(),
             exchange=tick.exchange.upper(),
             price=tick.price,
@@ -412,7 +353,12 @@ async def ingest_tick(tick: IngestTick):
             timestamp=ts,
             trade_id=tick.trade_id,
             buyer_maker=tick.buyer_maker
-        ))
+        )
+        
+        # Adiciona ao buffer
+        add_tick_to_buffer(tick_obj)
+        update_tick_stats(tick_obj)
+        
         return {"success": True}
     except Exception as e:
         logger.error(f"Error ingest_tick: {e}")
@@ -422,11 +368,12 @@ async def ingest_tick(tick: IngestTick):
 async def ingest_batch(batch: IngestBatch):
     """Ingestão em lote de ticks (melhor para performance)."""
     try:
-        if not high_freq_buffer:
-            raise HTTPException(status_code=503, detail="buffer_unavailable")
+        if not system_initialized:
+            raise HTTPException(status_code=503, detail="system_not_initialized")
+        
         for t in batch.ticks:
             ts = t.timestamp or time.time()
-            high_freq_buffer.add_tick(Tick(
+            tick_obj = Tick(
                 symbol=t.symbol.upper(),
                 exchange=t.exchange.upper(),
                 price=t.price,
@@ -434,7 +381,12 @@ async def ingest_batch(batch: IngestBatch):
                 timestamp=ts,
                 trade_id=t.trade_id,
                 buyer_maker=t.buyer_maker
-            ))
+            )
+            
+            # Adiciona ao buffer
+            add_tick_to_buffer(tick_obj)
+            update_tick_stats(tick_obj)
+        
         return {"success": True, "ingested": len(batch.ticks)}
     except Exception as e:
         logger.error(f"Error ingest_batch: {e}")
@@ -472,51 +424,25 @@ async def get_active_subscriptions():
 async def get_ticks(symbol: str, limit: int = 1000, timeframe: str = "raw"):
     """Retorna ticks para um símbolo específico."""
     try:
-        if not high_freq_buffer:
-            raise HTTPException(status_code=503, detail="High frequency buffer not available")
+        if not system_initialized:
+            raise HTTPException(status_code=503, detail="system_not_initialized")
         
         symbol = symbol.upper()
         
-        if timeframe == "raw":
-            # Retorna ticks individuais
-            end_time = time.time()
-            start_time = end_time - (limit * 0.1)  # Últimos ticks
-            
-            ticks = high_freq_buffer.get_ticks_window(symbol, start_time, end_time, limit)
-            
-            return {
-                "success": True,
-                "symbol": symbol,
-                "timeframe": timeframe,
-                "ticks": [tick.to_dict() for tick in ticks],
-                "count": len(ticks)
-            }
-        else:
-            # Retorna candle consolidado
-            candle = high_freq_buffer.get_realtime_candle(symbol, timeframe)
-            
-            if candle:
-                return {
-                    "success": True,
-                    "symbol": symbol,
-                    "timeframe": timeframe,
-                    "candle": {
-                        'open_time': candle.open_time,
-                        'close_time': candle.close_time,
-                        'open_price': candle.open_price,
-                        'high_price': candle.high_price,
-                        'low_price': candle.low_price,
-                        'close_price': candle.close_price,
-                        'total_volume': candle.total_volume,
-                        'total_volume_financial': candle.total_volume_financial,
-                        'tick_count': candle.tick_count
-                    }
-                }
-            else:
-                return {
-                    "success": False,
-                    "message": f"No candle data available for {symbol} at {timeframe} timeframe"
-                }
+        # Obtém pool de DB e busca ticks diretamente
+        db_pool = await get_db_pool()
+        if not db_pool:
+            raise HTTPException(status_code=503, detail="database_unavailable")
+        
+        ticks_data = await get_ticks_from_db(symbol, timeframe, limit, db_pool)
+        
+        return {
+            "success": True,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "ticks": ticks_data,
+            "count": len(ticks_data)
+        }
                 
     except HTTPException:
         raise
@@ -528,16 +454,17 @@ async def get_ticks(symbol: str, limit: int = 1000, timeframe: str = "raw"):
 async def get_system_status():
     """Retorna status completo do sistema."""
     try:
-        buffer_status = high_freq_buffer.get_status() if high_freq_buffer else {}
-        persistence_status = high_freq_persistence.get_status() if high_freq_persistence else {}
+        from services.high_frequency.buffer import get_buffer_status
+        
+        buffer_status = get_buffer_status()
         
         return {
             "success": True,
             "timestamp": time.time(),
+            "system_initialized": system_initialized,
             "active_subscriptions_count": len(active_subscriptions),
             "buffer_status": buffer_status,
-            "persistence_status": persistence_status,
-            "system_uptime": time.time() - (buffer_status.get('start_time', time.time()))
+            "subscription_stats": subscription_stats
         }
         
     except Exception as e:
@@ -548,15 +475,16 @@ async def get_system_status():
 async def get_performance_metrics():
     """Retorna métricas de performance."""
     try:
-        buffer_metrics = high_freq_buffer.get_metrics() if high_freq_buffer else {}
-        persistence_metrics = high_freq_persistence.get_metrics() if high_freq_persistence else {}
+        from services.high_frequency.buffer import get_buffer_status
+        
+        buffer_status = get_buffer_status()
         
         return {
             "success": True,
             "timestamp": time.time(),
-            "buffer_metrics": buffer_metrics,
-            "persistence_metrics": persistence_metrics,
-            "subscription_stats": subscription_stats
+            "buffer_status": buffer_status,
+            "subscription_stats": subscription_stats,
+            "system_initialized": system_initialized
         }
         
     except Exception as e:

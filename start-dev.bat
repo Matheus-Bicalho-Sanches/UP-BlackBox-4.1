@@ -56,11 +56,11 @@ start "UPBB4 API" cmd /k cd /d "%BB4_DIR%" ^& uvicorn main:app --reload --port %
 
 REM Sobe o High Frequency Backend em outra janela (sem simulacao)
 echo Iniciando High Frequency Backend na pasta: "%~dp0services\high_frequency"
-start "HF Backend" cmd /k cd /d "%~dp0services\high_frequency" ^& set HF_DISABLE_SIM=1 ^& set PROFIT_FEED_URL=http://localhost:%FEED_PORT% ^& start_backend.bat
+start "HF Backend" cmd /k cd /d "%~dp0services\high_frequency" ^& set HF_DISABLE_SIM=1 ^& set PROFIT_FEED_URL=http://localhost:%FEED_PORT% ^& start_backend.bat "%~dp0"
 
-REM Sobe o serviço de market data em outra janela  
-echo Iniciando market feed na pasta: "%~dp0"
-start "Market Feed" cmd /k cd /d "%~dp0" ^& python services\profit\run_server.py %FEED_PORT%
+REM Sobe o novo Market Feed Next (substitui o antigo) em outra janela
+echo Iniciando Market Feed Next na pasta: "%~dp0"
+start "Market Feed" cmd /k cd /d "%~dp0" ^& call services\market_feed_next\start_market_feed_next.bat
 
 REM Sobe o UP BlackBox 2.0 em outra janela
 echo Iniciando UP BlackBox 2.0 na pasta: "%~dp0UP BlackBox 2.0"
