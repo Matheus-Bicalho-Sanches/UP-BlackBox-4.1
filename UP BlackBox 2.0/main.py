@@ -17,6 +17,7 @@ from estrategias.buysequenciadealtaouqueda import run_buysequenciadealtaouqueda
 from estrategias.operandomomentum import run_operandomomentum
 from estrategias.operandotoposefundos import run_operandotoposefundos
 from estrategias.voltaamediabollinger import run_voltaamediabollinger
+from estrategias.precoCruzaMedia import run_precoCruzaMedia
 from firebase_admin import firestore
 from fastapi.responses import JSONResponse
 import math
@@ -362,6 +363,12 @@ async def run_backtest(request: Request):
                 sair_em_z = True
                 z_saida = 0.0
             resultado = run_voltaamediabollinger(tmp_path, x, y, w, stop_loss, take_profit, sair_em_z, z_saida, False, z_somente_fechamento)
+        elif estrategia_nome.lower() == 'precocruzamedia':
+            param1 = parametros.get('param1', 3)
+            param2 = parametros.get('param2', 5)
+            stop_loss = parametros.get('stop_loss', -0.05)
+            take_profit = parametros.get('take_profit', 0.08)
+            resultado = run_precoCruzaMedia(tmp_path, param1, param2, stop_loss, take_profit)
         else:
             return {"error": "Estratégia não implementada"}
 

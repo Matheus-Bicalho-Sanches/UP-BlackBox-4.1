@@ -1,0 +1,25 @@
+# High Frequency Market Data Backend Dependencies
+# ==============================================
+# Sistema otimizado para 50K+ ticks/segundo
+
+# FastAPI e servidor
+fastapi==0.111.0
+uvicorn==0.29.0
+pydantic==2.10.6
+
+# Banco de dados
+psycopg[binary]==3.2.3
+
+# Firebase
+firebase-admin==6.4.0
+
+# Utilitários
+python-dotenv==1.1.1
+python-multipart==0.0.9
+
+# Logging e monitoramento
+structlog==23.2.0
+
+# Performance e otimização
+orjson==3.9.10  # JSON mais rápido
+ujson==5.8.0    # Alternativa rápida para JSON

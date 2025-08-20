@@ -18,6 +18,7 @@ import logging
 import time
 import threading
 from collections import deque, defaultdict
+from urllib import request as _urlreq, error as _urlerr
 # ----------------------------------------------------------------------------
 # Logging básico (ajustável via LOG_LEVEL=DEBUG|INFO|WARNING)
 # ----------------------------------------------------------------------------
@@ -236,8 +237,8 @@ def _telemetry_on_tick(ticker: str):
             gap = now_ns - last_ns
             if gap > state["max_gap_ns"]:
                 state["max_gap_ns"] = gap
-            # alerta de gap anormal > 2s
-            if gap > 2_000_000_000:
+            # alerta de gap anormal > 5s (aumentado de 2s)
+            if gap > 5_000_000_000:
                 logging.warning("tick_gap_warn ticker=%s gap_s=%.3f", ticker, gap/1e9)
         state["last_ns"] = now_ns
         state["count"] += 1
@@ -255,7 +256,9 @@ async def telemetry_reporter():
                 st["count"] = 0
 
 # Keepalive através de GetServerClock (se disponível) e re-subscribe preventivo
-KEEPALIVE_INTERVAL_SEC = 5
+KEEPALIVE_INTERVAL_SEC = 15  # Aumentado de 5 para 15 segundos
+KEEPALIVE_GAP_THRESHOLD = 30  # Só reconecta após 30s sem dados
+KEEPALIVE_COOLDOWN_SEC = 60   # Cooldown de 60s entre reconexões
 GetServerClock = getattr(dll, "GetServerClock", None)
 
 async def keepalive_watchdog():
@@ -272,7 +275,7 @@ async def keepalive_watchdog():
             if last is None:
                 continue
             gap = (now - last).total_seconds()
-            if gap > KEEPALIVE_INTERVAL_SEC + 1:
+            if gap > KEEPALIVE_GAP_THRESHOLD:  # Aumentado threshold
                 try:
                     if callable(GetServerClock):
                         try:
@@ -280,7 +283,7 @@ async def keepalive_watchdog():
                         except Exception:
                             pass
                     last_ts = keepalive_watchdog.last_resubscribe_at.get(tkr, 0)
-                    if (now.timestamp() - last_ts) > 10:  # cooldown 10s
+                    if (now.timestamp() - last_ts) > KEEPALIVE_COOLDOWN_SEC:  # Cooldown maior
                         SubscribeTicker(tkr, "B")
                         keepalive_watchdog.last_resubscribe_at[tkr] = now.timestamp()
                         logging.info("keepalive: reSubscribe %s after gap_s=%.1f", tkr, gap)
@@ -288,8 +291,23 @@ async def keepalive_watchdog():
                     logging.warning("keepalive reSubscribe failed %s: %s", tkr, e)
 
 def new_tick(ticker: str, price: float, volume: int):
-    """Recebido de callback – acumula no buffer."""
+    """Recebido de callback – acumula no buffer e salva tick individual."""
     _telemetry_on_tick(ticker)
+    
+    # Enfileira tick para ingestão no backend de alta frequência
+    try:
+        ts = datetime.now(timezone.utc).timestamp()
+        with hf_batch_lock:
+            hf_batch.append({
+                "symbol": ticker,
+                "exchange": "B",
+                "price": float(price),
+                "volume": int(volume or 0),
+                "timestamp": ts,
+            })
+    except Exception as e:
+        logging.warning("Failed to enqueue tick for HF ingest: %s", e)
+    
     bucket = ticks_queue.setdefault(ticker, deque(maxlen=50_000))
     bucket.append((price, datetime.now(timezone.utc).timestamp(), volume))
 
@@ -376,6 +394,53 @@ async def aggregator():
 
 # -------- Backfill de histórico ---------
 history_backfill: dict[str, dict[int, list[tuple[int, int, float, float, int]]]] = defaultdict(lambda: defaultdict(list))
+
+# -----------------------------------------------------------------------------
+# Ingestão no backend de alta frequência (HTTP batch)
+# -----------------------------------------------------------------------------
+HF_INGEST_URL = os.getenv("HF_INGEST_URL", "http://127.0.0.1:8002/ingest/batch")
+HF_BATCH_MS = int(os.getenv("HF_BATCH_MS", "50"))
+HF_BATCH_MAX = int(os.getenv("HF_BATCH_MAX", "2000"))
+HF_MAX_RETRIES = int(os.getenv("HF_MAX_RETRIES", "3"))
+
+hf_batch: deque[dict] = deque()
+hf_batch_lock = threading.Lock()
+
+def _send_batch_sync(payload: list[dict]) -> bool:
+    try:
+        data = json.dumps({"ticks": payload}).encode("utf-8")
+        req = _urlreq.Request(HF_INGEST_URL, data=data, headers={"Content-Type": "application/json"}, method="POST")
+        with _urlreq.urlopen(req, timeout=5) as resp:
+            return 200 <= resp.status < 300
+    except _urlerr.URLError as e:
+        logging.warning("HF ingest URLError: %s", e)
+        return False
+    except Exception as e:
+        logging.warning("HF ingest error: %s", e)
+        return False
+
+async def hf_ingest_loop():
+    """Loop assíncrono que envia ticks em lote para o backend HF."""
+    loop = asyncio.get_running_loop()
+    while True:
+        try:
+            await asyncio.sleep(HF_BATCH_MS / 1000)
+            batch: list[dict] = []
+            with hf_batch_lock:
+                while hf_batch and len(batch) < HF_BATCH_MAX:
+                    batch.append(hf_batch.popleft())
+            if not batch:
+                continue
+            ok = await loop.run_in_executor(None, _send_batch_sync, batch)
+            if not ok:
+                # Reenfileira em caso de falha
+                with hf_batch_lock:
+                    for item in reversed(batch):
+                        hf_batch.appendleft(item)
+        except Exception as e:
+            logging.error("hf_ingest_loop error: %s", e)
+            await asyncio.sleep(0.5)
+
 
 def _parse_profit_datetime(date_str: str) -> datetime:
     try:
@@ -492,6 +557,7 @@ async def main():
         telemetry_reporter(),
         keepalive_watchdog(),
         backfill_flusher(),
+        hf_ingest_loop(),
     )
 
 # -----------------------------------------------------------------------------
@@ -499,6 +565,7 @@ async def main():
 # -----------------------------------------------------------------------------
 
 _bg_task: asyncio.Task | None = None
+
 
 def start_background_feed(loop: asyncio.AbstractEventLoop):
     """Cria task de agregação dentro do event-loop do FastAPI."""
@@ -508,6 +575,7 @@ def start_background_feed(loop: asyncio.AbstractEventLoop):
         loop.create_task(telemetry_reporter())
         loop.create_task(keepalive_watchdog())
         loop.create_task(backfill_flusher())
+        loop.create_task(hf_ingest_loop())
 
 # para execução standalone (python profit_feed.py)
 if __name__ == "__main__":

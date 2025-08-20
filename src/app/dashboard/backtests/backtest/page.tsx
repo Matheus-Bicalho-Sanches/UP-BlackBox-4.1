@@ -202,6 +202,13 @@ export default function BacktestPage() {
           z_saida: paramSairEmZ ? Number(paramZSaida) : 0,
           z_somente_fechamento: paramZSomenteFechamento,
         };
+      } else if (selectedEstrategia.toLowerCase() === "precocruzamedia") {
+        body.parametros = {
+          param1: numX,
+          param2: numY,
+          stop_loss: numStopLoss / 100,
+          take_profit: numTakeProfit / 100,
+        };
       }
       try {
         const res = await fetch("http://localhost:8003/api/run-backtest", {

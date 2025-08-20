@@ -45,9 +45,18 @@ echo - UP BlackBox 2.0 (Backtests): http://localhost:%BB2_PORT%
 echo - Quant Engine: Sistema de estrategias quantitativas
 echo.
 
+REM Variaveis para integracao com High Frequency Backend (ingestao em lote)
+set HF_INGEST_URL=http://127.0.0.1:8002/ingest/batch
+set HF_BATCH_MS=50
+set HF_BATCH_MAX=1000
+
 REM Sobe o backend principal em uma nova janela
 echo Iniciando backend principal na pasta: "%BB4_DIR%"
 start "UPBB4 API" cmd /k cd /d "%BB4_DIR%" ^& uvicorn main:app --reload --port %MAIN_PORT%
+
+REM Sobe o High Frequency Backend em outra janela (sem simulacao)
+echo Iniciando High Frequency Backend na pasta: "%~dp0services\high_frequency"
+start "HF Backend" cmd /k cd /d "%~dp0services\high_frequency" ^& set HF_DISABLE_SIM=1 ^& set PROFIT_FEED_URL=http://localhost:%FEED_PORT% ^& start_backend.bat
 
 REM Sobe o serviço de market data em outra janela  
 echo Iniciando market feed na pasta: "%~dp0"
