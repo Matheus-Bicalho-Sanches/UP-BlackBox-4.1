@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const tabs = [
   { name: "Dashboard", href: "/dashboard/blackbox-multi/dashboard" },
   { name: "MarketData", href: "/dashboard/blackbox-multi/marketdata" },
+  { name: "Motion Tracker", href: "/dashboard/blackbox-multi/motion-tracker" },
   { name: "Backtests", href: "/dashboard/blackbox-multi/backtests" },
   { name: "Estratégias", href: "/dashboard/blackbox-multi/estrategias" },
   { name: "Ordens", href: "/dashboard/blackbox-multi/ordens" },
