@@ -201,3 +201,4 @@ def run_precoCruzaMedia(csv_path, param1=3, param2=5, stop_loss=-0.05, take_prof
         'perda_medio_perdedores': perda_medio_perdedores,
         'tempo_medio_perdedores': tempo_medio_perdedores
     }
+

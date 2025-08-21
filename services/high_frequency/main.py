@@ -116,7 +116,12 @@ class IngestTick(BaseModel):
     volume: int
     timestamp: Optional[float] = None
     trade_id: Optional[int] = None
-    buyer_maker: Optional[bool] = None
+    # Campos para dados detalhados de trade
+    buy_agent: Optional[int] = None
+    sell_agent: Optional[int] = None
+    trade_type: Optional[int] = None  # 2=Comprador, 3=Vendedor
+    volume_financial: Optional[float] = None
+    is_edit: bool = False
 
 class IngestBatch(BaseModel):
     ticks: List[IngestTick]
@@ -352,7 +357,11 @@ async def ingest_tick(tick: IngestTick):
             volume=tick.volume,
             timestamp=ts,
             trade_id=tick.trade_id,
-            buyer_maker=tick.buyer_maker
+            buy_agent=tick.buy_agent,
+            sell_agent=tick.sell_agent,
+            trade_type=tick.trade_type,
+            volume_financial=tick.volume_financial,
+            is_edit=tick.is_edit
         )
         
         # Adiciona ao buffer
@@ -380,7 +389,11 @@ async def ingest_batch(batch: IngestBatch):
                 volume=t.volume,
                 timestamp=ts,
                 trade_id=t.trade_id,
-                buyer_maker=t.buyer_maker
+                buy_agent=t.buy_agent,
+                sell_agent=t.sell_agent,
+                trade_type=t.trade_type,
+                volume_financial=t.volume_financial,
+                is_edit=t.is_edit
             )
             
             # Adiciona ao buffer

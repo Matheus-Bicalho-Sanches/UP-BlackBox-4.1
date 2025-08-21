@@ -194,8 +194,8 @@ class HighFrequencyPersistence:
 					with conn.cursor() as cur:
 						query = """
 							INSERT INTO ticks_raw 
-							(symbol, exchange, ts_tick_utc, price, volume, volume_financial, trade_id, buyer_maker)
-							VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+							(symbol, exchange, ts_tick_utc, price, volume, volume_financial, trade_id)
+							VALUES (%s, %s, %s, %s, %s, %s, %s)
 							ON CONFLICT DO NOTHING
 						"""
 						values = []
@@ -208,8 +208,7 @@ class HighFrequencyPersistence:
 								tick['price'],
 								tick['volume'],
 								volume_financial,
-								tick.get('trade_id'),
-								tick.get('buyer_maker')
+								tick.get('trade_id')
 							))
 						cur.executemany(query, values)
 						conn.commit()

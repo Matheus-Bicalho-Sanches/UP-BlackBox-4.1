@@ -22,8 +22,6 @@ class Tick:
 	volume: int
 	timestamp: float  # Unix timestamp em segundos
 	trade_id: Optional[int] = None
-	buyer_maker: Optional[bool] = None
-	sequence: int = 0  # Sequência global para ordenação
 	
 	def to_dict(self) -> dict:
 		return {
@@ -32,9 +30,7 @@ class Tick:
 			'price': self.price,
 			'volume': self.volume,
 			'timestamp': self.timestamp,
-			'trade_id': self.trade_id,
-			'buyer_maker': self.buyer_maker,
-			'sequence': self.sequence
+			'trade_id': self.trade_id
 		}
 
 @dataclass
@@ -88,7 +84,6 @@ class HighFrequencyBuffer:
 		# Controle de estado
 		self.is_running = False
 		self.processing_task: Optional[asyncio.Task] = None
-		self.sequence_counter = 0
 		
 		# Callbacks
 		self.on_tick_processed: Optional[Callable[[Tick], None]] = None
@@ -111,10 +106,6 @@ class HighFrequencyBuffer:
 		start_time = time.perf_counter()
 		
 		try:
-			# Atualiza sequência global
-			tick.sequence = self.sequence_counter
-			self.sequence_counter += 1
-			
 			# Adiciona ao buffer thread-safe
 			with self._tick_lock:
 				self.tick_buffers[tick.symbol].append(tick)

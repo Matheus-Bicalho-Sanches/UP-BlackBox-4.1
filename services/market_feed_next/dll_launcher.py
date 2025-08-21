@@ -22,7 +22,7 @@ dll_instance = None
 hf_ingest_url_tick = os.getenv("HF_INGEST_URL", "http://127.0.0.1:8002/ingest/batch").replace("/batch", "/tick")
 http_session = requests.Session()
 
-def on_trade(symbol: str, price: float, qty: int, ts: float):
+def on_trade(symbol: str, price: float, qty: int, ts: float, extra_data: dict = None):
     """
     Callback de trade. Envia o tick para o backend de alta frequência com retentativas.
     """
@@ -33,6 +33,17 @@ def on_trade(symbol: str, price: float, qty: int, ts: float):
         "volume": qty,
         "timestamp": ts
     }
+    
+    # Adiciona dados extras se disponíveis
+    if extra_data:
+        payload.update({
+            "trade_id": extra_data.get('trade_id'),
+            "buy_agent": extra_data.get('buy_agent'),
+            "sell_agent": extra_data.get('sell_agent'),
+            "trade_type": extra_data.get('trade_type'),
+            "volume_financial": extra_data.get('volume_financial'),
+            "is_edit": extra_data.get('is_edit', False)
+        })
     
     # Tenta enviar o tick algumas vezes antes de desistir
     for attempt in range(5):  # Aumentado para 5 tentativas

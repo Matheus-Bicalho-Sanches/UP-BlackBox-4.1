@@ -8,15 +8,19 @@ from datetime import datetime
 
 @dataclass
 class Tick:
-    """Representa um tick de mercado."""
+    """Representa um tick de mercado com dados detalhados de trade."""
     symbol: str
     exchange: str
     price: float
     volume: int
     timestamp: float
     trade_id: Optional[int] = None
-    buyer_maker: Optional[bool] = None
-    sequence: int = 0
+    # Campos para dados detalhados de trade
+    buy_agent: Optional[int] = None
+    sell_agent: Optional[int] = None
+    trade_type: Optional[int] = None  # 2=Comprador, 3=Vendedor
+    volume_financial: Optional[float] = None
+    is_edit: bool = False
     
     def to_dict(self):
         """Converte o tick para dicionário."""
@@ -27,8 +31,11 @@ class Tick:
             'volume': self.volume,
             'timestamp': self.timestamp,
             'trade_id': self.trade_id,
-            'buyer_maker': self.buyer_maker,
-            'sequence': self.sequence
+            'buy_agent': self.buy_agent,
+            'sell_agent': self.sell_agent,
+            'trade_type': self.trade_type,
+            'volume_financial': self.volume_financial,
+            'is_edit': self.is_edit
         }
 
 

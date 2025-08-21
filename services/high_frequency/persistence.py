@@ -50,33 +50,78 @@ async def initialize_db(conn_pool: AsyncConnectionPool):
                 
                 # Cria a tabela com os tipos de dados corretos (BIGINT para volume e trade_id)
                 await cur.execute("""
-                    CREATE TABLE IF NOT EXISTS ticks_raw (
-                        symbol VARCHAR(20) NOT NULL,
-                        exchange VARCHAR(10) NOT NULL,
-                        price DOUBLE PRECISION NOT NULL,
-                        volume BIGINT NOT NULL,
-                        timestamp TIMESTAMPTZ NOT NULL,
-                        trade_id BIGINT,
-                        buyer_maker BOOLEAN,
-                        sequence BIGINT NOT NULL
-                    );
+                                CREATE TABLE IF NOT EXISTS ticks_raw (
+                symbol VARCHAR(20) NOT NULL,
+                exchange VARCHAR(10) NOT NULL,
+                price DOUBLE PRECISION NOT NULL,
+                volume BIGINT NOT NULL,
+                timestamp TIMESTAMPTZ NOT NULL,
+                trade_id BIGINT,
+                -- Campos para dados detalhados de trade
+                buy_agent INTEGER,
+                sell_agent INTEGER,
+                trade_type SMALLINT,
+                volume_financial DOUBLE PRECISION,
+                is_edit BOOLEAN DEFAULT FALSE
+            );
                 """)
 
                 # Bloco PL/pgSQL para alterar as colunas apenas se necessário, de forma segura.
                 await cur.execute("""
                     DO $$
                     BEGIN
-                        -- Altera a coluna trade_id para BIGINT se ela existir e não for BIGINT
+                        -- Ajusta tipos existentes
                         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='trade_id' AND data_type <> 'bigint') THEN
                            ALTER TABLE ticks_raw ALTER COLUMN trade_id TYPE BIGINT;
                            RAISE NOTICE 'Coluna trade_id em ticks_raw foi alterada para BIGINT.';
                         END IF;
                         
-                        -- Altera a coluna volume para BIGINT se ela existir e não for BIGINT
                         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='volume' AND data_type <> 'bigint') THEN
                            ALTER TABLE ticks_raw ALTER COLUMN volume TYPE BIGINT;
                            RAISE NOTICE 'Coluna volume em ticks_raw foi alterada para BIGINT.';
                         END IF;
+                        
+                        -- Adiciona novos campos se não existirem
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='buy_agent') THEN
+                           ALTER TABLE ticks_raw ADD COLUMN buy_agent INTEGER;
+                           RAISE NOTICE 'Coluna buy_agent adicionada em ticks_raw.';
+                        END IF;
+                        
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='sell_agent') THEN
+                           ALTER TABLE ticks_raw ADD COLUMN sell_agent INTEGER;
+                           RAISE NOTICE 'Coluna sell_agent adicionada em ticks_raw.';
+                        END IF;
+                        
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='trade_type') THEN
+                           ALTER TABLE ticks_raw ADD COLUMN trade_type SMALLINT;
+                           RAISE NOTICE 'Coluna trade_type adicionada em ticks_raw.';
+                        END IF;
+                        
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='volume_financial') THEN
+                           ALTER TABLE ticks_raw ADD COLUMN volume_financial DOUBLE PRECISION;
+                           RAISE NOTICE 'Coluna volume_financial adicionada em ticks_raw.';
+                        END IF;
+                        
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='is_edit') THEN
+                           ALTER TABLE ticks_raw ADD COLUMN is_edit BOOLEAN DEFAULT FALSE;
+                           RAISE NOTICE 'Coluna is_edit adicionada em ticks_raw.';
+                        END IF;
+                        
+                                        -- Remover colunas desnecessárias se existirem
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='aggressor_side') THEN
+                   ALTER TABLE ticks_raw DROP COLUMN aggressor_side;
+                   RAISE NOTICE 'Coluna aggressor_side removida de ticks_raw (redundante com trade_type).';
+                END IF;
+                
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='sequence') THEN
+                   ALTER TABLE ticks_raw DROP COLUMN sequence;
+                   RAISE NOTICE 'Coluna sequence removida de ticks_raw (não necessária).';
+                END IF;
+                
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ticks_raw' AND column_name='buyer_maker') THEN
+                   ALTER TABLE ticks_raw DROP COLUMN buyer_maker;
+                   RAISE NOTICE 'Coluna buyer_maker removida de ticks_raw (não necessária).';
+                END IF;
                     END $$;
                 """)
                 
@@ -95,10 +140,17 @@ async def persist_ticks(ticks: List[Tick], conn_pool: AsyncConnectionPool):
         return
 
     sql = """
-        INSERT INTO ticks_raw (symbol, exchange, price, volume, timestamp, trade_id, buyer_maker, sequence)
-        VALUES (%s, %s, %s, %s, to_timestamp(%s), %s, %s, %s)
+        INSERT INTO ticks_raw (
+            symbol, exchange, price, volume, timestamp, trade_id,
+            buy_agent, sell_agent, trade_type, volume_financial, is_edit
+        )
+        VALUES (%s, %s, %s, %s, to_timestamp(%s), %s, %s, %s, %s, %s, %s)
     """
-    params = [(t.symbol, t.exchange, t.price, t.volume, t.timestamp, t.trade_id, t.buyer_maker, t.sequence) for t in ticks]
+    params = [(
+        t.symbol, t.exchange, t.price, t.volume, t.timestamp, t.trade_id,
+        getattr(t, 'buy_agent', None), getattr(t, 'sell_agent', None), getattr(t, 'trade_type', None),
+        getattr(t, 'volume_financial', None), getattr(t, 'is_edit', False)
+    ) for t in ticks]
 
     for attempt in range(1, 6):
         try:
@@ -120,7 +172,9 @@ async def get_ticks_from_db(symbol: str, timeframe: str, limit: int, conn_pool: 
         async with conn.cursor() as cur:
             if timeframe == "raw":
                 await cur.execute(
-                    "SELECT symbol, exchange, price, volume, timestamp, trade_id, buyer_maker, sequence FROM ticks_raw WHERE symbol = %s ORDER BY timestamp DESC LIMIT %s",
+                    """SELECT symbol, exchange, price, volume, timestamp, trade_id,
+                       buy_agent, sell_agent, trade_type, volume_financial, is_edit 
+                       FROM ticks_raw WHERE symbol = %s ORDER BY timestamp DESC LIMIT %s""",
                     (symbol, limit),
                 )
             else:

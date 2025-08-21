@@ -28,8 +28,11 @@ async def simulate_ticks():
                     volume=random.randint(100, 10000),
                     timestamp=time.time(),
                     trade_id=random.randint(1, 1000000),
-                    buyer_maker=random.choice([True, False]),
-                    sequence=random.randint(1, 999999)
+                    buy_agent=random.randint(1, 999),
+                    sell_agent=random.randint(1, 999),
+                    trade_type=random.choice([2, 3]),  # 2=Comprador, 3=Vendedor
+                    volume_financial=random.uniform(1000.0, 100000.0),
+                    is_edit=random.choice([True, False])
                 )
                 
                 # Adiciona ao buffer

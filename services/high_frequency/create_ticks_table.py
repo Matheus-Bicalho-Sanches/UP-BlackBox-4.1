@@ -17,7 +17,6 @@ SQL_STATEMENTS = [
 		volume INTEGER NOT NULL,
 		volume_financial DOUBLE PRECISION NOT NULL,
 		trade_id BIGINT,
-		buyer_maker BOOLEAN,
 		created_at TIMESTAMPTZ DEFAULT NOW(),
 		PRIMARY KEY (symbol, ts_tick_utc, id)
 	);

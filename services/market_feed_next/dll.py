@@ -186,12 +186,36 @@ class ProfitDLL:
 				if result == 0: # NL_OK
 					price = float(trade_struct.Price)
 					qty = int(trade_struct.Quantity)
+					volume_financial = float(trade_struct.Volume)
+					buy_agent = int(trade_struct.BuyAgent) if trade_struct.BuyAgent else None
+					sell_agent = int(trade_struct.SellAgent) if trade_struct.SellAgent else None
+					trade_type = int(trade_struct.TradeType)
+					trade_number = int(trade_struct.TradeNumber)
+					is_edit = bool(flags & 1)  # flags & 1 indica edição
+					
+					# trade_type indica o lado aggressor: 2=Comprador, 3=Vendedor
+					aggressor_str = "DESCONHECIDO"
+					if trade_type == 2:
+						aggressor_str = "COMPRADOR"
+					elif trade_type == 3:
+						aggressor_str = "VENDEDOR"
 
-					logger.info(f"TRADE RECEBIDO: {symbol}, Preço: {price}, Quant: {qty}, TradeNumber: {trade_struct.TradeNumber}")
+					logger.info(f"TRADE RECEBIDO: {symbol}, Preço: {price}, Quant: {qty}, "
+							   f"TradeNumber: {trade_number}, BuyAgent: {buy_agent}, SellAgent: {sell_agent}, "
+							   f"TradeType: {trade_type} ({aggressor_str}), VolumeFinancial: {volume_financial:.2f}, "
+							   f"IsEdit: {is_edit}")
 
 					if self._on_trade:
 						logger.debug(f"Chamando callback externo para {symbol}")
-						self._on_trade(symbol, price, qty, time.time())
+						# Passa dados adicionais no callback
+						self._on_trade(symbol, price, qty, time.time(), {
+							'buy_agent': buy_agent,
+							'sell_agent': sell_agent,
+							'trade_type': trade_type,
+							'volume_financial': volume_financial,
+							'is_edit': is_edit,
+							'trade_id': trade_number
+						})
 					else:
 						logger.warning("Nenhum callback externo configurado!")
 				else:

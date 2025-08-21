@@ -250,3 +250,4 @@ Agora você sabe **exatamente** como criar novas estratégias de backtest no sis
 4. 🔄 Itere e melhore
 
 **Dúvidas?** Sempre pode perguntar! Estou aqui para ajudar. 😊
+
