@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
 
   // Base filters
   const where: string[] = ['symbol = $1'];
-  const values: any[] = [symbol];
+  let values: any[] = [symbol];
   let idx = values.length + 1;
   if (exchange) {
     where.push(`exchange = $${idx++}`);
@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
 
   let sql = '';
   if (timeframe === '1m') {
+    // Primeiro tenta buscar da tabela candles_1m
     sql = `
       SELECT
         EXTRACT(EPOCH FROM ts_minute_utc) * 1000 AS t,
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
       ORDER BY ts_minute_utc ASC
       LIMIT $${idx}
     `;
-    values.push(limit);
+    values.push(limit.toString());
   } else {
     // Agregação on-the-fly a partir de 1m
     const tfToInterval: Record<string, string> = {
@@ -75,13 +76,50 @@ export async function GET(request: NextRequest) {
       ORDER BY 1 ASC
       LIMIT $${idx}
     `;
-    values.push(limit);
+    values.push(limit.toString());
   }
 
   try {
     const client = await pgPool.connect();
     try {
-      const result = await client.query(sql, values);
+      let result;
+      
+      if (timeframe === '1m') {
+        // Primeiro tenta buscar da tabela candles_1m
+        result = await client.query(sql, values);
+        
+        // Se não retornar dados, usa agregação de ticks
+        if (result.rows.length === 0) {
+          // Agrega a partir de ticks_raw
+          const ticksSql = `
+            SELECT
+              EXTRACT(EPOCH FROM time_bucket(INTERVAL '1 minute', ts_tick_utc)) * 1000 AS t,
+              first(price, ts_tick_utc) AS o,
+              max(price) AS h,
+              min(price) AS l,
+              last(price, ts_tick_utc) AS c,
+              sum(volume) AS v,
+              sum(volume_financial) AS vf
+            FROM ticks_raw
+            WHERE ${where.join(' AND ')}
+            GROUP BY time_bucket(INTERVAL '1 minute', ts_tick_utc)
+            ORDER BY 1 ASC
+            LIMIT $${idx}
+          `;
+          
+          // Recalcula valores para a nova query
+          const ticksValues = [symbol];
+          if (exchange) ticksValues.push(exchange);
+          if (from) ticksValues.push(from);
+          if (to) ticksValues.push(to);
+          ticksValues.push(limit.toString());
+          
+          result = await client.query(ticksSql, ticksValues);
+        }
+      } else {
+        result = await client.query(sql, values);
+      }
+      
       return new Response(JSON.stringify(result.rows), {
         headers: { 'Content-Type': 'application/json' },
       });

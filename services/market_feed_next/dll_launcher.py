@@ -50,7 +50,6 @@ def on_trade(symbol: str, price: float, qty: int, ts: float, extra_data: dict = 
         try:
             response = http_session.post(hf_ingest_url_tick, json=payload, timeout=5.0)  # Timeout aumentado
             if response.status_code == 200:
-                logger.debug(f"Tick enviado com sucesso: {symbol} @ {price}")
                 return # Sucesso, sai da função
             else:
                 logger.warning(f"Falha ao enviar tick para HF Backend (tentativa {attempt+1}): {response.status_code} - {response.text}")

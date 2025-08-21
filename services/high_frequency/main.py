@@ -52,6 +52,7 @@ from services.high_frequency.config import (
 )
 from services.high_frequency.persistence import initialize_db, get_db_pool, persist_ticks, get_ticks_from_db
 from services.high_frequency.buffer import buffer_queue, subscriptions, tick_counters, start_buffer_processor, add_tick_to_buffer
+from services.high_frequency.candle_aggregator import candle_aggregator
 from services.high_frequency.firestore_utils import init_firebase, load_subscriptions_from_firestore
 from services.high_frequency.simulation import simulate_ticks
 
@@ -206,6 +207,10 @@ async def startup_event():
     logger.info("Iniciando o processamento de buffer e a persistência de dados...")
     asyncio.create_task(start_buffer_processor(db_pool))
     
+    # PASSO 3.1: Inicia o agrupador de candles
+    logger.info("Iniciando o agrupador automático de candles...")
+    candle_aggregator.start()
+    
     # PASSO 4: Inicializa sistemas de alta frequência
     try:
         init_high_frequency_systems()
@@ -231,6 +236,10 @@ async def shutdown_event():
     try:
         global system_initialized
         system_initialized = False
+        
+        # Para o agrupador de candles
+        candle_aggregator.stop()
+        
         logger.info("Backend shutdown completed")
         
     except Exception as e:
@@ -368,6 +377,9 @@ async def ingest_tick(tick: IngestTick):
         add_tick_to_buffer(tick_obj)
         update_tick_stats(tick_obj)
         
+        # Processa tick para agregação em candles
+        await candle_aggregator.process_tick(tick_obj)
+        
         return {"success": True}
     except Exception as e:
         logger.error(f"Error ingest_tick: {e}")
@@ -399,6 +411,9 @@ async def ingest_batch(batch: IngestBatch):
             # Adiciona ao buffer
             add_tick_to_buffer(tick_obj)
             update_tick_stats(tick_obj)
+            
+            # Processa tick para agregação em candles
+            await candle_aggregator.process_tick(tick_obj)
         
         return {"success": True, "ingested": len(batch.ticks)}
     except Exception as e:
@@ -492,10 +507,13 @@ async def get_performance_metrics():
         
         buffer_status = get_buffer_status()
         
+        candle_aggregator_status = candle_aggregator.get_status()
+        
         return {
             "success": True,
             "timestamp": time.time(),
             "buffer_status": buffer_status,
+            "candle_aggregator_status": candle_aggregator_status,
             "subscription_stats": subscription_stats,
             "system_initialized": system_initialized
         }

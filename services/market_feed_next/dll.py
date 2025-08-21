@@ -181,7 +181,6 @@ class ProfitDLL:
 				translate_fn.restype = ctypes.c_int
 
 				result = translate_fn(pTrade, ctypes.byref(trade_struct))
-				logger.debug(f"TranslateTrade result: {result}")
 				
 				if result == 0: # NL_OK
 					price = float(trade_struct.Price)
@@ -206,7 +205,6 @@ class ProfitDLL:
 							   f"IsEdit: {is_edit}")
 
 					if self._on_trade:
-						logger.debug(f"Chamando callback externo para {symbol}")
 						# Passa dados adicionais no callback
 						self._on_trade(symbol, price, qty, time.time(), {
 							'buy_agent': buy_agent,
