@@ -55,6 +55,7 @@ from services.high_frequency.buffer import buffer_queue, subscriptions, tick_cou
 from services.high_frequency.candle_aggregator import candle_aggregator
 from services.high_frequency.firestore_utils import init_firebase, load_subscriptions_from_firestore
 from services.high_frequency.simulation import simulate_ticks
+from services.high_frequency.robot_detector import TWAPDetector
 
 # Configuração de logging
 logging.basicConfig(
@@ -141,6 +142,7 @@ active_subscriptions: Dict[str, Dict[str, Any]] = {}
 subscription_stats: Dict[str, Dict[str, Any]] = {}
 simulation_task: Optional[asyncio.Task] = None
 simulation_enabled: bool = False
+twap_detector: Optional[TWAPDetector] = None
 
 # Inicialização do Firebase
 def init_firebase():
@@ -211,6 +213,12 @@ async def startup_event():
     logger.info("Iniciando o agrupador automático de candles...")
     candle_aggregator.start()
     
+    # PASSO 3.2: Inicia o detector de robôs TWAP
+    logger.info("Iniciando o detector de robôs TWAP...")
+    global twap_detector
+    twap_detector = TWAPDetector()
+    asyncio.create_task(start_twap_detection())
+    
     # PASSO 4: Inicializa sistemas de alta frequência
     try:
         init_high_frequency_systems()
@@ -244,6 +252,35 @@ async def shutdown_event():
         
     except Exception as e:
         logger.error(f"Error during shutdown: {e}")
+
+async def start_twap_detection():
+    """Inicia a detecção contínua de robôs TWAP"""
+    global twap_detector
+    
+    if not twap_detector:
+        logger.error("TWAP Detector não inicializado")
+        return
+    
+    logger.info("Iniciando detecção contínua de robôs TWAP...")
+    
+    while system_initialized:
+        try:
+            # Analisa todos os símbolos ativos
+            patterns = await twap_detector.analyze_all_symbols()
+            
+            total_patterns = sum(len(patterns_list) for patterns_list in patterns.values())
+            if total_patterns > 0:
+                logger.info(f"Detectados {total_patterns} padrões TWAP em {len(patterns)} símbolos")
+            
+            # Limpa dados antigos a cada 24h
+            await twap_detector.cleanup_old_data()
+            
+            # Aguarda 5 minutos antes da próxima análise
+            await asyncio.sleep(300)
+            
+        except Exception as e:
+            logger.error(f"Erro na detecção TWAP: {e}")
+            await asyncio.sleep(60)  # Aguarda 1 minuto em caso de erro
 
 # Endpoints da API
 @app.post("/subscribe")
@@ -344,6 +381,103 @@ async def unsubscribe_symbol(request: UnsubscribeRequest):
             }
         else:
             raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found in active subscriptions")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error unsubscribing from {request.symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/robots/patterns")
+async def get_robot_patterns(symbol: Optional[str] = None):
+    """Retorna padrões de robôs detectados"""
+    try:
+        if not system_initialized or not twap_detector:
+            raise HTTPException(status_code=503, detail="system_not_initialized")
+        
+        if symbol:
+            # Busca padrões para um símbolo específico
+            patterns = await twap_detector.analyze_symbol(symbol.upper())
+        else:
+            # Busca todos os padrões ativos
+            all_patterns = await twap_detector.analyze_all_symbols()
+            patterns = []
+            for symbol_patterns in all_patterns.values():
+                patterns.extend(symbol_patterns)
+        
+        # Converte para formato JSON
+        patterns_data = []
+        for pattern in patterns:
+            patterns_data.append({
+                "id": getattr(pattern, 'id', None),
+                "symbol": pattern.symbol,
+                "exchange": pattern.exchange,
+                "pattern_type": "TWAP",
+                "confidence_score": pattern.confidence_score,
+                "agent_id": pattern.agent_id,
+                "first_seen": pattern.first_seen.isoformat(),
+                "last_seen": pattern.last_seen.isoformat(),
+                "total_volume": pattern.total_volume,
+                "total_trades": pattern.total_trades,
+                "avg_trade_size": pattern.avg_trade_size,
+                "frequency_minutes": pattern.frequency_minutes,
+                "price_aggression": pattern.price_aggression,
+                "status": pattern.status.value
+            })
+        
+        return {
+            "success": True,
+            "patterns": patterns_data,
+            "count": len(patterns_data)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting robot patterns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/robots/activity")
+async def get_robot_activity(symbol: Optional[str] = None, hours: int = 24):
+    """Retorna atividade recente de robôs"""
+    try:
+        if not system_initialized or not twap_detector:
+            raise HTTPException(status_code=503, detail="system_not_initialized")
+        
+        # Busca trades recentes das tabelas
+        from services.high_frequency.robot_persistence import RobotPersistence
+        persistence = RobotPersistence()
+        
+        if symbol:
+            symbols = [symbol.upper()]
+        else:
+            # Busca símbolos ativos
+            symbols = await twap_detector.persistence.get_active_symbols()
+        
+        all_trades = []
+        for sym in symbols:
+            trades_data = await persistence.get_recent_ticks(sym, hours)
+            for trade in trades_data:
+                all_trades.append({
+                    "symbol": trade['symbol'],
+                    "price": trade['price'],
+                    "volume": trade['volume'],
+                    "timestamp": trade['timestamp'].isoformat(),
+                    "buy_agent": trade['buy_agent'],
+                    "sell_agent": trade['sell_agent'],
+                    "exchange": trade['exchange']
+                })
+        
+        # Ordena por timestamp (mais recente primeiro)
+        all_trades.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return {
+            "success": True,
+            "trades": all_trades,
+            "count": len(all_trades)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting robot activity: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
             
     except HTTPException:
         raise
@@ -509,11 +643,18 @@ async def get_performance_metrics():
         
         candle_aggregator_status = candle_aggregator.get_status()
         
+        # Status do detector TWAP
+        twap_detector_status = {
+            "active": twap_detector is not None,
+            "active_patterns_count": len(twap_detector.get_active_patterns()) if twap_detector else 0
+        }
+        
         return {
             "success": True,
             "timestamp": time.time(),
             "buffer_status": buffer_status,
             "candle_aggregator_status": candle_aggregator_status,
+            "twap_detector_status": twap_detector_status,
             "subscription_stats": subscription_stats,
             "system_initialized": system_initialized
         }
