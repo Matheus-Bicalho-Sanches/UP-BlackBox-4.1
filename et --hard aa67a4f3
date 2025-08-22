@@ -1,0 +1,26 @@
+[33maa67a4f3[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Interface Motion Tracker validada
+[33m062382af[m Iniciando Motion Tracker
+[33m328e008c[m Retirada de alguns logs de debug
+[33m0a460ea6[m Adição de mais tickers no martket feed e bat para calcular tamanho do arquivo
+[33m01c4c98e[m Tick by tick funcionando em PETR4 e VALE3
+[33m55eb4bc2[m Tick by tick funcionando. Descoberto problema que não dá para rodar o 4.0 e o Market feed em paralelo. Isso que gerava a perda de dados no Market feed
+[33meb2ce873[m Timescale funcionando tick a tick, mas ainda com perda de dados no MarketFeed. Vou refazer o Market Feed do zero a partir de agora para tentar corrigir
+[33m1b23e3bb[m Correção git push para deploy automatico no Vercel
+[33m91237a7f[m Melhorias Backtest + tentativa de corrigir bug na venda
+[33m6942fcbc[m Teste
+[33m27bcc4c3[m chore: tighten ignore rules; add .vercelignore; require ASAAS_API_KEY via env; untrack heavy binaries
+[33mb6c4b701[m Pagamentos com cartão cadastrado na página de aulas individuais agora devem aparecer corretamente no controle de caixa
+[33ma1622801[m fix: implementar correções de CORS para resolver problemas de conectividade entre frontend e backend
+[33m961f1404[m Correção de bug ao editar umaa ordem master estrategia. onde o sistema puxava a quantidade investida total ao inves da estratégia.
+[33maae46cd8[m Documentação: Correção UP BlackBox 2.0 - Ambiente virtual venv_bb2
+[33m018eba1d[m Correção: UP BlackBox 2.0 - Ajuste nome ambiente virtual venv_bb2 e verificação automática de dependências
+[33mbd1b7313[m Adicao nova estrategia
+[33mf77ed006[m Consolidando mudanças pc principal e px blackbox
+[33mdfa078ee[m Correção quantidade ao editar batch master no quant_engine
+[33m38826139[m Possivelmente resolvido problemas no push para o git
+[33mf74478eb[m Corrige .gitignore para incluir arquivos importantes do Dll_Profit e backendhomepagesiteUP
+[33m577ea843[m Atualiza .gitignore para filtrar arquivos grandes e proteger dados sensíveis
+[33m4d27cd9e[m Implementa edição de quantidade e preço médio de LFTS11 na página de saldo
+[33m87d1efb5[m Remove arquivo de teste
+[33m0961b185[m Teste: Verificando se push funciona
+[33ma8e32edd[m Initial commit: Projeto UP com funcionalidade de estratégias individuais
