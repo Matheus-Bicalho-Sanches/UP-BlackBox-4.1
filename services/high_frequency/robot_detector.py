@@ -32,12 +32,12 @@ class RobotStatusTracker:
                          new_status: str, pattern: TWAPPattern):
         """Adiciona uma mudança de status ao histórico"""
         change = {
-            'id': f"{symbol}_{agent_id}_{datetime.now().timestamp()}",
+            'id': f"{symbol}_{agent_id}_{datetime.now(timezone.utc).timestamp()}",  # ✅ CORRIGIDO: Usa timezone UTC
             'symbol': symbol,
             'agent_id': agent_id,
             'old_status': old_status,
             'new_status': new_status,
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),  # ✅ CORRIGIDO: Usa timezone UTC
             'pattern_type': pattern.pattern_type,
             'confidence_score': pattern.confidence_score,
             'total_volume': pattern.total_volume,
@@ -55,7 +55,7 @@ class RobotStatusTracker:
     
     def get_status_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
         """Retorna mudanças de status filtradas por símbolo e tempo"""
-        cutoff_time = datetime.now() - timedelta(hours=hours)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)  # ✅ CORRIGIDO: Usa timezone UTC
         
         filtered_changes = []
         for change in self.status_history:
@@ -199,6 +199,7 @@ class TWAPDetector:
         pattern = TWAPPattern(
             symbol=symbol,
             exchange=trades[0].exchange,
+            pattern_type="TWAP",
             agent_id=agent_id,
             first_seen=trades[0].timestamp,
             last_seen=trades[-1].timestamp,
@@ -323,7 +324,7 @@ class TWAPDetector:
                             pattern.symbol, pattern.agent_id, old_status, pattern.status, pattern
                         )
                     
-                return success
+                    return success
             else:
                 # Cria novo padrão
                 pattern_id = await self.persistence.save_twap_pattern(pattern)
@@ -385,3 +386,126 @@ class TWAPDetector:
     def get_status_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
         """Retorna mudanças de status dos robôs"""
         return self.status_tracker.get_status_changes(symbol, hours)
+
+    async def detect_stopped_robots(self, inactivity_threshold_minutes: int = 5) -> List[Dict]:
+        """Detecta robôs que pararam de operar nas últimas X minutos"""
+        try:
+            stopped_robots = []
+            current_time = datetime.now(timezone.utc)  # ✅ CORRIGIDO: Usa timezone UTC
+            cutoff_time = current_time - timedelta(minutes=inactivity_threshold_minutes)
+            
+            # Verifica cada padrão ativo
+            for symbol, agents in self.active_patterns.items():
+                for agent_id, pattern in agents.items():
+                    # Se o robô não operou nas últimas X minutos
+                    if pattern.last_seen < cutoff_time:
+                        # Marca como inativo
+                        old_status = pattern.status
+                        pattern.status = RobotStatus.INACTIVE
+                        
+                        # Atualiza no banco
+                        await self.persistence.update_twap_pattern(
+                            await self.persistence.get_existing_pattern(symbol, agent_id)[0], 
+                            pattern
+                        )
+                        
+                        # Rastreia a mudança de status
+                        self.status_tracker.add_status_change(
+                            symbol, agent_id, old_status.value, 'inactive', pattern
+                        )
+                        
+                        # Calcula inatividade em minutos
+                        inactivity_minutes = (current_time - pattern.last_seen).total_seconds() / 60
+                        
+                        stopped_robots.append({
+                            'symbol': symbol,
+                            'agent_id': agent_id,
+                            'stopped_at': pattern.last_seen.isoformat(),
+                            'inactivity_minutes': inactivity_minutes
+                        })
+                        
+                        logger.info(f"Robô {agent_id} em {symbol} marcado como inativo (parou há {inactivity_minutes:.1f} minutos)")
+            
+            return stopped_robots
+            
+        except Exception as e:
+            logger.error(f"Erro ao detectar robôs parados: {e}")
+            return []
+    
+    async def cleanup_inactive_patterns(self, max_inactive_hours: int = 3):
+        """Remove padrões que estão inativos há muito tempo (padrão: 3 horas)"""
+        try:
+            current_time = datetime.now(timezone.utc)  # ✅ CORRIGIDO: Usa timezone UTC
+            cutoff_time = current_time - timedelta(hours=max_inactive_hours)
+            
+            patterns_to_remove = []
+            
+            for symbol, agents in list(self.active_patterns.items()):
+                for agent_id, pattern in list(agents.items()):
+                    if pattern.status == RobotStatus.INACTIVE and pattern.last_seen < cutoff_time:
+                        patterns_to_remove.append((symbol, agent_id))
+            
+            # Remove padrões inativos antigos
+            for symbol, agent_id in patterns_to_remove:
+                del self.active_patterns[symbol][agent_id]
+                if not self.active_patterns[symbol]:
+                    del self.active_patterns[symbol]
+                
+                logger.info(f"Padrão inativo removido da memória: {symbol} - Agente {agent_id} (inativo há {max_inactive_hours}h)")
+            
+            return len(patterns_to_remove)
+            
+        except Exception as e:
+            logger.error(f"Erro ao limpar padrões inativos: {e}")
+            return 0
+
+    async def check_robot_inactivity_by_trades(self, inactivity_threshold_minutes: int = 2) -> List[Dict]:
+        """Verifica inatividade dos robôs baseado em trades reais das últimas X minutos"""
+        try:
+            inactive_robots = []
+            current_time = datetime.now(timezone.utc)  # ✅ CORRIGIDO: Usa timezone UTC
+            cutoff_time = current_time - timedelta(minutes=inactivity_threshold_minutes)
+            
+            # Verifica cada padrão ativo
+            for symbol, agents in list(self.active_patterns.items()):
+                for agent_id, pattern in list(agents.items()):
+                    # Busca trades reais deste agente nas últimas X minutos
+                    recent_trades = await self.persistence.get_recent_ticks_for_agent(
+                        symbol, agent_id, inactivity_threshold_minutes
+                    )
+                    
+                    # Se não há trades recentes, marca como inativo
+                    if not recent_trades:
+                        # Marca como inativo
+                        old_status = pattern.status
+                        pattern.status = RobotStatus.INACTIVE
+                        
+                        # Atualiza no banco
+                        existing = await self.persistence.get_existing_pattern(symbol, agent_id)
+                        if existing:
+                            pattern_id = existing[0]
+                            await self.persistence.update_twap_pattern(pattern_id, pattern)
+                            
+                            # Rastreia a mudança de status
+                            self.status_tracker.add_status_change(
+                                symbol, agent_id, old_status.value, 'inactive', pattern
+                            )
+                            
+                            # Calcula inatividade em minutos
+                            inactivity_minutes = (current_time - pattern.last_seen).total_seconds() / 60
+                            
+                            inactive_robots.append({
+                                'symbol': symbol,
+                                'agent_id': agent_id,
+                                'stopped_at': pattern.last_seen.isoformat(),
+                                'inactivity_minutes': inactivity_minutes,
+                                'reason': 'no_recent_trades'
+                            })
+                            
+                            logger.info(f"Robô {agent_id} em {symbol} marcado como inativo - sem trades há {inactivity_minutes:.1f} minutos")
+            
+            return inactive_robots
+            
+        except Exception as e:
+            logger.error(f"Erro ao verificar inatividade por trades: {e}")
+            return []

@@ -216,8 +216,17 @@ async def startup_event():
     # PASSO 3.2: Inicia o detector de robôs TWAP
     logger.info("Iniciando o detector de robôs TWAP...")
     global twap_detector
-    twap_detector = TWAPDetector()
+    
+    # Cria configuração e persistence para o TWAP Detector
+    from services.high_frequency.robot_models import TWAPDetectionConfig
+    from services.high_frequency.robot_persistence import RobotPersistence
+    
+    twap_config = TWAPDetectionConfig()
+    twap_persistence = RobotPersistence()
+    twap_detector = TWAPDetector(twap_config, twap_persistence)
+    
     asyncio.create_task(start_twap_detection())
+    asyncio.create_task(start_inactivity_monitoring())
     
     # PASSO 4: Inicializa sistemas de alta frequência
     try:
@@ -255,10 +264,10 @@ async def shutdown_event():
 
 async def start_twap_detection():
     """Inicia a detecção contínua de robôs TWAP"""
-    global twap_detector
+    global system_initialized
     
-    if not twap_detector:
-        logger.error("TWAP Detector não inicializado")
+    if not system_initialized:
+        logger.error("Sistema não inicializado. Aguarde...")
         return
     
     logger.info("Iniciando detecção contínua de robôs TWAP...")
@@ -280,6 +289,37 @@ async def start_twap_detection():
             
         except Exception as e:
             logger.error(f"Erro na detecção TWAP: {e}")
+            await asyncio.sleep(60)  # Aguarda 1 minuto em caso de erro
+
+async def start_inactivity_monitoring():
+    """Inicia o monitoramento de inatividade dos robôs (a cada 2 minutos)"""
+    global system_initialized
+    
+    if not system_initialized:
+        logger.error("Sistema não inicializado. Aguarde...")
+        return
+    
+    logger.info("Iniciando monitoramento de inatividade dos robôs...")
+    
+    while system_initialized:
+        try:
+            # Verifica inatividade baseado em trades reais (a cada 2 minutos)
+            inactive_robots = await twap_detector.check_robot_inactivity_by_trades(inactivity_threshold_minutes=2)
+            if inactive_robots:
+                logger.info(f"Detectados {len(inactive_robots)} robôs inativos por falta de trades")
+                for robot in inactive_robots:
+                    logger.info(f"Robô {robot['agent_id']} em {robot['symbol']} inativo - sem trades há {robot['inactivity_minutes']:.1f} minutos")
+            
+            # Limpa padrões inativos antigos (a cada 3 horas)
+            cleaned_patterns = await twap_detector.cleanup_inactive_patterns(max_inactive_hours=3)
+            if cleaned_patterns > 0:
+                logger.info(f"Removidos {cleaned_patterns} padrões inativos antigos da memória")
+            
+            # Aguarda 2 minutos antes da próxima verificação
+            await asyncio.sleep(120)
+            
+        except Exception as e:
+            logger.error(f"Erro no monitoramento de inatividade: {e}")
             await asyncio.sleep(60)  # Aguarda 1 minuto em caso de erro
 
 # Endpoints da API

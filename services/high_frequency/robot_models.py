@@ -33,16 +33,24 @@ class TWAPPattern:
     """Padrão TWAP detectado"""
     symbol: str
     exchange: str
-    agent_id: int
-    first_seen: datetime
-    last_seen: datetime
-    total_volume: int
-    total_trades: int
-    avg_trade_size: float
-    frequency_minutes: float
-    price_aggression: float
-    confidence_score: float
-    status: RobotStatus
+    pattern_type: str = "TWAP"  # Tipo do padrão (TWAP, VWAP, etc.)
+    agent_id: int = 0
+    first_seen: datetime = None
+    last_seen: datetime = None
+    total_volume: int = 0
+    total_trades: int = 0
+    avg_trade_size: float = 0.0
+    frequency_minutes: float = 0.0
+    price_aggression: float = 0.0
+    confidence_score: float = 0.0
+    status: RobotStatus = RobotStatus.INACTIVE
+    
+    def __post_init__(self):
+        """Validação pós-inicialização"""
+        if self.first_seen is None:
+            self.first_seen = datetime.now()
+        if self.last_seen is None:
+            self.last_seen = datetime.now()
 
 @dataclass
 class RobotTrade:

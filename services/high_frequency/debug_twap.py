@@ -22,8 +22,9 @@ async def debug_twap():
         min_confidence=0.3      # Reduzido de 0.6 para 0.3
     )
     
-    detector = TWAPDetector(config)
+    # Cria detector com configuração
     persistence = RobotPersistence()
+    detector = TWAPDetector(config, persistence)
     
     # Testa com PETR4
     symbol = 'PETR4'

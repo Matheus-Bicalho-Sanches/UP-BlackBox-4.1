@@ -125,27 +125,24 @@ class RobotPersistence:
             logger.error(f"Erro ao buscar padrão existente: {e}")
             return None
     
-    async def get_recent_ticks(self, symbol: str, hours: int = 24) -> List[dict]:
-        """Busca ticks recentes para análise"""
+    async def get_recent_ticks(self, symbol: str, hours: int) -> List[dict]:
+        """Busca ticks recentes de um símbolo"""
         try:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
-                        SELECT 
-                            symbol, price, volume, timestamp,
-                            buy_agent, sell_agent, exchange
+                        SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange
                         FROM ticks_raw
-                        WHERE symbol = %s 
-                        AND timestamp >= NOW() - INTERVAL '%s hours'
-                        ORDER BY timestamp ASC
+                        WHERE symbol = %s AND timestamp >= NOW() - INTERVAL '%s hours'
+                        ORDER BY timestamp DESC
                     """, (symbol, hours))
                     
                     rows = await cur.fetchall()
                     return [
                         {
                             'symbol': row[0],
-                            'price': float(row[1]),
-                            'volume': int(row[2]),
+                            'price': row[1],
+                            'volume': row[2],
                             'timestamp': row[3],
                             'buy_agent': row[4],
                             'sell_agent': row[5],
@@ -155,7 +152,39 @@ class RobotPersistence:
                     ]
                     
         except Exception as e:
-            logger.error(f"Erro ao buscar ticks recentes: {e}")
+            logger.error(f"Erro ao buscar ticks recentes para {symbol}: {e}")
+            return []
+    
+    async def get_recent_ticks_for_agent(self, symbol: str, agent_id: int, minutes: int) -> List[dict]:
+        """Busca trades recentes de um agente específico nas últimas X minutos"""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange
+                        FROM ticks_raw
+                        WHERE symbol = %s 
+                          AND timestamp >= NOW() - INTERVAL '%s minutes'
+                          AND (buy_agent = %s OR sell_agent = %s)
+                        ORDER BY timestamp DESC
+                    """, (symbol, minutes, agent_id, agent_id))
+                    
+                    rows = await cur.fetchall()
+                    return [
+                        {
+                            'symbol': row[0],
+                            'price': row[1],
+                            'volume': row[2],
+                            'timestamp': row[3],
+                            'buy_agent': row[4],
+                            'sell_agent': row[5],
+                            'exchange': row[6]
+                        }
+                        for row in rows
+                    ]
+                    
+        except Exception as e:
+            logger.error(f"Erro ao buscar trades recentes para agente {agent_id} em {symbol}: {e}")
             return []
     
     async def get_active_symbols(self) -> List[str]:

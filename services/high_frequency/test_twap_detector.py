@@ -38,7 +38,11 @@ async def test_twap_detection():
             min_confidence=0.4  # Reduzido para teste
         )
         
-        detector = TWAPDetector(config)
+        # Cria detector com configuração
+        from services.high_frequency.robot_persistence import RobotPersistence
+        
+        persistence = RobotPersistence()
+        detector = TWAPDetector(config, persistence)
         print("✅ Detector TWAP criado com sucesso")
         
         # Testa análise de símbolos específicos
