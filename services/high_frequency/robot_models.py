@@ -58,24 +58,24 @@ class RobotTrade:
 
 @dataclass
 class TWAPDetectionConfig:
-    """Configuração para detecção TWAP"""
+    """Configuração para detecção TWAP - AJUSTADA PARA MERCADO BRASILEIRO"""
     # Janela de análise (24h em minutos)
     analysis_window_minutes: int = 1440
     
     # Mínimo de trades para considerar um padrão
-    min_trades: int = 10
+    min_trades: int = 5  # Reduzido de 10 para 5
     
-    # Mínimo de volume total
-    min_total_volume: int = 100000
+    # Mínimo de volume total (ajustado para mercado brasileiro)
+    min_total_volume: int = 5000  # Reduzido de 100000 para 5000
     
     # Máximo de variação de preço permitida (em %)
-    max_price_variation: float = 5.0
+    max_price_variation: float = 15.0  # Aumentado de 5.0 para 15.0
     
-    # Frequência mínima entre trades (em minutos)
-    min_frequency_minutes: float = 1.0
+    # Frequência mínima entre trades (em minutos) - AJUSTADO!
+    min_frequency_minutes: float = 0.01  # Reduzido de 1.0 para 0.01 (0.6 segundos)
     
-    # Frequência máxima entre trades (em minutos)
-    max_frequency_minutes: float = 30.0
+    # Frequência máxima entre trades (em minutos) - AJUSTADO!
+    max_frequency_minutes: float = 120.0  # Aumentado de 30.0 para 120.0 (2 horas)
     
     # Confiança mínima para considerar um padrão válido
-    min_confidence: float = 0.6
+    min_confidence: float = 0.4  # Reduzido de 0.6 para 0.4

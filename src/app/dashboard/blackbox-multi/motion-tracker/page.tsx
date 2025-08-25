@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -6,162 +7,174 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-// Tipos para os dados fictícios
+// Tipos para os dados da API real
 interface RobotPattern {
-  id: string;
+  id?: number;
   symbol: string;
-  patternType: 'TWAP' | 'VWAP' | 'UNKNOWN';
-  confidenceScore: number;
-  agentId: number;
-  firstSeen: string;
-  lastSeen: string;
-  totalVolume: number;
-  totalTrades: number;
-  avgTradeSize: number;
-  frequencyMinutes: number;
-  priceAggression: number;
-  status: 'active' | 'inactive' | 'suspicious';
+  exchange: string;
+  pattern_type: string;
+  confidence_score: number;
+  agent_id: number;
+  first_seen: string;
+  last_seen: string;
+  total_volume: number;
+  total_trades: number;
+  avg_trade_size: number;
+  frequency_minutes: number;
+  price_aggression: number;
+  status: string;
 }
 
-interface RobotTrade {
-  id: string;
-  robotPatternId: string;
+interface RobotActivity {
   symbol: string;
   price: number;
   volume: number;
   timestamp: string;
-  tradeType: 'buy' | 'sell';
-  agentId: number;
+  buy_agent: number | null;
+  sell_agent: number | null;
+  exchange: string;
 }
 
-// Dados fictícios para demonstração
-const mockSymbols = ['TODOS', 'PETR4', 'VALE3', 'ITUB4', 'BBDC4', 'ABEV3', 'WEGE3', 'RENT3', 'LREN3'];
+// Configuração da API
+const API_BASE_URL = 'http://localhost:8002';
+
+// Lista completa de ativos do dll_launcher.py em ordem alfabética
+const mockSymbols = [
+  'TODOS',  // Sempre primeiro
+  'ABEV3',
+  'AFHI11',
+  'B3SA3',
+  'BBDC4',
+  'BBAS3',
+  'BBSE3',
+  'BODB11',
+  'BPAC11',
+  'BRBI11',
+  'BRFS3',
+  'CACR11',
+  'CAML3',
+  'CDII11',
+  'CSUD3',
+  'FGAA11',
+  'HGLG11',
+  'HGRE11',
+  'ITUB4',
+  'KDIF11',
+  'LVBI11',
+  'MGLU3',
+  'MRFG3',
+  'PFRM3',
+  'PETR4',
+  'PETZ3',
+  'PGMN3',
+  'PORD11',
+  'PSSA3',
+  'RAIZ4',
+  'RADL3',
+  'RDOR3',
+  'RENT3',
+  'RURA11',
+  'SAPR4',
+  'SIMH3',
+  'SLCE3',
+  'SOJA3',
+  'TIMS3',
+  'URPR11',
+  'VALE3',
+  'VGIA11',
+  'VGIR11',
+  'VIVT3',
+  'WEGE3',
+  'XPML11',
+  'YDUQ3'
+];
+
 const mockExchanges = ['B3', 'BMF'];
-
-const mockRobotPatterns: RobotPattern[] = [
-  {
-    id: '1',
-    symbol: 'PETR4',
-    patternType: 'TWAP',
-    confidenceScore: 0.89,
-    agentId: 1001,
-    firstSeen: '2025-08-21T14:00:00Z',
-    lastSeen: '2025-08-21T16:30:00Z',
-    totalVolume: 1500000,
-    totalTrades: 45,
-    avgTradeSize: 33333,
-    frequencyMinutes: 3,
-    priceAggression: 0.02,
-    status: 'active'
-  },
-  {
-    id: '2',
-    symbol: 'PETR4',
-    patternType: 'VWAP',
-    confidenceScore: 0.76,
-    agentId: 1002,
-    firstSeen: '2025-08-21T14:15:00Z',
-    lastSeen: '2025-08-21T16:45:00Z',
-    totalVolume: 2200000,
-    totalTrades: 38,
-    avgTradeSize: 57895,
-    frequencyMinutes: 4,
-    priceAggression: 0.015,
-    status: 'active'
-  },
-  {
-    id: '3',
-    symbol: 'VALE3',
-    patternType: 'UNKNOWN',
-    confidenceScore: 0.45,
-    agentId: 2001,
-    firstSeen: '2025-08-21T15:00:00Z',
-    lastSeen: '2025-08-21T16:00:00Z',
-    totalVolume: 800000,
-    totalTrades: 12,
-    avgTradeSize: 66667,
-    frequencyMinutes: 5,
-    priceAggression: 0.08,
-    status: 'suspicious'
-  },
-  {
-    id: '4',
-    symbol: 'ITUB4',
-    patternType: 'TWAP',
-    confidenceScore: 0.92,
-    agentId: 3001,
-    firstSeen: '2025-08-21T13:30:00Z',
-    lastSeen: '2025-08-21T16:30:00Z',
-    totalVolume: 3200000,
-    totalTrades: 64,
-    avgTradeSize: 50000,
-    frequencyMinutes: 3,
-    priceAggression: 0.01,
-    status: 'active'
-  }
-];
-
-const mockRobotTrades: RobotTrade[] = [
-  {
-    id: '1',
-    robotPatternId: '1',
-    symbol: 'PETR4',
-    price: 32.45,
-    volume: 30000,
-    timestamp: '2025-08-21T16:30:00Z',
-    tradeType: 'buy',
-    agentId: 1001
-  },
-  {
-    id: '2',
-    robotPatternId: '1',
-    symbol: 'PETR4',
-    price: 32.47,
-    volume: 35000,
-    timestamp: '2025-08-21T16:33:00Z',
-    tradeType: 'buy',
-    agentId: 1001
-  },
-  {
-    id: '3',
-    robotPatternId: '2',
-    symbol: 'PETR4',
-    price: 32.50,
-    volume: 50000,
-    timestamp: '2025-08-21T16:35:00Z',
-    tradeType: 'sell',
-    agentId: 1002
-  }
-];
 
 export default function MotionTrackerPage() {
   const [selectedSymbol, setSelectedSymbol] = useState('TODOS');
   const [selectedExchange, setSelectedExchange] = useState('B3');
   const [robotPatterns, setRobotPatterns] = useState<RobotPattern[]>([]);
-  const [robotTrades, setRobotTrades] = useState<RobotTrade[]>([]);
+  const [robotActivity, setRobotActivity] = useState<RobotActivity[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Filtra dados baseado na seleção
-  useEffect(() => {
-    let filteredPatterns: RobotPattern[];
-    let filteredTrades: RobotTrade[];
-    
-    if (selectedSymbol === 'TODOS') {
-      // Mostra todos os dados consolidados
-      filteredPatterns = mockRobotPatterns;
-      filteredTrades = mockRobotTrades;
-    } else {
-      // Filtra por símbolo específico
-      filteredPatterns = mockRobotPatterns.filter(
-        pattern => pattern.symbol === selectedSymbol
-      );
-      filteredTrades = mockRobotTrades.filter(
-        trade => trade.symbol === selectedSymbol
-      );
+  // Função para buscar padrões de robôs da API
+  const fetchRobotPatterns = async (symbol?: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const url = symbol && symbol !== 'TODOS' 
+        ? `${API_BASE_URL}/robots/patterns?symbol=${symbol}`
+        : `${API_BASE_URL}/robots/patterns`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (data.success) {
+        setRobotPatterns(data.patterns || []);
+      } else {
+        throw new Error(data.message || 'Erro desconhecido');
+      }
+    } catch (err) {
+      console.error('Erro ao buscar padrões:', err);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      setRobotPatterns([]);
+    } finally {
+      setLoading(false);
     }
-    
-    setRobotPatterns(filteredPatterns);
-    setRobotTrades(filteredTrades);
+  };
+
+  // Função para buscar atividade de robôs da API
+  const fetchRobotActivity = async (symbol?: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const url = symbol && symbol !== 'TODOS' 
+        ? `${API_BASE_URL}/robots/activity?symbol=${symbol}&hours=24`
+        : `${API_BASE_URL}/robots/activity?hours=24`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (data.success) {
+        setRobotActivity(data.trades || []);
+      } else {
+        throw new Error(data.message || 'Erro desconhecido');
+      }
+    } catch (err) {
+      console.error('Erro ao buscar atividade:', err);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      setRobotActivity([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Carrega dados quando o símbolo muda
+  useEffect(() => {
+    if (selectedSymbol === 'TODOS') {
+      fetchRobotPatterns();
+      fetchRobotActivity();
+    } else {
+      fetchRobotPatterns(selectedSymbol);
+      fetchRobotActivity(selectedSymbol);
+    }
   }, [selectedSymbol]);
+
+  // Carrega dados iniciais
+  useEffect(() => {
+    fetchRobotPatterns();
+    fetchRobotActivity();
+  }, []);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -241,10 +254,26 @@ export default function MotionTrackerPage() {
               </SelectContent>
             </Select>
           </div>
-          
-
         </div>
       </div>
+
+      {/* Indicadores de Status */}
+      {error && (
+        <div className="bg-red-900/20 border border-red-500 text-red-300 px-4 py-3 rounded-lg">
+          <strong>Erro:</strong> {error}
+          <Button 
+            onClick={() => {
+              setError(null);
+              fetchRobotPatterns();
+              fetchRobotActivity();
+            }}
+            className="ml-3 bg-red-600 hover:bg-red-700"
+            size="sm"
+          >
+            Tentar Novamente
+          </Button>
+        </div>
+      )}
 
       {/* Resumo dos Robôs Detectados */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -254,7 +283,7 @@ export default function MotionTrackerPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-400">
-              {robotPatterns.filter(p => p.status === 'active').length}
+              {loading ? '...' : robotPatterns.filter(p => p.status === 'active' && (selectedSymbol === 'TODOS' || p.symbol === selectedSymbol)).length}
             </div>
           </CardContent>
         </Card>
@@ -265,7 +294,7 @@ export default function MotionTrackerPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-400">
-              {formatVolume(robotPatterns.reduce((sum, p) => sum + p.totalVolume, 0))}
+              {loading ? '...' : formatVolume(robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol).reduce((sum, p) => sum + p.total_volume, 0))}
             </div>
           </CardContent>
         </Card>
@@ -276,7 +305,7 @@ export default function MotionTrackerPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-400">
-              {robotPatterns.reduce((sum, p) => sum + p.totalTrades, 0)}
+              {loading ? '...' : robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol).reduce((sum, p) => sum + p.total_trades, 0)}
             </div>
           </CardContent>
         </Card>
@@ -287,7 +316,7 @@ export default function MotionTrackerPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-yellow-400">
-              {(robotPatterns.reduce((sum, p) => sum + p.confidenceScore, 0) / Math.max(robotPatterns.length, 1) * 100).toFixed(0)}%
+              {loading ? '...' : (robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol).reduce((sum, p) => sum + p.confidence_score, 0) / Math.max(robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol).length, 1) * 100).toFixed(0)}%
             </div>
           </CardContent>
         </Card>
@@ -315,63 +344,82 @@ export default function MotionTrackerPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {robotPatterns.map(pattern => (
-                  <div key={pattern.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-3">
-                        <Badge className={getPatternTypeColor(pattern.patternType)}>
-                          {pattern.patternType}
-                        </Badge>
-                        <Badge className={getStatusColor(pattern.status)}>
-                          {pattern.status === 'active' ? 'Ativo' : 
-                           pattern.status === 'inactive' ? 'Inativo' : 'Suspeito'}
-                        </Badge>
-                        {selectedSymbol === 'TODOS' && (
-                          <Badge className="bg-gray-600 text-white">
-                            {pattern.symbol}
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="text-gray-400">Carregando padrões de robôs...</div>
+                </div>
+              ) : robotPatterns.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-gray-400">Nenhum padrão de robô detectado</div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Filtro visual adicional para símbolo específico */}
+                  {selectedSymbol !== 'TODOS' && (
+                    <div className="bg-blue-900/20 border border-blue-500 text-blue-300 px-3 py-2 rounded-lg text-sm">
+                      🔍 Filtrado para mostrar apenas padrões de <strong>{selectedSymbol}</strong>
+                    </div>
+                  )}
+                  
+                  {robotPatterns
+                    .filter(pattern => selectedSymbol === 'TODOS' || pattern.symbol === selectedSymbol)
+                    .map(pattern => (
+                    <div key={pattern.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <Badge className={getPatternTypeColor(pattern.pattern_type)}>
+                            {pattern.pattern_type}
                           </Badge>
-                        )}
-                        <span className="text-gray-300 text-sm">
-                          Agente: {pattern.agentId}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-bold text-white">
-                          {(pattern.confidenceScore * 100).toFixed(0)}%
+                          <Badge className={getStatusColor(pattern.status)}>
+                            {pattern.status === 'active' ? 'Ativo' : 
+                             pattern.status === 'inactive' ? 'Inativo' : 'Suspeito'}
+                          </Badge>
+                          {selectedSymbol === 'TODOS' && (
+                            <Badge className="bg-gray-600 text-white">
+                              {pattern.symbol}
+                            </Badge>
+                          )}
+                          <span className="text-gray-300 text-sm">
+                            Agente: {pattern.agent_id}
+                          </span>
                         </div>
-                        <div className="text-xs text-gray-400">Confiança</div>
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-white">
+                            {(pattern.confidence_score * 100).toFixed(0)}%
+                          </div>
+                          <div className="text-xs text-gray-400">Confiança</div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <div className="text-gray-400">Volume Total</div>
+                          <div className="text-white font-medium">{formatVolume(pattern.total_volume)}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Total Trades</div>
+                          <div className="text-white font-medium">{pattern.total_trades}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Tamanho Médio</div>
+                          <div className="text-white font-medium">{formatVolume(pattern.avg_trade_size)}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Frequência</div>
+                          <div className="text-white font-medium">{pattern.frequency_minutes} min</div>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3 pt-3 border-t border-gray-600">
+                        <div className="flex justify-between text-xs text-gray-400">
+                          <span>Primeira execução: {formatDate(pattern.first_seen)}</span>
+                          <span>Última execução: {formatDate(pattern.last_seen)}</span>
+                        </div>
                       </div>
                     </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <div className="text-gray-400">Volume Total</div>
-                        <div className="text-white font-medium">{formatVolume(pattern.totalVolume)}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-400">Total Trades</div>
-                        <div className="text-white font-medium">{pattern.totalTrades}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-400">Tamanho Médio</div>
-                        <div className="text-white font-medium">{formatVolume(pattern.avgTradeSize)}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-400">Frequência</div>
-                        <div className="text-white font-medium">{pattern.frequencyMinutes} min</div>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-3 pt-3 border-t border-gray-600">
-                      <div className="flex justify-between text-xs text-gray-400">
-                        <span>Primeira execução: {formatDate(pattern.firstSeen)}</span>
-                        <span>Última execução: {formatDate(pattern.lastSeen)}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -384,39 +432,49 @@ export default function MotionTrackerPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {robotTrades.map(trade => (
-                  <div key={trade.id} className="flex items-center justify-between bg-gray-700 p-3 rounded-lg border border-gray-600">
-                    <div className="flex items-center space-x-4">
-                      <div className={`w-3 h-3 rounded-full ${trade.tradeType === 'buy' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                      <div>
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="text-gray-400">Carregando atividade...</div>
+                </div>
+              ) : robotActivity.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-gray-400">Nenhuma atividade detectada</div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {robotActivity.map((trade, index) => (
+                    <div key={index} className="flex items-center justify-between bg-gray-700 p-3 rounded-lg border border-gray-600">
+                      <div className="flex items-center space-x-4">
+                        <div className={`w-3 h-3 rounded-full ${trade.buy_agent ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        <div>
+                          <div className="text-white font-medium">
+                            {trade.buy_agent ? 'COMPRA' : 'VENDA'}
+                          </div>
+                          <div className="text-gray-400 text-sm">
+                            {selectedSymbol === 'TODOS' && (
+                              <span className="mr-2 text-cyan-400">{trade.symbol}</span>
+                            )}
+                            Agente: {trade.buy_agent || trade.sell_agent}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="text-right">
                         <div className="text-white font-medium">
-                          {trade.tradeType === 'buy' ? 'COMPRA' : 'VENDA'}
+                          R$ {trade.price.toFixed(2)}
                         </div>
                         <div className="text-gray-400 text-sm">
-                          {selectedSymbol === 'TODOS' && (
-                            <span className="mr-2 text-cyan-400">{trade.symbol}</span>
-                          )}
-                          Agente: {trade.agentId}
+                          {formatVolume(trade.volume)}
                         </div>
                       </div>
-                    </div>
-                    
-                    <div className="text-right">
-                      <div className="text-white font-medium">
-                        R$ {trade.price.toFixed(2)}
-                      </div>
+                      
                       <div className="text-gray-400 text-sm">
-                        {formatVolume(trade.volume)}
+                        {formatTime(trade.timestamp)}
                       </div>
                     </div>
-                    
-                    <div className="text-gray-400 text-sm">
-                      {formatTime(trade.timestamp)}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -434,8 +492,9 @@ export default function MotionTrackerPage() {
                   <h4 className="text-lg text-gray-300 font-medium">Distribuição por Tipo</h4>
                   <div className="space-y-2">
                     {['TWAP', 'VWAP', 'UNKNOWN'].map(type => {
-                      const count = robotPatterns.filter(p => p.patternType === type).length;
-                      const percentage = robotPatterns.length > 0 ? (count / robotPatterns.length * 100) : 0;
+                      const filteredPatterns = robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol);
+                      const count = filteredPatterns.filter(p => p.pattern_type === type).length;
+                      const percentage = filteredPatterns.length > 0 ? (count / filteredPatterns.length * 100) : 0;
                       return (
                         <div key={type} className="flex items-center justify-between">
                           <span className="text-gray-300">{type}</span>
@@ -460,22 +519,31 @@ export default function MotionTrackerPage() {
                     <div className="flex justify-between">
                       <span className="text-gray-400">Volume Médio por Robô</span>
                       <span className="text-white font-medium">
-                        {formatVolume(robotPatterns.length > 0 ? 
-                          robotPatterns.reduce((sum, p) => sum + p.totalVolume, 0) / robotPatterns.length : 0)}
+                        {(() => {
+                          const filteredPatterns = robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol);
+                          return formatVolume(filteredPatterns.length > 0 ? 
+                            filteredPatterns.reduce((sum, p) => sum + p.total_volume, 0) / filteredPatterns.length : 0);
+                        })()}
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Frequência Média</span>
                       <span className="text-white font-medium">
-                        {robotPatterns.length > 0 ? 
-                          (robotPatterns.reduce((sum, p) => sum + p.frequencyMinutes, 0) / robotPatterns.length).toFixed(1) : 0} min
+                        {(() => {
+                          const filteredPatterns = robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol);
+                          return filteredPatterns.length > 0 ? 
+                            (filteredPatterns.reduce((sum, p) => sum + p.frequency_minutes, 0) / filteredPatterns.length).toFixed(1) : 0;
+                        })()} min
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Confiança Média</span>
                       <span className="text-white font-medium">
-                        {robotPatterns.length > 0 ? 
-                          (robotPatterns.reduce((sum, p) => sum + p.confidenceScore, 0) / robotPatterns.length * 100).toFixed(0) : 0}%
+                        {(() => {
+                          const filteredPatterns = robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol);
+                          return filteredPatterns.length > 0 ? 
+                            (filteredPatterns.reduce((sum, p) => sum + p.confidence_score, 0) / filteredPatterns.length * 100).toFixed(0) : 0;
+                        })()}%
                       </span>
                     </div>
                   </div>
@@ -488,3 +556,5 @@ export default function MotionTrackerPage() {
     </div>
   );
 }
+
+

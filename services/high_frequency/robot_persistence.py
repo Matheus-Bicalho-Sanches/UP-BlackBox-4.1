@@ -3,7 +3,12 @@ import os
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
-from .robot_models import TWAPPattern, RobotTrade, TradeType, RobotStatus
+
+# Corrige imports para funcionar como módulo standalone
+try:
+    from .robot_models import TWAPPattern, RobotTrade, TradeType, RobotStatus
+except ImportError:
+    from robot_models import TWAPPattern, RobotTrade, TradeType, RobotStatus
 
 logger = logging.getLogger(__name__)
 

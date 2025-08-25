@@ -5,11 +5,19 @@ from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
 import statistics
 
-from .robot_models import (
-    TWAPPattern, RobotTrade, TradeType, RobotStatus, 
-    TWAPDetectionConfig, TickData
-)
-from .robot_persistence import RobotPersistence
+# Corrige imports para funcionar como módulo standalone
+try:
+    from .robot_models import (
+        TWAPPattern, RobotTrade, TradeType, RobotStatus, 
+        TWAPDetectionConfig, TickData
+    )
+    from .robot_persistence import RobotPersistence
+except ImportError:
+    from robot_models import (
+        TWAPPattern, RobotTrade, TradeType, RobotStatus, 
+        TWAPDetectionConfig, TickData
+    )
+    from robot_persistence import RobotPersistence
 
 logger = logging.getLogger(__name__)
 
@@ -186,49 +194,64 @@ class TWAPDetector:
     
     def _calculate_confidence_score(self, total_trades: int, avg_frequency: float, 
                                   price_variation: float, price_aggression: float) -> float:
-        """Calcula score de confiança (0.0 a 1.0)"""
+        """Calcula score de confiança (0.0 a 1.0) - AJUSTADO PARA MERCADO BRASILEIRO"""
         score = 0.0
         
-        # Score baseado no número de trades
-        if total_trades >= 50:
+        # Score baseado no número de trades (ajustado para mercado brasileiro)
+        if total_trades >= 100:
             score += 0.3
+        elif total_trades >= 50:
+            score += 0.25
         elif total_trades >= 20:
             score += 0.2
         elif total_trades >= 10:
-            score += 0.1
-        
-        # Score baseado na frequência (mais regular = melhor)
-        if 2 <= avg_frequency <= 10:  # Frequência ideal para TWAP
-            score += 0.3
-        elif 1 <= avg_frequency <= 20:
-            score += 0.2
-        elif 0.5 <= avg_frequency <= 30:
-            score += 0.1
-        
-        # Score baseado na variação de preço (menor = melhor)
-        if price_variation <= 1.0:
-            score += 0.2
-        elif price_variation <= 2.0:
             score += 0.15
-        elif price_variation <= 3.0:
+        elif total_trades >= 5:
             score += 0.1
         
-        # Score baseado na agressividade (menor = mais TWAP-like)
-        if price_aggression <= 0.1:
+        # Score baseado na frequência (AJUSTADO para mercado brasileiro)
+        # Mercado brasileiro é mais rápido, frequências de 0.01-2 min são normais
+        if 0.01 <= avg_frequency <= 2.0:  # Frequência ideal para TWAP brasileiro
+            score += 0.3
+        elif 0.01 <= avg_frequency <= 5.0:
+            score += 0.25
+        elif 0.01 <= avg_frequency <= 10.0:
             score += 0.2
-        elif price_aggression <= 0.5:
+        elif 0.01 <= avg_frequency <= 30.0:
+            score += 0.15
+        elif 0.01 <= avg_frequency <= 60.0:
             score += 0.1
+        
+        # Score baseado na variação de preço (ajustado para mercado brasileiro)
+        if price_variation <= 2.0:
+            score += 0.2
+        elif price_variation <= 5.0:
+            score += 0.15
+        elif price_variation <= 10.0:
+            score += 0.1
+        elif price_variation <= 15.0:
+            score += 0.05
+        
+        # Score baseado na agressividade (ajustado para mercado brasileiro)
+        if price_aggression <= 0.5:
+            score += 0.2
+        elif price_aggression <= 1.0:
+            score += 0.15
+        elif price_aggression <= 2.0:
+            score += 0.1
+        elif price_aggression <= 5.0:
+            score += 0.05
         
         return min(score, 1.0)
     
     def _determine_status(self, confidence_score: float, avg_frequency: float, 
                          price_variation: float) -> RobotStatus:
-        """Determina o status do robô baseado nas métricas"""
-        if confidence_score >= 0.8 and avg_frequency <= 15 and price_variation <= 2.0:
+        """Determina o status do robô baseado nas métricas - AJUSTADO PARA MERCADO BRASILEIRO"""
+        if confidence_score >= 0.7 and avg_frequency <= 5.0 and price_variation <= 5.0:
             return RobotStatus.ACTIVE
-        elif confidence_score >= 0.6:
+        elif confidence_score >= 0.5:
             return RobotStatus.ACTIVE
-        elif confidence_score >= 0.4:
+        elif confidence_score >= 0.3:
             return RobotStatus.SUSPICIOUS
         else:
             return RobotStatus.INACTIVE

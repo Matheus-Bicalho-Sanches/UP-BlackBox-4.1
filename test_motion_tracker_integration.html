@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Motion Tracker API</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #1a1a1a; color: white; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: #2a2a2a; border: 1px solid #444; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        .button:hover { background: #0056b3; }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .loading { color: #ffc107; }
+        pre { background: #333; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Teste de Integração Motion Tracker</h1>
+        
+        <div class="card">
+            <h3>🔗 Status da API</h3>
+            <button class="button" onclick="testAPIStatus()">Testar Status</button>
+            <div id="apiStatus"></div>
+        </div>
+
+        <div class="card">
+            <h3>🤖 Padrões de Robôs</h3>
+            <button class="button" onclick="testRobotPatterns()">Buscar Padrões</button>
+            <button class="button" onclick="testRobotPatterns('PETR4')">Padrões PETR4</button>
+            <div id="robotPatterns"></div>
+        </div>
+
+        <div class="card">
+            <h3>📊 Atividade de Robôs</h3>
+            <button class="button" onclick="testRobotActivity()">Buscar Atividade</button>
+            <button class="button" onclick="testRobotActivity('PETR4')">Atividade PETR4</button>
+            <div id="robotActivity"></div>
+        </div>
+
+        <div class="card">
+            <h3>📈 Métricas</h3>
+            <button class="button" onclick="testMetrics()">Buscar Métricas</button>
+            <div id="metrics"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8002';
+
+        async function makeRequest(url, description) {
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.success) {
+                    return { success: true, data, description };
+                } else {
+                    return { success: false, error: data.message || 'Erro desconhecido', description };
+                }
+            } catch (error) {
+                return { success: false, error: error.message, description };
+            }
+        }
+
+        function displayResult(elementId, result) {
+            const element = document.getElementById(elementId);
+            
+            if (result.success) {
+                element.innerHTML = `
+                    <div class="success">✅ ${result.description}</div>
+                    <pre>${JSON.stringify(result.data, null, 2)}</pre>
+                `;
+            } else {
+                element.innerHTML = `
+                    <div class="error">❌ ${result.description}: ${result.error}</div>
+                `;
+            }
+        }
+
+        async function testAPIStatus() {
+            const result = await makeRequest(`${API_BASE}/test`, 'API está funcionando');
+            displayResult('apiStatus', result);
+        }
+
+        async function testRobotPatterns(symbol = null) {
+            const url = symbol ? `${API_BASE}/robots/patterns?symbol=${symbol}` : `${API_BASE}/robots/patterns`;
+            const description = symbol ? `Padrões para ${symbol}` : 'Todos os padrões';
+            const result = await makeRequest(url, description);
+            displayResult('robotPatterns', result);
+        }
+
+        async function testRobotActivity(symbol = null) {
+            const url = symbol ? `${API_BASE}/robots/activity?symbol=${symbol}&hours=24` : `${API_BASE}/robots/activity?hours=24`;
+            const description = symbol ? `Atividade para ${symbol}` : 'Toda atividade';
+            const result = await makeRequest(url, description);
+            displayResult('robotActivity', result);
+        }
+
+        async function testMetrics() {
+            const result = await makeRequest(`${API_BASE}/metrics`, 'Métricas do sistema');
+            displayResult('metrics', result);
+        }
+
+        // Teste automático ao carregar a página
+        window.onload = function() {
+            testAPIStatus();
+        };
+    </script>
+</body>
+</html>
+
