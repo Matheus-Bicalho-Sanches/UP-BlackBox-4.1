@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -30,9 +30,22 @@ interface RobotActivity {
   price: number;
   volume: number;
   timestamp: string;
-  buy_agent: number | null;
-  sell_agent: number | null;
+  buy_agent?: number;
+  sell_agent?: number;
   exchange: string;
+}
+
+interface RobotStatusChange {
+  id: string;
+  symbol: string;
+  agent_id: number;
+  old_status: string;
+  new_status: string;
+  timestamp: string;
+  pattern_type: string;
+  confidence_score: number;
+  total_volume: number;
+  total_trades: number;
 }
 
 // Configuração da API
@@ -96,6 +109,7 @@ export default function MotionTrackerPage() {
   const [selectedExchange, setSelectedExchange] = useState('B3');
   const [robotPatterns, setRobotPatterns] = useState<RobotPattern[]>([]);
   const [robotActivity, setRobotActivity] = useState<RobotActivity[]>([]);
+  const [robotStatusChanges, setRobotStatusChanges] = useState<RobotStatusChange[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,14 +173,46 @@ export default function MotionTrackerPage() {
     }
   };
 
+  // Função para buscar mudanças de status dos robôs
+  const fetchRobotStatusChanges = async (symbol?: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const url = symbol && symbol !== 'TODOS' 
+        ? `${API_BASE_URL}/robots/status-changes?symbol=${symbol}&hours=24`
+        : `${API_BASE_URL}/robots/status-changes?hours=24`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      if (data.success) {
+        setRobotStatusChanges(data.status_changes || []);
+      } else {
+        throw new Error(data.message || 'Erro desconhecido');
+      }
+    } catch (err) {
+      console.error('Erro ao buscar mudanças de status:', err);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      setRobotStatusChanges([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Carrega dados quando o símbolo muda
   useEffect(() => {
     if (selectedSymbol === 'TODOS') {
       fetchRobotPatterns();
       fetchRobotActivity();
+      fetchRobotStatusChanges();
     } else {
       fetchRobotPatterns(selectedSymbol);
       fetchRobotActivity(selectedSymbol);
+      fetchRobotStatusChanges(selectedSymbol);
     }
   }, [selectedSymbol]);
 
@@ -174,6 +220,7 @@ export default function MotionTrackerPage() {
   useEffect(() => {
     fetchRobotPatterns();
     fetchRobotActivity();
+    fetchRobotStatusChanges();
   }, []);
 
   const getStatusColor = (status: string) => {
@@ -323,8 +370,11 @@ export default function MotionTrackerPage() {
       </div>
 
       {/* Abas Principais */}
-      <Tabs defaultValue="patterns" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 bg-gray-800 border-gray-600">
+      <Tabs defaultValue="startstop" className="w-full">
+        <TabsList className="grid w-full grid-cols-4 bg-gray-800 border-gray-600">
+          <TabsTrigger value="startstop" className="text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
+            Start/Stop
+          </TabsTrigger>
           <TabsTrigger value="patterns" className="text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
             Padrões Detectados
           </TabsTrigger>
@@ -335,6 +385,97 @@ export default function MotionTrackerPage() {
             Análise Avançada
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="startstop" className="space-y-4">
+          <Card className="bg-gray-800 border-gray-600">
+            <CardHeader>
+              <CardTitle className="text-white">
+                Histórico Start/Stop - {selectedSymbol === 'TODOS' ? 'Todos os Ativos' : selectedSymbol}
+              </CardTitle>
+              <CardDescription className="text-gray-400">
+                Robôs que começaram ou pararam de rodar (mais recentes primeiro)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="text-gray-400">Carregando histórico de mudanças...</div>
+                </div>
+              ) : robotStatusChanges.length === 0 ? (
+                <div className="text-center py-8">
+                  <div className="text-gray-400">Nenhuma mudança de status detectada</div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Filtro visual adicional para símbolo específico */}
+                  {selectedSymbol !== 'TODOS' && (
+                    <div className="bg-blue-900/20 border border-blue-500 text-blue-300 px-3 py-2 rounded-lg text-sm">
+                      🔍 Filtrado para mostrar apenas mudanças de <strong>{selectedSymbol}</strong>
+                    </div>
+                  )}
+                  
+                  {robotStatusChanges
+                    .filter(change => selectedSymbol === 'TODOS' || change.symbol === selectedSymbol)
+                    .map((change, index) => (
+                    <div key={change.id || index} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <Badge className={change.new_status === 'active' ? 'bg-green-600' : 'bg-red-600'}>
+                            {change.new_status === 'active' ? '🟢 INICIADO' : '🔴 PARADO'}
+                          </Badge>
+                          <Badge className="bg-gray-600 text-white">
+                            {change.symbol}
+                          </Badge>
+                          <span className="text-gray-300 text-sm">
+                            Agente: {change.agent_id}
+                          </span>
+                          <span className="text-gray-400 text-sm">
+                            {change.pattern_type}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-lg font-bold text-white">
+                            {(change.confidence_score * 100).toFixed(0)}%
+                          </div>
+                          <div className="text-xs text-gray-400">Confiança</div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                        <div>
+                          <div className="text-gray-400">Status Anterior</div>
+                          <div className="text-white font-medium">
+                            {change.old_status === 'active' ? '🟢 Ativo' : 
+                             change.old_status === 'inactive' ? '🔴 Inativo' : '🟡 Suspeito'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Volume Total</div>
+                          <div className="text-white font-medium">{formatVolume(change.total_volume)}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Total Trades</div>
+                          <div className="text-white font-medium">{change.total_trades}</div>
+                        </div>
+                        <div>
+                          <div className="text-gray-400">Timestamp</div>
+                          <div className="text-white font-medium">{formatTime(change.timestamp)}</div>
+                        </div>
+                      </div>
+                      
+                      <div className="text-xs text-gray-400 text-center pt-2 border-t border-gray-600">
+                        {change.new_status === 'active' ? 
+                          `🟢 Robô ${change.agent_id} iniciou operação em ${change.symbol}` :
+                          `🔴 Robô ${change.agent_id} parou operação em ${change.symbol}`
+                        }
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="patterns" className="space-y-4">
           <Card className="bg-gray-800 border-gray-600">

@@ -111,7 +111,7 @@ class RobotPersistence:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
-                        SELECT id, first_seen, total_volume, total_trades, avg_trade_size
+                        SELECT id, status, first_seen, total_volume, total_trades, avg_trade_size
                         FROM robot_patterns
                         WHERE symbol = %s AND agent_id = %s AND pattern_type = 'TWAP'
                         ORDER BY last_seen DESC

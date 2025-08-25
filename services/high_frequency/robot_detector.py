@@ -21,13 +21,59 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+class RobotStatusTracker:
+    """Rastreador de mudanças de status dos robôs"""
+    
+    def __init__(self):
+        self.status_history: List[Dict] = []
+        self.max_history_size = 1000  # Mantém histórico das últimas 1000 mudanças
+    
+    def add_status_change(self, symbol: str, agent_id: int, old_status: str, 
+                         new_status: str, pattern: TWAPPattern):
+        """Adiciona uma mudança de status ao histórico"""
+        change = {
+            'id': f"{symbol}_{agent_id}_{datetime.now().timestamp()}",
+            'symbol': symbol,
+            'agent_id': agent_id,
+            'old_status': old_status,
+            'new_status': new_status,
+            'timestamp': datetime.now().isoformat(),
+            'pattern_type': pattern.pattern_type,
+            'confidence_score': pattern.confidence_score,
+            'total_volume': pattern.total_volume,
+            'total_trades': pattern.total_trades
+        }
+        
+        # Adiciona no início da lista (mais recente primeiro)
+        self.status_history.insert(0, change)
+        
+        # Mantém apenas as últimas mudanças
+        if len(self.status_history) > self.max_history_size:
+            self.status_history = self.status_history[:self.max_history_size]
+        
+        logger.info(f"Status change tracked: {symbol} Agent {agent_id} {old_status} -> {new_status}")
+    
+    def get_status_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
+        """Retorna mudanças de status filtradas por símbolo e tempo"""
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        
+        filtered_changes = []
+        for change in self.status_history:
+            change_time = datetime.fromisoformat(change['timestamp'])
+            if change_time >= cutoff_time:
+                if symbol is None or change['symbol'] == symbol:
+                    filtered_changes.append(change)
+        
+        return filtered_changes
+
 class TWAPDetector:
     """Detector de padrões TWAP (Time-Weighted Average Price)"""
     
-    def __init__(self, config: Optional[TWAPDetectionConfig] = None):
-        self.config = config or TWAPDetectionConfig()
-        self.persistence = RobotPersistence()
+    def __init__(self, config: TWAPDetectionConfig, persistence: RobotPersistence):
+        self.config = config
+        self.persistence = persistence
         self.active_patterns: Dict[str, Dict[int, TWAPPattern]] = defaultdict(dict)
+        self.status_tracker = RobotStatusTracker()  # Adiciona tracker de status
         
     async def analyze_symbol(self, symbol: str) -> List[TWAPPattern]:
         """Analisa um símbolo específico para detectar padrões TWAP"""
@@ -210,16 +256,16 @@ class TWAPDetector:
             score += 0.1
         
         # Score baseado na frequência (AJUSTADO para mercado brasileiro)
-        # Mercado brasileiro é mais rápido, frequências de 0.01-2 min são normais
-        if 0.01 <= avg_frequency <= 2.0:  # Frequência ideal para TWAP brasileiro
+        # Mercado brasileiro é mais rápido, frequências de 0.001-2 min são normais
+        if 0.001 <= avg_frequency <= 2.0:  # Frequência ideal para TWAP brasileiro
             score += 0.3
-        elif 0.01 <= avg_frequency <= 5.0:
+        elif 0.001 <= avg_frequency <= 5.0:
             score += 0.25
-        elif 0.01 <= avg_frequency <= 10.0:
+        elif 0.001 <= avg_frequency <= 10.0:
             score += 0.2
-        elif 0.01 <= avg_frequency <= 30.0:
+        elif 0.001 <= avg_frequency <= 30.0:
             score += 0.15
-        elif 0.01 <= avg_frequency <= 60.0:
+        elif 0.001 <= avg_frequency <= 60.0:
             score += 0.1
         
         # Score baseado na variação de preço (ajustado para mercado brasileiro)
@@ -265,10 +311,18 @@ class TWAPDetector:
             if existing:
                 # Atualiza padrão existente
                 pattern_id = existing[0]
+                old_status = existing[1]  # Status anterior
                 success = await self.persistence.update_twap_pattern(pattern_id, pattern)
                 if success:
                     # Atualiza no cache local
                     self.active_patterns[pattern.symbol][pattern.agent_id] = pattern
+                    
+                    # Rastreia mudança de status se houver
+                    if old_status != pattern.status:
+                        self.status_tracker.add_status_change(
+                            pattern.symbol, pattern.agent_id, old_status, pattern.status, pattern
+                        )
+                    
                 return success
             else:
                 # Cria novo padrão
@@ -276,6 +330,12 @@ class TWAPDetector:
                 if pattern_id:
                     # Adiciona ao cache local
                     self.active_patterns[pattern.symbol][pattern.agent_id] = pattern
+                    
+                    # Rastreia início de operação (de 'inactive' para novo status)
+                    self.status_tracker.add_status_change(
+                        pattern.symbol, pattern.agent_id, 'inactive', pattern.status, pattern
+                    )
+                    
                     return True
                 return False
                 
@@ -321,3 +381,7 @@ class TWAPDetector:
     def get_active_patterns(self) -> Dict[str, Dict[int, TWAPPattern]]:
         """Retorna padrões ativos em cache"""
         return self.active_patterns.copy()
+    
+    def get_status_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
+        """Retorna mudanças de status dos robôs"""
+        return self.status_tracker.get_status_changes(symbol, hours)

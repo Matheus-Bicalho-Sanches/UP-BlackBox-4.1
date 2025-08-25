@@ -478,11 +478,25 @@ async def get_robot_activity(symbol: Optional[str] = None, hours: int = 24):
     except Exception as e:
         logger.error(f"Error getting robot activity: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-            
-    except HTTPException:
-        raise
+
+@app.get("/robots/status-changes")
+async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24):
+    """Retorna mudanças de status dos robôs (start/stop)"""
+    try:
+        if not system_initialized or not twap_detector:
+            raise HTTPException(status_code=503, detail="system_not_initialized")
+        
+        # Busca mudanças de status do detector
+        status_changes = twap_detector.get_status_changes(symbol, hours)
+        
+        return {
+            "success": True,
+            "status_changes": status_changes,
+            "count": len(status_changes)
+        }
+        
     except Exception as e:
-        logger.error(f"Error unsubscribing from {request.symbol}: {e}")
+        logger.error(f"Error getting robot status changes: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/ingest/tick")

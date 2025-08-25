@@ -66,13 +66,13 @@ class TWAPDetectionConfig:
     min_trades: int = 5  # Reduzido de 10 para 5
     
     # Mínimo de volume total (ajustado para mercado brasileiro)
-    min_total_volume: int = 5000  # Reduzido de 100000 para 5000
+    min_total_volume: int = 1000  # Reduzido de 5000 para 1000
     
     # Máximo de variação de preço permitida (em %)
     max_price_variation: float = 15.0  # Aumentado de 5.0 para 15.0
     
     # Frequência mínima entre trades (em minutos) - AJUSTADO!
-    min_frequency_minutes: float = 0.01  # Reduzido de 1.0 para 0.01 (0.6 segundos)
+    min_frequency_minutes: float = 0.001  # Reduzido de 0.01 para 0.001 (0.06 segundos)
     
     # Frequência máxima entre trades (em minutos) - AJUSTADO!
     max_frequency_minutes: float = 120.0  # Aumentado de 30.0 para 120.0 (2 horas)

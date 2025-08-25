@@ -249,7 +249,11 @@ export default function ContasPage() {
             </tr>
           </thead>
           <tbody>
-            {contas.map((conta, idx) => (
+            {[...contas].sort((a, b) => {
+              const nomeA = (a["Nome Cliente"] || "").toLowerCase();
+              const nomeB = (b["Nome Cliente"] || "").toLowerCase();
+              return nomeA.localeCompare(nomeB);
+            }).map((conta, idx) => (
               <tr key={idx} style={{ borderBottom: "1px solid #333" }}>
                 <td style={{ padding: 8, textAlign: 'left' }}>{conta["Nome Cliente"] || "-"}</td>
                 <td style={{ padding: 8, textAlign: 'center' }}>{conta.BrokerID}</td>

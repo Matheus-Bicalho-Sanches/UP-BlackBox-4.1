@@ -142,6 +142,7 @@ def main():
         dll_instance.subscribe("TIMS3")
         dll_instance.subscribe("VIVT3")
         dll_instance.subscribe("XPML11")
+        dll_instance.subscribe("URPR11")
 
         dll_instance.initialize()
         
