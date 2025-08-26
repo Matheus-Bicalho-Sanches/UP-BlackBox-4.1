@@ -323,7 +323,7 @@ class TWAPDetector:
             if existing:
                 # Atualiza padrão existente
                 pattern_id = existing[0]
-                old_status = existing[1]  # Status anterior
+                old_status = existing[1]  # Status anterior (string)
                 success = await self.persistence.update_twap_pattern(pattern_id, pattern)
                 if success:
                     # Atualiza no cache local
@@ -415,10 +415,10 @@ class TWAPDetector:
                         pattern.status = RobotStatus.INACTIVE
                         
                         # Atualiza no banco
-                        await self.persistence.update_twap_pattern(
-                            await self.persistence.get_existing_pattern(symbol, agent_id)[0], 
-                            pattern
-                        )
+                        existing_pattern = await self.persistence.get_existing_pattern(symbol, agent_id)
+                        if existing_pattern:
+                            pattern_id = existing_pattern[0]
+                            await self.persistence.update_twap_pattern(pattern_id, pattern)
                         
                         # Rastreia a mudança de status
                         self.status_tracker.add_status_change(
@@ -471,7 +471,7 @@ class TWAPDetector:
             logger.error(f"Erro ao limpar padrões inativos: {e}")
             return 0
 
-    async def check_robot_inactivity_by_trades(self, inactivity_threshold_minutes: int = 2) -> List[Dict]:
+    async def check_robot_inactivity_by_trades(self, inactivity_threshold_minutes: int = 2, use_notification_control: bool = False) -> List[Dict]:
         """Verifica inatividade dos robôs baseado em trades reais das últimas X minutos"""
         try:
             inactive_robots = []
@@ -496,12 +496,34 @@ class TWAPDetector:
                         existing = await self.persistence.get_existing_pattern(symbol, agent_id)
                         if existing:
                             pattern_id = existing[0]
-                            await self.persistence.update_twap_pattern(pattern_id, pattern)
                             
-                            # Rastreia a mudança de status
-                            self.status_tracker.add_status_change(
-                                symbol, agent_id, old_status.value, 'inactive', pattern
-                            )
+                            # ✅ NOVO: Controle de notificação para evitar spam
+                            newly_notified = False
+                            if use_notification_control:
+                                # Verifica se já foi notificado como inativo
+                                # existing[6] = inactivity_notified (7º campo da tupla)
+                                if not existing[6]:  # inactivity_notified = FALSE
+                                    # Marca como notificado e rastreia mudança de status
+                                    newly_notified = True
+                                    await self.persistence.mark_inactivity_notified(pattern_id)
+                                    
+                                    # Rastreia a mudança de status apenas na primeira notificação
+                                    self.status_tracker.add_status_change(
+                                        symbol, agent_id, old_status.value, 'inactive', pattern
+                                    )
+                                    
+                                    logger.info(f"🔴 PRIMEIRA NOTIFICAÇÃO: Robô {get_agent_name(agent_id)} ({agent_id}) em {symbol} PAROU de operar")
+                                else:
+                                    logger.debug(f"📊 Robô {get_agent_name(agent_id)} ({agent_id}) em {symbol} já foi notificado como inativo")
+                            else:
+                                # Comportamento antigo (sem controle de notificação)
+                                newly_notified = True
+                                self.status_tracker.add_status_change(
+                                    symbol, agent_id, old_status.value, 'inactive', pattern
+                                )
+                            
+                            # Atualiza o padrão no banco
+                            await self.persistence.update_twap_pattern(pattern_id, pattern)
                             
                             # Calcula inatividade em minutos
                             inactivity_minutes = (current_time - pattern.last_seen).total_seconds() / 60
@@ -512,10 +534,12 @@ class TWAPDetector:
                                 'agent_name': get_agent_name(agent_id),  # ✅ NOVO: Nome da corretora
                                 'stopped_at': pattern.last_seen.isoformat(),
                                 'inactivity_minutes': inactivity_minutes,
-                                'reason': 'no_recent_trades'
+                                'reason': 'no_recent_trades',
+                                'newly_notified': newly_notified  # ✅ NOVO: Indica se é primeira notificação
                             })
                             
-                            logger.info(f"Robô {get_agent_name(agent_id)} ({agent_id}) em {symbol} marcado como inativo - sem trades há {inactivity_minutes:.1f} minutos")
+                            if newly_notified:
+                                logger.info(f"🚫 Robô {get_agent_name(agent_id)} ({agent_id}) em {symbol} marcado como inativo - sem trades há {inactivity_minutes:.1f} minutos")
             
             return inactive_robots
             

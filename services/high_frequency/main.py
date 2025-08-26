@@ -387,16 +387,25 @@ async def start_inactivity_monitoring():
     while system_initialized:
         try:
             # Verifica inatividade baseado em trades reais (a cada 5 segundos)
-            inactive_robots = await twap_detector.check_robot_inactivity_by_trades(inactivity_threshold_minutes=1)
+            # Agora usa a nova coluna inactivity_notified para evitar notificações repetitivas
+            inactive_robots = await twap_detector.check_robot_inactivity_by_trades(
+                inactivity_threshold_minutes=1,
+                use_notification_control=True  # Novo parâmetro para usar controle de notificação
+            )
+            
             if inactive_robots:
-                logger.info(f"Detectados {len(inactive_robots)} robôs inativos por falta de trades")
-                for robot in inactive_robots:
-                    logger.info(f"Robô {robot['agent_id']} em {robot['symbol']} inativo - sem trades há {robot['inactivity_minutes']:.1f} minutos")
+                newly_notified = [r for r in inactive_robots if r.get('newly_notified', False)]
+                if newly_notified:
+                    logger.info(f"🔴 {len(newly_notified)} robôs PARARAM de operar (primeira notificação)")
+                    for robot in newly_notified:
+                        logger.info(f"   🚫 Robô {robot['agent_id']} ({get_agent_name(robot['agent_id'])}) em {robot['symbol']} - sem trades há {robot['inactivity_minutes']:.1f} minutos")
+                else:
+                    logger.debug(f"📊 {len(inactive_robots)} robôs inativos (já notificados anteriormente)")
             
             # Limpa padrões inativos antigos (a cada 3 horas)
             cleaned_patterns = await twap_detector.cleanup_inactive_patterns(max_inactive_hours=3)
             if cleaned_patterns > 0:
-                logger.info(f"Removidos {cleaned_patterns} padrões inativos antigos da memória")
+                logger.info(f"🧹 Removidos {cleaned_patterns} padrões inativos antigos da memória")
             
             # Aguarda 5 segundos antes da próxima verificação
             await asyncio.sleep(5)

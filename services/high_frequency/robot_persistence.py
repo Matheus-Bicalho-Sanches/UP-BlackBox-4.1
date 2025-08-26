@@ -67,13 +67,17 @@ class RobotPersistence:
                             frequency_minutes = %s,
                             price_aggression = %s,
                             confidence_score = %s,
-                            status = %s
+                            status = %s,
+                            inactivity_notified = CASE 
+                                WHEN %s = 'active' THEN FALSE 
+                                ELSE inactivity_notified 
+                            END
                         WHERE id = %s
                     """, (
                         pattern.last_seen, pattern.total_volume, pattern.total_trades,
                         pattern.avg_trade_size, pattern.frequency_minutes,
                         pattern.price_aggression, pattern.confidence_score,
-                        pattern.status.value, pattern_id
+                        pattern.status.value, pattern.status.value, pattern_id
                     ))
                     
                     await conn.commit()
@@ -113,7 +117,7 @@ class RobotPersistence:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
-                        SELECT id, status, first_seen, total_volume, total_trades, avg_trade_size
+                        SELECT id, status, first_seen, total_volume, total_trades, avg_trade_size, inactivity_notified
                         FROM robot_patterns
                         WHERE symbol = %s AND agent_id = %s AND pattern_type = 'TWAP'
                         ORDER BY last_seen DESC
@@ -238,3 +242,41 @@ class RobotPersistence:
         except Exception as e:
             logger.error(f"Erro na limpeza de padrões antigos: {e}")
             return 0
+
+    async def mark_inactivity_notified(self, pattern_id: int) -> bool:
+        """Marca um padrão como notificado de inatividade para evitar notificações repetitivas"""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        UPDATE robot_patterns 
+                        SET inactivity_notified = TRUE 
+                        WHERE id = %s
+                    """, (pattern_id,))
+                    
+                    await conn.commit()
+                    logger.info(f"✅ Padrão {pattern_id} marcado como notificado de inatividade")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"❌ Erro ao marcar padrão {pattern_id} como notificado: {e}")
+            return False
+
+    async def reset_inactivity_notification(self, pattern_id: int) -> bool:
+        """Reseta o flag de notificação quando um robô volta a operar"""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        UPDATE robot_patterns 
+                        SET inactivity_notified = FALSE 
+                        WHERE id = %s
+                    """, (pattern_id,))
+                    
+                    await conn.commit()
+                    logger.info(f"🔄 Flag de notificação resetado para padrão {pattern_id}")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"❌ Erro ao resetar flag de notificação para padrão {pattern_id}: {e}")
+            return False
