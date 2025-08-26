@@ -26,9 +26,10 @@ logger = logging.getLogger(__name__)
 class RobotStatusTracker:
     """Rastreador de mudanças de status dos robôs"""
     
-    def __init__(self):
+    def __init__(self, websocket_callback=None):
         self.status_history: List[Dict] = []
         self.max_history_size = 1000  # Mantém histórico das últimas 1000 mudanças
+        self.websocket_callback = websocket_callback  # ✅ NOVO: Callback para WebSocket
     
     def add_status_change(self, symbol: str, agent_id: int, old_status: str, 
                          new_status: str, pattern: TWAPPattern):
@@ -55,6 +56,13 @@ class RobotStatusTracker:
             self.status_history = self.status_history[:self.max_history_size]
         
         logger.info(f"Status change tracked: {symbol} {get_agent_name(agent_id)} ({agent_id}) {old_status} -> {new_status}")
+        
+        # ✅ NOVO: Notifica via WebSocket se callback estiver disponível
+        if self.websocket_callback:
+            try:
+                asyncio.create_task(self.websocket_callback(change))
+            except Exception as e:
+                logger.error(f"Erro ao notificar via WebSocket: {e}")
     
     def get_status_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
         """Retorna mudanças de status filtradas por símbolo e tempo"""

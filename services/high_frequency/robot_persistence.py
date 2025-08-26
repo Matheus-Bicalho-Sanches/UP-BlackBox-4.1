@@ -192,6 +192,8 @@ class RobotPersistence:
     async def get_active_symbols(self) -> List[str]:
         """Busca símbolos que tiveram atividade nas últimas 24h"""
         try:
+            logger.info("🔍 Buscando símbolos ativos nas últimas 24h...")
+            
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
@@ -202,10 +204,14 @@ class RobotPersistence:
                     """)
                     
                     rows = await cur.fetchall()
-                    return [row[0] for row in rows]
+                    symbols = [row[0] for row in rows]
+                    
+                    logger.info(f"📊 Símbolos ativos encontrados: {len(symbols)} - {symbols[:10]}...")
+                    return symbols
                     
         except Exception as e:
-            logger.error(f"Erro ao buscar símbolos ativos: {e}")
+            logger.error(f"💥 Erro ao buscar símbolos ativos: {e}")
+            logger.error(f"📋 Traceback completo:", exc_info=True)
             return []
     
     async def cleanup_old_patterns(self, days: int = 7) -> int:

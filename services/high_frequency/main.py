@@ -37,10 +37,14 @@ from typing import Dict, List, Optional, Any
 import uvicorn
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.websockets import WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import firebase_admin
 from firebase_admin import credentials, firestore
 import httpx
+import json
+import random
 
 # Event Loop policy já deve ter sido configurada pelo start_uvicorn.py
 
@@ -56,6 +60,7 @@ from services.high_frequency.candle_aggregator import candle_aggregator
 from services.high_frequency.firestore_utils import init_firebase, load_subscriptions_from_firestore
 from services.high_frequency.simulation import simulate_ticks
 from services.high_frequency.robot_detector import TWAPDetector
+from services.high_frequency.robot_persistence import RobotPersistence
 
 # Configuração de logging
 logging.basicConfig(
@@ -144,6 +149,52 @@ simulation_task: Optional[asyncio.Task] = None
 simulation_enabled: bool = False
 twap_detector: Optional[TWAPDetector] = None
 
+# Variáveis globais
+twap_config = None
+twap_persistence = None
+
+# Gerenciador de conexões WebSocket para notificações em tempo real
+class WebSocketManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        logger.info(f"WebSocket conectado. Total de conexões: {len(self.active_connections)}")
+    
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            logger.info(f"WebSocket desconectado. Total de conexões: {len(self.active_connections)}")
+    
+    async def broadcast_status_change(self, status_change: dict):
+        """Envia mudança de status para todos os clientes conectados"""
+        if not self.active_connections:
+            return
+        
+        message = json.dumps({
+            "type": "status_change",
+            "data": status_change,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
+        
+        # Envia para todas as conexões ativas
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception as e:
+                logger.error(f"Erro ao enviar para WebSocket: {e}")
+                disconnected.append(connection)
+        
+        # Remove conexões com erro
+        for connection in disconnected:
+            self.disconnect(connection)
+
+# Instância global do gerenciador WebSocket
+websocket_manager = WebSocketManager()
+
 # Inicialização do Firebase
 def init_firebase():
     """Inicializa Firebase Admin SDK."""
@@ -214,16 +265,47 @@ async def startup_event():
     candle_aggregator.start()
     
     # PASSO 3.2: Inicia o detector de robôs TWAP
-    logger.info("Iniciando o detector de robôs TWAP...")
-    global twap_detector
+    global twap_detector, twap_persistence, twap_config
     
-    # Cria configuração e persistence para o TWAP Detector
+    # ✅ NOVO: Inicializa a configuração TWAP
     from services.high_frequency.robot_models import TWAPDetectionConfig
-    from services.high_frequency.robot_persistence import RobotPersistence
+    twap_config = TWAPDetectionConfig(
+        min_trades=5,
+        min_total_volume=1000,
+        max_price_variation=0.05,
+        min_frequency_minutes=0.001,
+        max_frequency_minutes=10.0,
+        min_confidence=0.3
+    )
+    logger.info("✅ TWAPDetectionConfig inicializado com sucesso")
     
-    twap_config = TWAPDetectionConfig()
-    twap_persistence = RobotPersistence()
-    twap_detector = TWAPDetector(twap_config, twap_persistence)
+    # ✅ NOVO: Inicializa o persistence ANTES de criar o detector
+    database_url = os.getenv('DATABASE_URL') or "postgresql://postgres:postgres@localhost:5432/high_frequency"
+    logger.info(f"🔗 Conectando ao banco: {database_url.split('@')[1] if '@' in database_url else 'URL oculta'}")
+    
+    twap_persistence = RobotPersistence(database_url=database_url)
+    logger.info("✅ RobotPersistence inicializado com sucesso")
+    
+    twap_detector = TWAPDetector(
+        config=twap_config, 
+        persistence=twap_persistence
+    )
+    logger.info("✅ TWAPDetector inicializado com sucesso")
+    
+    # ✅ NOVO: Verifica se tudo foi inicializado corretamente
+    logger.info(f"🔍 Verificação de inicialização:")
+    logger.info(f"   - twap_config: {twap_config is not None}")
+    logger.info(f"   - twap_persistence: {twap_persistence is not None}")
+    logger.info(f"   - twap_detector: {twap_detector is not None}")
+    logger.info(f"   - twap_detector.persistence: {twap_detector.persistence is not None}")
+    
+    # ✅ NOVO: Configura o callback WebSocket para notificações em tempo real
+    async def notify_websocket_clients(status_change: dict):
+        """Callback para notificar clientes WebSocket sobre mudanças de status"""
+        await websocket_manager.broadcast_status_change(status_change)
+    
+    # Atualiza o status tracker com o callback WebSocket
+    twap_detector.status_tracker.websocket_callback = notify_websocket_clients
     
     asyncio.create_task(start_twap_detection())
     asyncio.create_task(start_inactivity_monitoring())
@@ -429,115 +511,141 @@ async def unsubscribe_symbol(request: UnsubscribeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/patterns")
-async def get_robot_patterns(symbol: Optional[str] = None):
+async def get_robot_patterns():
     """Retorna padrões de robôs detectados"""
     try:
-        if not system_initialized or not twap_detector:
-            raise HTTPException(status_code=503, detail="system_not_initialized")
+        logger.info("🔍 Endpoint /robots/patterns chamado")
         
-        if symbol:
-            # Busca padrões para um símbolo específico
-            patterns = await twap_detector.analyze_symbol(symbol.upper())
-        else:
-            # Busca todos os padrões ativos
-            all_patterns = await twap_detector.analyze_all_symbols()
-            patterns = []
-            for symbol_patterns in all_patterns.values():
-                patterns.extend(symbol_patterns)
+        if not twap_detector:
+            logger.error("❌ TWAP Detector não inicializado")
+            raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
         
-        # Converte para formato JSON
-        patterns_data = []
-        for pattern in patterns:
-            patterns_data.append({
-                "id": getattr(pattern, 'id', None),
-                "symbol": pattern.symbol,
-                "exchange": pattern.exchange,
-                "pattern_type": "TWAP",
-                "confidence_score": pattern.confidence_score,
-                "agent_id": pattern.agent_id,
-                "first_seen": pattern.first_seen.isoformat(),
-                "last_seen": pattern.last_seen.isoformat(),
-                "total_volume": pattern.total_volume,
-                "total_trades": pattern.total_trades,
-                "avg_trade_size": pattern.avg_trade_size,
-                "frequency_minutes": pattern.frequency_minutes,
-                "price_aggression": pattern.price_aggression,
-                "status": pattern.status.value
-            })
+        logger.info("✅ TWAP Detector está inicializado")
         
-        return {
-            "success": True,
-            "patterns": patterns_data,
-            "count": len(patterns_data)
-        }
+        patterns = twap_detector.get_active_patterns()
+        logger.info(f"📊 Padrões ativos em memória: {len(patterns)} símbolos")
+        
+        # ✅ NOVO: Debug para verificar o formato dos dados
+        logger.info(f"🔍 Estrutura dos padrões: {list(patterns.keys())}")
+        
+        # Converte para lista plana
+        all_patterns = []
+        for symbol, agents in patterns.items():
+            logger.info(f"🎯 Processando símbolo {symbol} com {len(agents)} agentes")
+            for agent_id, pattern in agents.items():
+                logger.info(f"🤖 Agente {agent_id} ({get_agent_name(agent_id)}) em {symbol}")
+                all_patterns.append({
+                    'id': f"{symbol}_{agent_id}",
+                    'symbol': pattern.symbol,
+                    'exchange': pattern.exchange,
+                    'pattern_type': pattern.pattern_type,
+                    'confidence_score': pattern.confidence_score,
+                    'agent_id': pattern.agent_id,
+                    'first_seen': pattern.first_seen.isoformat(),
+                    'last_seen': pattern.last_seen.isoformat(),
+                    'total_volume': pattern.total_volume,
+                    'total_trades': pattern.total_trades,
+                    'avg_trade_size': pattern.avg_trade_size,
+                    'frequency_minutes': pattern.frequency_minutes,
+                    'price_aggression': pattern.price_aggression,
+                    'status': pattern.status.value
+                })
+        
+        logger.info(f"🎉 Convertidos {len(all_patterns)} padrões para formato JSON")
+        return all_patterns
         
     except Exception as e:
-        logger.error(f"Error getting robot patterns: {e}")
+        logger.error(f"💥 Erro ao buscar padrões de robôs: {e}")
+        logger.error(f"📋 Traceback completo:", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/activity")
 async def get_robot_activity(symbol: Optional[str] = None, hours: int = 24):
     """Retorna atividade recente de robôs"""
     try:
-        if not system_initialized or not twap_detector:
-            raise HTTPException(status_code=503, detail="system_not_initialized")
+        logger.info(f"🔍 Endpoint /robots/activity chamado - symbol: {symbol}, hours: {hours}")
+        
+        if not twap_detector:
+            logger.error("❌ TWAP Detector não inicializado")
+            raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
+        
+        logger.info("✅ TWAP Detector está inicializado")
         
         # Busca trades recentes das tabelas
-        from services.high_frequency.robot_persistence import RobotPersistence
-        persistence = RobotPersistence()
-        
         if symbol:
             symbols = [symbol.upper()]
+            logger.info(f"🎯 Buscando atividade para símbolo específico: {symbols}")
         else:
             # Busca símbolos ativos
+            logger.info("🌐 Buscando símbolos ativos...")
             symbols = await twap_detector.persistence.get_active_symbols()
+            logger.info(f"📊 Símbolos ativos encontrados: {len(symbols)} - {symbols[:5]}...")
         
         all_trades = []
         for sym in symbols:
-            trades_data = await persistence.get_recent_ticks(sym, hours)
-            for trade in trades_data:
-                all_trades.append({
-                    "symbol": trade['symbol'],
-                    "price": trade['price'],
-                    "volume": trade['volume'],
-                    "timestamp": trade['timestamp'].isoformat(),
-                    "buy_agent": trade['buy_agent'],
-                    "sell_agent": trade['sell_agent'],
-                    "exchange": trade['exchange']
-                })
+            try:
+                logger.info(f"🔍 Buscando trades para {sym} nas últimas {hours}h...")
+                trades_data = await twap_detector.persistence.get_recent_ticks(sym, hours)
+                logger.info(f"📈 Trades encontrados para {sym}: {len(trades_data)}")
+                
+                for trade in trades_data:
+                    all_trades.append({
+                        "symbol": trade['symbol'],
+                        "price": trade['price'],
+                        "volume": trade['volume'],
+                        "timestamp": trade['timestamp'].isoformat(),
+                        "buy_agent": trade['buy_agent'],
+                        "sell_agent": trade['sell_agent'],
+                        "exchange": trade['exchange']
+                    })
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao buscar trades para {sym}: {e}")
+                continue
         
         # Ordena por timestamp (mais recente primeiro)
         all_trades.sort(key=lambda x: x['timestamp'], reverse=True)
         
-        return {
-            "success": True,
-            "trades": all_trades,
-            "count": len(all_trades)
-        }
+        logger.info(f"🎉 Retornando {len(all_trades)} trades de atividade de robôs")
+        return all_trades
         
     except Exception as e:
-        logger.error(f"Error getting robot activity: {e}")
+        logger.error(f"💥 Erro ao buscar atividade de robôs: {e}")
+        logger.error(f"📋 Traceback completo:", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/status-changes")
 async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24):
     """Retorna mudanças de status dos robôs (start/stop)"""
     try:
-        if not system_initialized or not twap_detector:
-            raise HTTPException(status_code=503, detail="system_not_initialized")
+        if not twap_detector:
+            raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
         
         # Busca mudanças de status do detector
         status_changes = twap_detector.get_status_changes(symbol, hours)
         
-        return {
-            "success": True,
-            "status_changes": status_changes,
-            "count": len(status_changes)
-        }
+        logger.info(f"Retornando {len(status_changes)} mudanças de status de robôs")
+        return status_changes
         
     except Exception as e:
-        logger.error(f"Error getting robot status changes: {e}")
+        logger.error(f"Erro ao buscar mudanças de status de robôs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.websocket("/ws/robot-status")
+async def websocket_endpoint(websocket: WebSocket):
+    """Endpoint WebSocket para notificações em tempo real de mudanças de status dos robôs"""
+    await websocket_manager.connect(websocket)
+    try:
+        # Mantém a conexão ativa e aguarda mensagens
+        while True:
+            # Aguarda mensagem do cliente (ping/pong para manter conexão)
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        websocket_manager.disconnect(websocket)
+    except Exception as e:
+        logger.error(f"Erro no WebSocket: {e}")
+        websocket_manager.disconnect(websocket)
 
 @app.post("/ingest/tick")
 async def ingest_tick(tick: IngestTick):
@@ -565,12 +673,19 @@ async def ingest_tick(tick: IngestTick):
         add_tick_to_buffer(tick_obj)
         update_tick_stats(tick_obj)
         
-        # Processa tick para agregação em candles
-        await candle_aggregator.process_tick(tick_obj)
+        # Processa tick para agregação em candles (sem log)
+        try:
+            await candle_aggregator.process_tick(tick_obj)
+        except Exception as e:
+            # Log apenas erros críticos
+            if random.random() < 0.01:  # Log apenas 1% dos erros
+                logger.warning(f"Erro ao processar tick para candles: {e}")
         
         return {"success": True}
     except Exception as e:
-        logger.error(f"Error ingest_tick: {e}")
+        # ✅ NOVO: Log reduzido para não poluir
+        if random.random() < 0.001:  # Log apenas 0.1% dos erros
+            logger.error(f"Erro ingest_tick: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/ingest/batch")
@@ -640,9 +755,6 @@ async def get_active_subscriptions():
 async def get_ticks(symbol: str, limit: int = 1000, timeframe: str = "raw"):
     """Retorna ticks para um símbolo específico."""
     try:
-        if not system_initialized:
-            raise HTTPException(status_code=503, detail="system_not_initialized")
-        
         symbol = symbol.upper()
         
         # Obtém pool de DB e busca ticks diretamente
@@ -663,7 +775,7 @@ async def get_ticks(symbol: str, limit: int = 1000, timeframe: str = "raw"):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting ticks for {symbol}: {e}")
+        logger.error(f"Erro ao buscar ticks para {symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/status")

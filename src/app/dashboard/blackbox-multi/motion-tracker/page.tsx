@@ -51,6 +51,7 @@ interface RobotStatusChange {
 
 // Configuração da API
 const API_BASE_URL = 'http://localhost:8002';
+const WEBSOCKET_URL = 'ws://localhost:8002/ws/robot-status';
 
 // Mapeamento de códigos de agente para nomes de corretoras
 const AGENT_MAPPING: { [key: number]: string } = {
@@ -201,40 +202,50 @@ export default function MotionTrackerPage() {
   const [robotPatterns, setRobotPatterns] = useState<RobotPattern[]>([]);
   const [robotActivity, setRobotActivity] = useState<RobotActivity[]>([]);
   const [robotStatusChanges, setRobotStatusChanges] = useState<RobotStatusChange[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // ✅ NOVO: Estado para WebSocket
+  const [websocketConnected, setWebsocketConnected] = useState(false);
+  const [websocket, setWebsocket] = useState<WebSocket | null>(null);
 
   // Função para buscar padrões de robôs da API
-  const fetchRobotPatterns = async (symbol?: string) => {
+  const fetchRobotPatterns = async () => {
     try {
       setLoading(true);
-      setError(null);
-      
-      const url = symbol && symbol !== 'TODOS' 
-        ? `${API_BASE_URL}/robots/patterns?symbol=${symbol}`
-        : `${API_BASE_URL}/robots/patterns`;
-      
-      const response = await fetch(url);
+      const response = await fetch(`${API_BASE_URL}/robots/patterns`);
       if (!response.ok) {
-        throw new Error(`Erro na API: ${response.status}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      
+      // ✅ NOVO: Debug para entender o formato dos dados
+      console.log('Dados recebidos da API /robots/patterns:', data);
+      
+      // ✅ NOVO: Verificação de segurança para garantir que é um array
+      if (Array.isArray(data)) {
+        setRobotPatterns(data);
+      } else if (data && Array.isArray(data.patterns)) {
+        // Se a API retorna { patterns: [...] }
+        setRobotPatterns(data.patterns);
+      } else if (data && data.success && Array.isArray(data.data)) {
+        // Se a API retorna { success: true, data: [...] }
+        setRobotPatterns(data.data);
+      } else {
+        console.warn('Formato inesperado dos dados:', data);
+        setRobotPatterns([]);
       }
       
-      const data = await response.json();
-      if (data.success) {
-        setRobotPatterns(data.patterns || []);
-      } else {
-        throw new Error(data.message || 'Erro desconhecido');
-      }
-    } catch (err) {
-      console.error('Erro ao buscar padrões:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      setRobotPatterns([]);
+    } catch (error) {
+      console.error('Erro ao buscar padrões de robôs:', error);
+      setError('Erro ao carregar padrões de robôs');
+      setRobotPatterns([]); // ✅ NOVO: Garante que sempre seja um array
     } finally {
       setLoading(false);
     }
   };
 
-  // Função para buscar atividade de robôs da API
+  // Função para buscar atividade recente dos robôs
   const fetchRobotActivity = async (symbol?: string) => {
     try {
       setLoading(true);
@@ -250,11 +261,24 @@ export default function MotionTrackerPage() {
       }
       
       const data = await response.json();
-      if (data.success) {
-        setRobotActivity(data.trades || []);
+      
+      // ✅ NOVO: Debug para entender o formato dos dados
+      console.log('Dados recebidos da API /robots/activity:', data);
+      
+      // ✅ NOVO: Verificação de segurança para garantir que é um array
+      if (Array.isArray(data)) {
+        setRobotActivity(data);
+      } else if (data && Array.isArray(data.trades)) {
+        // Se a API retorna { trades: [...] }
+        setRobotActivity(data.trades);
+      } else if (data && data.success && Array.isArray(data.data)) {
+        // Se a API retorna { success: true, data: [...] }
+        setRobotActivity(data.data);
       } else {
-        throw new Error(data.message || 'Erro desconhecido');
+        console.warn('Formato inesperado dos dados de atividade:', data);
+        setRobotActivity([]);
       }
+      
     } catch (err) {
       console.error('Erro ao buscar atividade:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
@@ -280,17 +304,152 @@ export default function MotionTrackerPage() {
       }
       
       const data = await response.json();
-      if (data.success) {
-        setRobotStatusChanges(data.status_changes || []);
+      
+      // ✅ NOVO: Debug para entender o formato dos dados
+      console.log('Dados recebidos da API /robots/status-changes:', data);
+      
+      // ✅ NOVO: Verificação de segurança para garantir que é um array
+      if (Array.isArray(data)) {
+        setRobotStatusChanges(data);
+      } else if (data && Array.isArray(data.status_changes)) {
+        // Se a API retorna { status_changes: [...] }
+        setRobotStatusChanges(data.status_changes);
+      } else if (data && data.success && Array.isArray(data.data)) {
+        // Se a API retorna { success: true, data: [...] }
+        setRobotStatusChanges(data.data);
       } else {
-        throw new Error(data.message || 'Erro desconhecido');
+        console.warn('Formato inesperado dos dados de status:', data);
+        setRobotStatusChanges([]);
       }
+      
     } catch (err) {
       console.error('Erro ao buscar mudanças de status:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
       setRobotStatusChanges([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ NOVO: Funções para WebSocket
+  const connectWebSocket = () => {
+    try {
+      const ws = new WebSocket(WEBSOCKET_URL);
+      
+      ws.onopen = () => {
+        console.log('WebSocket conectado');
+        setWebsocketConnected(true);
+        setWebsocket(ws);
+        
+        // Inicia ping/pong para manter conexão ativa
+        const pingInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send('ping');
+          } else {
+            clearInterval(pingInterval);
+          }
+        }, 30000); // Ping a cada 30 segundos
+        
+        // Armazena o intervalo para limpeza
+        (ws as any).pingInterval = pingInterval;
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          // ✅ NOVO: Ignora mensagens de ping/pong
+          if (event.data === 'pong') {
+            return; // Ignora resposta de ping
+          }
+          
+          const message = JSON.parse(event.data);
+          
+          if (message.type === 'status_change') {
+            console.log('Nova mudança de status recebida:', message.data);
+            
+            // ✅ NOVO: Notificação visual para novos robôs
+            const newChange = message.data;
+            if (newChange.new_status === 'active') {
+              // Mostra notificação para robôs que iniciaram
+              showNotification(`🟢 Robô ${newChange.agent_name || getAgentName(newChange.agent_id)} iniciou em ${newChange.symbol}`);
+            } else if (newChange.new_status === 'inactive') {
+              // Mostra notificação para robôs que pararam
+              showNotification(`🔴 Robô ${newChange.agent_name || getAgentName(newChange.agent_id)} parou em ${newChange.symbol}`);
+            }
+            
+            // Adiciona a nova mudança no topo da lista
+            setRobotStatusChanges(prevChanges => {
+              // Verifica se já existe para evitar duplicatas
+              const exists = prevChanges.find(change => change.id === newChange.id);
+              if (!exists) {
+                return [newChange, ...prevChanges];
+              }
+              return prevChanges;
+            });
+          }
+        } catch (error) {
+          // ✅ NOVO: Ignora erros de parsing para mensagens não-JSON (como "pong")
+          if (event.data !== 'pong') {
+            console.error('Erro ao processar mensagem WebSocket:', error);
+          }
+        }
+      };
+      
+      ws.onclose = () => {
+        console.log('WebSocket desconectado');
+        setWebsocketConnected(false);
+        setWebsocket(null);
+        
+        // Reconecta após 5 segundos
+        setTimeout(() => {
+          if (!websocketConnected) {
+            connectWebSocket();
+          }
+        }, 5000);
+      };
+      
+      ws.onerror = (error) => {
+        console.error('Erro no WebSocket:', error);
+        setWebsocketConnected(false);
+      };
+      
+    } catch (error) {
+      console.error('Erro ao conectar WebSocket:', error);
+      setWebsocketConnected(false);
+    }
+  };
+  
+  // ✅ NOVO: Função para mostrar notificações
+  const showNotification = (message: string) => {
+    // Cria uma notificação temporária no canto superior direito
+    const notification = document.createElement('div');
+    notification.className = 'fixed top-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50 transform transition-all duration-300 translate-x-full';
+    notification.textContent = message;
+    
+    document.body.appendChild(notification);
+    
+    // Anima a entrada
+    setTimeout(() => {
+      notification.style.transform = 'translateX(0)';
+    }, 100);
+    
+    // Remove após 5 segundos
+    setTimeout(() => {
+      notification.style.transform = 'translateX(full)';
+      setTimeout(() => {
+        document.body.removeChild(notification);
+      }, 300);
+    }, 5000);
+  };
+  
+  const disconnectWebSocket = () => {
+    if (websocket) {
+      // Limpa o intervalo de ping
+      if ((websocket as any).pingInterval) {
+        clearInterval((websocket as any).pingInterval);
+      }
+      websocket.close();
+      setWebsocket(null);
+      setWebsocketConnected(false);
     }
   };
 
@@ -301,18 +460,21 @@ export default function MotionTrackerPage() {
       fetchRobotActivity();
       fetchRobotStatusChanges();
     } else {
-      fetchRobotPatterns(selectedSymbol);
+      fetchRobotPatterns();
       fetchRobotActivity(selectedSymbol);
       fetchRobotStatusChanges(selectedSymbol);
     }
   }, [selectedSymbol]);
 
-  // Carrega dados iniciais
+  // ✅ NOVO: Conecta ao WebSocket quando o componente monta
   useEffect(() => {
-    fetchRobotPatterns();
-    fetchRobotActivity();
-    fetchRobotStatusChanges();
-  }, []);
+    connectWebSocket();
+    
+    // Limpa conexão quando o componente desmonta
+    return () => {
+      disconnectWebSocket();
+    };
+  }, []); // Executa apenas uma vez ao montar
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -356,42 +518,65 @@ export default function MotionTrackerPage() {
     });
   };
 
+  // Função para filtrar padrões por símbolo
+  const getFilteredPatterns = () => {
+    if (!Array.isArray(robotPatterns)) return [];
+    return robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol);
+  };
+
+  // Função para obter estatísticas filtradas
+  const getFilteredStats = () => {
+    const filteredPatterns = getFilteredPatterns();
+    return {
+      activeCount: filteredPatterns.filter(p => p.status === 'active').length,
+      totalVolume: filteredPatterns.reduce((sum, p) => sum + p.total_volume, 0),
+      totalTrades: filteredPatterns.reduce((sum, p) => sum + p.total_trades, 0),
+      avgConfidence: filteredPatterns.length > 0 ? 
+        filteredPatterns.reduce((sum, p) => sum + p.confidence_score, 0) / filteredPatterns.length : 0
+    };
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-xl text-white font-semibold">Motion Tracker</h2>
         <div className="flex items-center space-x-4">
+          {/* ✅ NOVO: Indicador de status do WebSocket */}
           <div className="flex items-center space-x-2">
-            <span className="text-gray-300 text-sm">Ativo:</span>
-            <Select value={selectedSymbol} onValueChange={setSelectedSymbol}>
-              <SelectTrigger className="w-32 bg-gray-800 border-gray-600 text-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-gray-800 border-gray-600">
-                {mockSymbols.map(symbol => (
-                  <SelectItem key={symbol} value={symbol} className="text-white hover:bg-gray-700">
-                    {symbol}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className={`w-3 h-3 rounded-full ${websocketConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
+            <span className="text-sm text-gray-400">
+              {websocketConnected ? 'Tempo Real' : 'Desconectado'}
+            </span>
           </div>
           
-          <div className="flex items-center space-x-2">
-            <span className="text-gray-300 text-sm">Mercado:</span>
-            <Select value={selectedExchange} onValueChange={setSelectedExchange}>
-              <SelectTrigger className="w-20 bg-gray-800 border-gray-600 text-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-gray-800 border-gray-600">
-                {mockExchanges.map(exchange => (
-                  <SelectItem key={exchange} value={exchange} className="text-white hover:bg-gray-700">
-                    {exchange}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select value={selectedSymbol} onValueChange={setSelectedSymbol}>
+            <SelectTrigger className="w-32 bg-gray-800 border-gray-600 text-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-gray-800 border-gray-600">
+              {mockSymbols.map(symbol => (
+                <SelectItem key={symbol} value={symbol} className="text-white hover:bg-gray-700">
+                  {symbol}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <span className="text-gray-300 text-sm">Mercado:</span>
+          <Select value={selectedExchange} onValueChange={setSelectedExchange}>
+            <SelectTrigger className="w-20 bg-gray-800 border-gray-600 text-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-gray-800 border-gray-600">
+              {mockExchanges.map(exchange => (
+                <SelectItem key={exchange} value={exchange} className="text-white hover:bg-gray-700">
+                  {exchange}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
@@ -421,40 +606,40 @@ export default function MotionTrackerPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-400">
-              {loading ? '...' : robotPatterns.filter(p => p.status === 'active' && (selectedSymbol === 'TODOS' || p.symbol === selectedSymbol)).length}
+              {loading ? '...' : getFilteredStats().activeCount}
             </div>
           </CardContent>
         </Card>
         
         <Card className="bg-gray-800 border-gray-600">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-300">Volume Total</CardTitle>
+          <CardHeader>
+            <CardTitle className="text-white">Volume Total</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-400">
-              {loading ? '...' : formatVolume(robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol).reduce((sum, p) => sum + p.total_volume, 0))}
+              {loading ? '...' : formatVolume(getFilteredStats().totalVolume)}
             </div>
           </CardContent>
         </Card>
-        
+
         <Card className="bg-gray-800 border-gray-600">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-300">Trades Totais</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-400">
-              {loading ? '...' : robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol).reduce((sum, p) => sum + p.total_trades, 0)}
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="bg-gray-800 border-gray-600">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-300">Confiança Média</CardTitle>
+          <CardHeader>
+            <CardTitle className="text-white">Total de Trades</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-yellow-400">
-              {loading ? '...' : (robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol).reduce((sum, p) => sum + p.confidence_score, 0) / Math.max(robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol).length, 1) * 100).toFixed(0)}%
+              {loading ? '...' : getFilteredStats().totalTrades}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-gray-800 border-gray-600">
+          <CardHeader>
+            <CardTitle className="text-white">Confiança Média</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-purple-400">
+              {loading ? '...' : `${(getFilteredStats().avgConfidence * 100).toFixed(0)}%`}
             </div>
           </CardContent>
         </Card>
@@ -580,7 +765,7 @@ export default function MotionTrackerPage() {
                 <div className="text-center py-8">
                   <div className="text-gray-400">Carregando padrões de robôs...</div>
                 </div>
-              ) : robotPatterns.length === 0 ? (
+              ) : (Array.isArray(robotPatterns) && robotPatterns.length === 0) ? (
                 <div className="text-center py-8">
                   <div className="text-gray-400">Nenhum padrão de robô detectado</div>
                 </div>
@@ -593,9 +778,7 @@ export default function MotionTrackerPage() {
                     </div>
                   )}
                   
-                  {robotPatterns
-                    .filter(pattern => selectedSymbol === 'TODOS' || pattern.symbol === selectedSymbol)
-                    .map(pattern => (
+                  {getFilteredPatterns().map(pattern => (
                     <div key={pattern.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center space-x-3">
