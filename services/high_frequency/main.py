@@ -673,20 +673,23 @@ async def get_robot_activity(symbol: Optional[str] = None, hours: int = 24):
 
 @app.get("/robots/status-changes")
 async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24):
-    """Retorna mudanças de status dos robôs (start/stop)"""
-    try:
-        if not twap_detector:
-            raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
-        
-        # Busca mudanças de status do detector
-        status_changes = twap_detector.get_status_changes(symbol, hours)
-        
-        logger.info(f"Retornando {len(status_changes)} mudanças de status de robôs")
-        return status_changes
-        
-    except Exception as e:
-        logger.error(f"Erro ao buscar mudanças de status de robôs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+	"""Retorna mudanças de status dos robôs (start/stop) - limitado aos 50 mais recentes"""
+	try:
+		if not twap_detector:
+			raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
+		
+		# Busca mudanças de status do detector
+		status_changes = twap_detector.get_status_changes(symbol, hours)
+		
+		# ✅ Limita aos 50 mais recentes
+		limited = status_changes[:50]
+		
+		logger.info(f"Retornando {len(limited)} mudanças de status de robôs (de {len(status_changes)} no total)")
+		return limited
+		
+	except Exception as e:
+		logger.error(f"Erro ao buscar mudanças de status de robôs: {e}")
+		raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/ws/robot-status")
 async def websocket_endpoint(websocket: WebSocket):

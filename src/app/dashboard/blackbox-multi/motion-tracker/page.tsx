@@ -265,13 +265,14 @@ export default function MotionTrackerPage() {
       
       // ✅ NOVO: Verificação de segurança para garantir que é um array
       if (Array.isArray(data)) {
-        setRobotStatusChanges(data);
+        // ✅ Limita aos 50 mais recentes
+        setRobotStatusChanges(data.slice(0, 50));
       } else if (data && Array.isArray(data.status_changes)) {
         // Se a API retorna { status_changes: [...] }
-        setRobotStatusChanges(data.status_changes);
+        setRobotStatusChanges(data.status_changes.slice(0, 50));
       } else if (data && data.success && Array.isArray(data.data)) {
         // Se a API retorna { success: true, data: [...] }
-        setRobotStatusChanges(data.data);
+        setRobotStatusChanges(data.data.slice(0, 50));
       } else {
         console.warn('Formato inesperado dos dados de status:', data);
         setRobotStatusChanges([]);
@@ -336,7 +337,8 @@ export default function MotionTrackerPage() {
               // Verifica se já existe para evitar duplicatas
               const exists = prevChanges.find(change => change.id === newChange.id);
               if (!exists) {
-                return [newChange, ...prevChanges];
+                const updated = [newChange, ...prevChanges];
+                return updated.slice(0, 50); // ✅ mantém apenas os 50 mais recentes
               }
               return prevChanges;
             });
@@ -758,6 +760,7 @@ export default function MotionTrackerPage() {
                   
                   {robotStatusChanges
                     .filter(change => selectedSymbol === 'TODOS' || change.symbol === selectedSymbol)
+                    .slice(0, 50) // ✅ garante que apenas 50 sejam renderizados
                     .map((change, index) => (
                     <div key={change.id || index} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
                       <div className="flex items-center justify-between mb-3">
