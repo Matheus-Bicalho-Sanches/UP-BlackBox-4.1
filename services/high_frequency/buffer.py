@@ -26,9 +26,13 @@ async def start_buffer_processor(db_pool):
     
     while True:
         try:
+            # ✅ CORRIGIDO: Cria uma cópia segura da lista de símbolos para evitar erro de iteração
+            symbols_to_process = list(buffer_queue.keys())
+            
             # Processa cada símbolo
-            for symbol, tick_queue in buffer_queue.items():
-                if tick_queue:
+            for symbol in symbols_to_process:
+                tick_queue = buffer_queue.get(symbol)
+                if tick_queue and len(tick_queue) > 0:
                     # Coleta ticks para processar
                     ticks_to_process = []
                     for _ in range(min(BATCH_SIZE, len(tick_queue))):

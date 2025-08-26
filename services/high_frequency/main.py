@@ -92,10 +92,10 @@ def configure_logging():
     # Desabilita logs de aplicação FastAPI verbosos
     logging.getLogger("fastapi").setLevel(logging.WARNING)
     
-    # Configura logger principal para info mas sem spam
-    logging.getLogger().setLevel(logging.INFO)
+    # ✅ TEMPORÁRIO: Configura logger principal para DEBUG para diagnosticar
+    logging.getLogger().setLevel(logging.DEBUG)
     
-    logger.info("🔇 Logging configurado: logs HTTP desabilitados")
+    logger.info("🔇 Logging configurado: logs HTTP desabilitados, DEBUG habilitado para diagnóstico")
 
 # Aplica configuração de logging
 configure_logging()
@@ -333,6 +333,7 @@ async def startup_event():
     # ✅ NOVO: Configura o callback WebSocket para notificações em tempo real
     async def notify_websocket_clients(status_change: dict):
         """Callback para notificar clientes WebSocket sobre mudanças de status"""
+        logger.info(f"🔔 WebSocket: Notificando mudança de status: {status_change['symbol']} - {status_change['agent_id']} ({status_change['old_status']} -> {status_change['new_status']})")
         await websocket_manager.broadcast_status_change(status_change)
     
     # Atualiza o status tracker com o callback WebSocket
@@ -383,25 +384,33 @@ async def start_twap_detection():
         logger.error("Sistema não inicializado. Aguarde...")
         return
     
-    logger.info("Iniciando detecção contínua de robôs TWAP...")
+    logger.info("🚀 Iniciando detecção contínua de robôs TWAP...")
     
     while system_initialized:
         try:
+            # ✅ DEBUG: Log para verificar se está rodando
+            logger.info("🔍 Executando análise TWAP...")
+            
             # Analisa todos os símbolos ativos
             patterns = await twap_detector.analyze_all_symbols()
             
             total_patterns = sum(len(patterns_list) for patterns_list in patterns.values())
             if total_patterns > 0:
-                logger.info(f"Detectados {total_patterns} padrões TWAP em {len(patterns)} símbolos")
+                logger.info(f"✅ Detectados {total_patterns} padrões TWAP em {len(patterns)} símbolos")
+            else:
+                logger.info("📊 Nenhum padrão TWAP detectado nesta execução")
             
             # Limpa dados antigos a cada 24h
             await twap_detector.cleanup_old_data()
+            
+            # ✅ DEBUG: Log para verificar se está aguardando
+            logger.info("⏳ Aguardando 1 minuto para próxima análise...")
             
             # Aguarda 1 minuto antes da próxima análise
             await asyncio.sleep(60)
             
         except Exception as e:
-            logger.error(f"Erro na detecção TWAP: {e}")
+            logger.error(f"❌ Erro na detecção TWAP: {e}")
             await asyncio.sleep(60)  # Aguarda 1 minuto em caso de erro
 
 async def start_inactivity_monitoring():
@@ -412,10 +421,13 @@ async def start_inactivity_monitoring():
         logger.error("Sistema não inicializado. Aguarde...")
         return
     
-    logger.info("Iniciando monitoramento de inatividade dos robôs...")
+    logger.info("🚀 Iniciando monitoramento de inatividade dos robôs...")
     
     while system_initialized:
         try:
+            # ✅ DEBUG: Log para verificar se está rodando
+            logger.info("🔍 Verificando inatividade dos robôs...")
+            
             # Verifica inatividade baseado em trades reais (a cada 5 segundos)
             # Agora usa a nova coluna inactivity_notified para evitar notificações repetitivas
             inactive_robots = await twap_detector.check_robot_inactivity_by_trades(
@@ -431,17 +443,22 @@ async def start_inactivity_monitoring():
                         logger.info(f"   🚫 Robô {robot['agent_id']} ({get_agent_name(robot['agent_id'])}) em {robot['symbol']} - sem trades há {robot['inactivity_minutes']:.1f} minutos")
                 else:
                     logger.debug(f"📊 {len(inactive_robots)} robôs inativos (já notificados anteriormente)")
+            else:
+                logger.info("✅ Todos os robôs estão ativos")
             
             # Limpa padrões inativos antigos (a cada 3 horas)
             cleaned_patterns = await twap_detector.cleanup_inactive_patterns(max_inactive_hours=3)
             if cleaned_patterns > 0:
                 logger.info(f"🧹 Removidos {cleaned_patterns} padrões inativos antigos da memória")
             
+            # ✅ DEBUG: Log para verificar se está aguardando
+            logger.info("⏳ Aguardando 5 segundos para próxima verificação...")
+            
             # Aguarda 5 segundos antes da próxima verificação
             await asyncio.sleep(5)
             
         except Exception as e:
-            logger.error(f"Erro no monitoramento de inatividade: {e}")
+            logger.error(f"❌ Erro no monitoramento de inatividade: {e}")
             await asyncio.sleep(60)  # Aguarda 1 minuto em caso de erro
 
 # Endpoints da API
