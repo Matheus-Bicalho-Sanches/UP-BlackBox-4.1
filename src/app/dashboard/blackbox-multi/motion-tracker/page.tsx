@@ -25,16 +25,6 @@ interface RobotPattern {
   status: string;
 }
 
-interface RobotActivity {
-  symbol: string;
-  price: number;
-  volume: number;
-  timestamp: string;
-  buy_agent?: number;
-  sell_agent?: number;
-  exchange: string;
-}
-
 interface RobotStatusChange {
   id: string;
   symbol: string;
@@ -200,7 +190,6 @@ export default function MotionTrackerPage() {
   const [selectedSymbol, setSelectedSymbol] = useState('TODOS');
   const [selectedExchange, setSelectedExchange] = useState('B3');
   const [robotPatterns, setRobotPatterns] = useState<RobotPattern[]>([]);
-  const [robotActivity, setRobotActivity] = useState<RobotActivity[]>([]);
   const [robotStatusChanges, setRobotStatusChanges] = useState<RobotStatusChange[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -215,7 +204,6 @@ export default function MotionTrackerPage() {
   const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({
     startstop: false,
     patterns: false,
-    activity: false,
     analytics: false
   });
 
@@ -250,49 +238,6 @@ export default function MotionTrackerPage() {
       console.error('Erro ao buscar padrões de robôs:', error);
       setError('Erro ao carregar padrões de robôs');
       setRobotPatterns([]); // ✅ NOVO: Garante que sempre seja um array
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Função para buscar atividade recente dos robôs
-  const fetchRobotActivity = async (symbol?: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const url = symbol && symbol !== 'TODOS' 
-        ? `${API_BASE_URL}/robots/activity?symbol=${symbol}&hours=24`
-        : `${API_BASE_URL}/robots/activity?hours=24`;
-      
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Erro na API: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      // ✅ NOVO: Debug para entender o formato dos dados
-      console.log('Dados recebidos da API /robots/activity:', data);
-      
-      // ✅ NOVO: Verificação de segurança para garantir que é um array
-      if (Array.isArray(data)) {
-        setRobotActivity(data);
-      } else if (data && Array.isArray(data.trades)) {
-        // Se a API retorna { trades: [...] }
-        setRobotActivity(data.trades);
-      } else if (data && data.success && Array.isArray(data.data)) {
-        // Se a API retorna { success: true, data: [...] }
-        setRobotActivity(data.data);
-      } else {
-        console.warn('Formato inesperado dos dados de atividade:', data);
-        setRobotActivity([]);
-      }
-      
-    } catch (err) {
-      console.error('Erro ao buscar atividade:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
-      setRobotActivity([]);
     } finally {
       setLoading(false);
     }
@@ -497,10 +442,6 @@ export default function MotionTrackerPage() {
           console.log(`📊 Carregando dados para Patterns...`);
           await fetchRobotPatterns();
           break;
-        case 'activity':
-          console.log(`📊 Carregando dados para Activity...`);
-          await fetchRobotActivity(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);
-          break;
         case 'analytics':
           console.log(`📊 Analytics não precisa de dados específicos`);
           break;
@@ -545,8 +486,6 @@ export default function MotionTrackerPage() {
         fetchRobotStatusChanges(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);
       } else if (tabName === 'patterns') {
         fetchRobotPatterns();
-      } else if (tabName === 'activity') {
-        fetchRobotActivity(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);
       }
     });
   }, [selectedSymbol, loadedTabs]);
@@ -628,7 +567,7 @@ export default function MotionTrackerPage() {
           <h2 className="text-xl text-white font-semibold">Motion Tracker</h2>
           {/* 🚀 NOVO: Indicador de performance */}
           <div className="text-sm text-gray-400 mt-1">
-            🚀 Lazy Loading Ativo - Abas carregadas: {loadedTabs.size}/4
+            🚀 Lazy Loading Ativo - Abas carregadas: {loadedTabs.size}/3
           </div>
         </div>
         <div className="flex items-center space-x-4">
@@ -679,7 +618,7 @@ export default function MotionTrackerPage() {
             onClick={() => {
               setError(null);
               fetchRobotPatterns();
-              fetchRobotActivity();
+              fetchRobotStatusChanges();
             }}
             className="ml-3 bg-red-600 hover:bg-red-700"
             size="sm"
@@ -738,7 +677,7 @@ export default function MotionTrackerPage() {
 
       {/* Abas Principais */}
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-4 bg-gray-800 border-gray-600">
+        <TabsList className="grid w-full grid-cols-3 bg-gray-800 border-gray-600">
           <TabsTrigger value="startstop" className="text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
             Start/Stop
             {tabLoading.startstop && <span className="ml-2">⏳</span>}
@@ -763,22 +702,6 @@ export default function MotionTrackerPage() {
                 onClick={(e) => {
                   e.stopPropagation();
                   setLoadedTabs(prev => new Set([...prev].filter(tab => tab !== 'patterns')));
-                }}
-                className="ml-2 text-xs text-gray-500 hover:text-gray-300"
-                title="Recarregar aba"
-              >
-                🔄
-              </button>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="activity" className="text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
-            Atividade em Tempo Real
-            {tabLoading.activity && <span className="ml-2">⏳</span>}
-            {loadedTabs.has('activity') && (
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setLoadedTabs(prev => new Set([...prev].filter(tab => tab !== 'activity')));
                 }}
                 className="ml-2 text-xs text-gray-500 hover:text-gray-300"
                 title="Recarregar aba"
@@ -973,61 +896,6 @@ export default function MotionTrackerPage() {
                           <span>Primeira execução: {formatDate(pattern.first_seen)}</span>
                           <span>Última execução: {formatDate(pattern.last_seen)}</span>
                         </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="activity" className="space-y-4">
-          <Card className="bg-gray-800 border-gray-600">
-            <CardHeader>
-              <CardTitle className="text-white">
-                Atividade em Tempo Real - {selectedSymbol === 'TODOS' ? 'Todos os Ativos' : selectedSymbol}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {tabLoading.activity ? (
-                <div className="text-center py-8">
-                  <div className="text-gray-400">Carregando atividade em tempo real...</div>
-                </div>
-              ) : robotActivity.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className="text-gray-400">Nenhuma atividade detectada</div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {robotActivity.map((trade, index) => (
-                    <div key={index} className="flex items-center justify-between bg-gray-700 p-3 rounded-lg border border-gray-600">
-                      <div className="flex items-center space-x-4">
-                        <div className={`w-3 h-3 rounded-full ${trade.buy_agent ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                        <div>
-                          <div className="text-white font-medium">
-                            {trade.buy_agent ? 'COMPRA' : 'VENDA'}
-                          </div>
-                          <div className="text-gray-400 text-sm">
-                            {selectedSymbol === 'TODOS' && (
-                              <span className="mr-2 text-cyan-400">{trade.symbol}</span>
-                            )}
-                            Corretora: {getAgentName(trade.buy_agent || trade.sell_agent || 0)}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="text-right">
-                        <div className="text-white font-medium">
-                          R$ {trade.price.toFixed(2)}
-                        </div>
-                        <div className="text-gray-400 text-sm">
-                          {formatVolume(trade.volume)}
-                        </div>
-                      </div>
-                      
-                      <div className="text-gray-400 text-sm">
-                        {formatTime(trade.timestamp)}
                       </div>
                     </div>
                   ))}
