@@ -61,6 +61,7 @@ from services.high_frequency.firestore_utils import init_firebase, load_subscrip
 from services.high_frequency.simulation import simulate_ticks
 from services.high_frequency.robot_detector import TWAPDetector
 from services.high_frequency.robot_persistence import RobotPersistence
+from services.high_frequency.agent_mapping import get_agent_name
 
 # Configuração de logging
 logging.basicConfig(
