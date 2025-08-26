@@ -12,12 +12,14 @@ try:
         TWAPDetectionConfig, TickData
     )
     from .robot_persistence import RobotPersistence
+    from .agent_mapping import get_agent_name
 except ImportError:
     from robot_models import (
         TWAPPattern, RobotTrade, TradeType, RobotStatus, 
         TWAPDetectionConfig, TickData
     )
     from robot_persistence import RobotPersistence
+    from agent_mapping import get_agent_name
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ class RobotStatusTracker:
             'id': f"{symbol}_{agent_id}_{datetime.now(timezone.utc).timestamp()}",  # ✅ CORRIGIDO: Usa timezone UTC
             'symbol': symbol,
             'agent_id': agent_id,
+            'agent_name': get_agent_name(agent_id),  # ✅ NOVO: Nome da corretora
             'old_status': old_status,
             'new_status': new_status,
             'timestamp': datetime.now(timezone.utc).isoformat(),  # ✅ CORRIGIDO: Usa timezone UTC
@@ -51,7 +54,7 @@ class RobotStatusTracker:
         if len(self.status_history) > self.max_history_size:
             self.status_history = self.status_history[:self.max_history_size]
         
-        logger.info(f"Status change tracked: {symbol} Agent {agent_id} {old_status} -> {new_status}")
+        logger.info(f"Status change tracked: {symbol} {get_agent_name(agent_id)} ({agent_id}) {old_status} -> {new_status}")
     
     def get_status_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
         """Retorna mudanças de status filtradas por símbolo e tempo"""
@@ -420,11 +423,12 @@ class TWAPDetector:
                         stopped_robots.append({
                             'symbol': symbol,
                             'agent_id': agent_id,
+                            'agent_name': get_agent_name(agent_id),  # ✅ NOVO: Nome da corretora
                             'stopped_at': pattern.last_seen.isoformat(),
                             'inactivity_minutes': inactivity_minutes
                         })
                         
-                        logger.info(f"Robô {agent_id} em {symbol} marcado como inativo (parou há {inactivity_minutes:.1f} minutos)")
+                        logger.info(f"Robô {get_agent_name(agent_id)} ({agent_id}) em {symbol} marcado como inativo (parou há {inactivity_minutes:.1f} minutos)")
             
             return stopped_robots
             
@@ -451,7 +455,7 @@ class TWAPDetector:
                 if not self.active_patterns[symbol]:
                     del self.active_patterns[symbol]
                 
-                logger.info(f"Padrão inativo removido da memória: {symbol} - Agente {agent_id} (inativo há {max_inactive_hours}h)")
+                logger.info(f"Padrão inativo removido da memória: {symbol} - {get_agent_name(agent_id)} ({agent_id}) (inativo há {max_inactive_hours}h)")
             
             return len(patterns_to_remove)
             
@@ -497,12 +501,13 @@ class TWAPDetector:
                             inactive_robots.append({
                                 'symbol': symbol,
                                 'agent_id': agent_id,
+                                'agent_name': get_agent_name(agent_id),  # ✅ NOVO: Nome da corretora
                                 'stopped_at': pattern.last_seen.isoformat(),
                                 'inactivity_minutes': inactivity_minutes,
                                 'reason': 'no_recent_trades'
                             })
                             
-                            logger.info(f"Robô {agent_id} em {symbol} marcado como inativo - sem trades há {inactivity_minutes:.1f} minutos")
+                            logger.info(f"Robô {get_agent_name(agent_id)} ({agent_id}) em {symbol} marcado como inativo - sem trades há {inactivity_minutes:.1f} minutos")
             
             return inactive_robots
             

@@ -7,8 +7,10 @@ from typing import List, Optional
 # Corrige imports para funcionar como módulo standalone
 try:
     from .robot_models import TWAPPattern, RobotTrade, TradeType, RobotStatus
+    from .agent_mapping import get_agent_name
 except ImportError:
     from robot_models import TWAPPattern, RobotTrade, TradeType, RobotStatus
+    from agent_mapping import get_agent_name
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,7 @@ class RobotPersistence:
                     await conn.commit()
                     
                     if result:
-                        logger.info(f"Padrão TWAP salvo para {pattern.symbol} - Agente {pattern.agent_id}")
+                        logger.info(f"Padrão TWAP salvo para {pattern.symbol} - {get_agent_name(pattern.agent_id)} ({pattern.agent_id})")
                         return result[0]
                     return None
                     
@@ -75,7 +77,7 @@ class RobotPersistence:
                     ))
                     
                     await conn.commit()
-                    logger.info(f"Padrão TWAP {pattern_id} atualizado")
+                    logger.info(f"Padrão TWAP {pattern_id} atualizado - {get_agent_name(pattern.agent_id)} ({pattern.agent_id}) em {pattern.symbol}")
                     return True
                     
         except Exception as e:
