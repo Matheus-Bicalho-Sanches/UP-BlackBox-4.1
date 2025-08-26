@@ -87,3 +87,7 @@ class TWAPDetectionConfig:
     
     # Confiança mínima para considerar um padrão válido
     min_confidence: float = 0.4  # Reduzido de 0.6 para 0.4
+
+    # ✅ NOVO: Janela de recência para considerar um robô realmente ativo
+    # Se o último trade do agente for mais antigo que este valor, marca como INACTIVE
+    active_recency_minutes: float = 1.0

@@ -86,6 +86,18 @@ class TWAPDetector:
         self.active_patterns: Dict[str, Dict[int, TWAPPattern]] = defaultdict(dict)
         self.status_tracker = RobotStatusTracker()  # Adiciona tracker de status
         
+        # ✅ NOVO: Histerese de ativação para evitar flip-flop imediato
+        self.activation_times: Dict[Tuple[str, int], datetime] = {}
+        self.activation_cooldown_seconds: int = 90
+    
+    def _to_utc(self, dt: datetime) -> datetime:
+        """Garante que o datetime seja timezone-aware em UTC"""
+        if dt is None:
+            return datetime.now(timezone.utc)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+
     async def analyze_symbol(self, symbol: str) -> List[TWAPPattern]:
         """Analisa um símbolo específico para detectar padrões TWAP"""
         try:
@@ -133,7 +145,7 @@ class TWAPDetector:
                     symbol=tick['symbol'],
                     price=tick['price'],
                     volume=tick['volume'],
-                    timestamp=tick['timestamp'],
+                    timestamp=self._to_utc(tick['timestamp']),
                     trade_type=TradeType.BUY,
                     agent_id=tick['buy_agent'],
                     exchange=tick['exchange']
@@ -146,7 +158,7 @@ class TWAPDetector:
                     symbol=tick['symbol'],
                     price=tick['price'],
                     volume=tick['volume'],
-                    timestamp=tick['timestamp'],
+                    timestamp=self._to_utc(tick['timestamp']),
                     trade_type=TradeType.SELL,
                     agent_id=tick['sell_agent'],
                     exchange=tick['exchange']
@@ -156,74 +168,65 @@ class TWAPDetector:
         return agent_trades
     
     async def _analyze_agent_trades(self, symbol: str, agent_id: int, trades: List[TickData]) -> Optional[TWAPPattern]:
-        """Analisa trades de um agente específico para detectar TWAP"""
-        if len(trades) < self.config.min_trades:
+        try:
+            # Ordena por tempo crescente
+            trades = sorted(trades, key=lambda t: t.timestamp)
+            total_trades = len(trades)
+            total_volume = sum(t.volume for t in trades)
+            avg_trade_size = total_volume / total_trades if total_trades > 0 else 0
+            
+            # Calcula frequência média entre trades (minutos)
+            if total_trades > 1:
+                time_deltas = [
+                    (trades[i].timestamp - trades[i-1].timestamp).total_seconds() / 60.0
+                    for i in range(1, total_trades)
+                ]
+                avg_frequency = statistics.mean(time_deltas)
+            else:
+                avg_frequency = self.config.max_frequency_minutes
+            
+            # Calcula variação de preço e agressão
+            prices = [t.price for t in trades]
+            price_variation = ((max(prices) - min(prices)) / prices[0]) * 100 if prices else 0.0
+            price_aggression = self._calculate_price_aggression(trades)
+            
+            # Score de confiança
+            confidence_score = self._calculate_confidence_score(
+                total_trades, avg_frequency, price_variation, price_aggression
+            )
+            
+            # Determina status preliminar
+            status = self._determine_status(confidence_score, avg_frequency, price_variation)
+            
+            # ✅ NOVO: Gate de recência - se último trade for antigo, força INACTIVE
+            from datetime import datetime, timezone, timedelta
+            last_seen = trades[-1].timestamp
+            now_utc = datetime.now(timezone.utc)
+            recency_minutes = (now_utc - last_seen).total_seconds() / 60.0
+            if recency_minutes > self.config.active_recency_minutes:
+                status = RobotStatus.INACTIVE
+            
+            # Cria o padrão
+            pattern = TWAPPattern(
+                symbol=symbol,
+                exchange=trades[0].exchange,
+                pattern_type="TWAP",
+                agent_id=agent_id,
+                first_seen=trades[0].timestamp,
+                last_seen=last_seen,
+                total_volume=total_volume,
+                total_trades=total_trades,
+                avg_trade_size=avg_trade_size,
+                frequency_minutes=avg_frequency,
+                price_aggression=price_aggression,
+                confidence_score=confidence_score,
+                status=status
+            )
+            
+            return pattern
+        except Exception as e:
+            logger.error(f"Erro ao analisar trades do agente {agent_id} em {symbol}: {e}")
             return None
-        
-        # Ordena trades por timestamp
-        trades.sort(key=lambda x: x.timestamp)
-        
-        # Calcula métricas básicas
-        total_volume = sum(trade.volume for trade in trades)
-        total_trades = len(trades)
-        avg_trade_size = total_volume / total_trades
-        
-        # Verifica volume mínimo
-        if total_volume < self.config.min_total_volume:
-            return None
-        
-        # Calcula frequência entre trades
-        frequencies = []
-        for i in range(1, len(trades)):
-            time_diff = trades[i].timestamp - trades[i-1].timestamp
-            freq_minutes = time_diff.total_seconds() / 60
-            frequencies.append(freq_minutes)
-        
-        if not frequencies:
-            return None
-        
-        avg_frequency = statistics.mean(frequencies)
-        
-        # Verifica se a frequência está no range esperado
-        if not (self.config.min_frequency_minutes <= avg_frequency <= self.config.max_frequency_minutes):
-            return None
-        
-        # Calcula variação de preço
-        prices = [trade.price for trade in trades]
-        price_variation = ((max(prices) - min(prices)) / min(prices)) * 100
-        
-        if price_variation > self.config.max_price_variation:
-            return None
-        
-        # Calcula agressividade de preço (quanto o agente "empurra" o preço)
-        price_aggression = self._calculate_price_aggression(trades)
-        
-        # Calcula score de confiança
-        confidence_score = self._calculate_confidence_score(
-            total_trades, avg_frequency, price_variation, price_aggression
-        )
-        
-        # Determina status
-        status = self._determine_status(confidence_score, avg_frequency, price_variation)
-        
-        # Cria o padrão
-        pattern = TWAPPattern(
-            symbol=symbol,
-            exchange=trades[0].exchange,
-            pattern_type="TWAP",
-            agent_id=agent_id,
-            first_seen=trades[0].timestamp,
-            last_seen=trades[-1].timestamp,
-            total_volume=total_volume,
-            total_trades=total_trades,
-            avg_trade_size=avg_trade_size,
-            frequency_minutes=avg_frequency,
-            price_aggression=price_aggression,
-            confidence_score=confidence_score,
-            status=status
-        )
-        
-        return pattern
     
     def _calculate_price_aggression(self, trades: List[TickData]) -> float:
         """Calcula a agressividade de preço do agente"""
@@ -323,17 +326,28 @@ class TWAPDetector:
             if existing:
                 # Atualiza padrão existente
                 pattern_id = existing[0]
-                old_status = existing[1]  # Status anterior (string)
+                old_status_str = existing[1]  # Status anterior (string do banco)
+                
+                # ✅ CORRIGIDO: Converte string para enum para comparação correta
+                old_status_enum = self._string_to_status_enum(old_status_str)
+                
                 success = await self.persistence.update_twap_pattern(pattern_id, pattern)
                 if success:
                     # Atualiza no cache local
                     self.active_patterns[pattern.symbol][pattern.agent_id] = pattern
                     
-                    # Rastreia mudança de status se houver
-                    if old_status != pattern.status:
+                    # ✅ CORRIGIDO: Compara enums, não string vs enum
+                    if old_status_enum != pattern.status:
+                        logger.info(f"🔄 Mudança real de status: {pattern.symbol} - {pattern.agent_id} ({old_status_enum.value} -> {pattern.status.value})")
                         self.status_tracker.add_status_change(
-                            pattern.symbol, pattern.agent_id, old_status, pattern.status, pattern
+                            pattern.symbol, pattern.agent_id, old_status_enum.value, pattern.status.value, pattern
                         )
+                        
+                        # ✅ NOVO: registra hora de ativação
+                        if pattern.status == RobotStatus.ACTIVE:
+                            self.activation_times[(pattern.symbol, pattern.agent_id)] = datetime.now(timezone.utc)
+                    else:
+                        logger.debug(f"📊 Status inalterado: {pattern.symbol} - {pattern.agent_id} ({pattern.status.value})")
                     
                     return success
             else:
@@ -343,10 +357,16 @@ class TWAPDetector:
                     # Adiciona ao cache local
                     self.active_patterns[pattern.symbol][pattern.agent_id] = pattern
                     
-                    # Rastreia início de operação (de 'inactive' para novo status)
-                    self.status_tracker.add_status_change(
-                        pattern.symbol, pattern.agent_id, 'inactive', pattern.status, pattern
-                    )
+                    # ✅ Só emitir início se realmente estiver ativo agora
+                    if pattern.status == RobotStatus.ACTIVE:
+                        logger.info(f"🆕 Novo robô detectado: {pattern.symbol} - {pattern.agent_id} ({pattern.status.value})")
+                        self.status_tracker.add_status_change(
+                            pattern.symbol, pattern.agent_id, 'inactive', pattern.status.value, pattern
+                        )
+                        # registra hora de ativação
+                        self.activation_times[(pattern.symbol, pattern.agent_id)] = datetime.now(timezone.utc)
+                    else:
+                        logger.debug(f"Novo padrão criado mas não ativo (recency gate): {pattern.symbol}-{pattern.agent_id}")
                     
                     return True
                 return False
@@ -354,6 +374,19 @@ class TWAPDetector:
         except Exception as e:
             logger.error(f"Erro ao persistir padrão: {e}")
             return False
+    
+    def _string_to_status_enum(self, status_str: str) -> RobotStatus:
+        """Converte string de status para enum RobotStatus"""
+        try:
+            # Mapeia strings do banco para enums
+            status_mapping = {
+                'inactive': RobotStatus.INACTIVE,
+                'active': RobotStatus.ACTIVE,
+                'suspicious': RobotStatus.SUSPICIOUS
+            }
+            return status_mapping.get(status_str.lower(), RobotStatus.INACTIVE)
+        except Exception:
+            return RobotStatus.INACTIVE
     
     async def analyze_all_symbols(self) -> Dict[str, List[TWAPPattern]]:
         """Analisa todos os símbolos disponíveis"""
@@ -488,6 +521,15 @@ class TWAPDetector:
                     
                     # Se não há trades recentes, marca como inativo
                     if not recent_trades:
+                        # Histerese: não marcar inativo se ativado muito recentemente
+                        key = (symbol, agent_id)
+                        last_activation = self.activation_times.get(key)
+                        if last_activation:
+                            seconds_since_activation = (current_time - last_activation).total_seconds()
+                            if seconds_since_activation < self.activation_cooldown_seconds:
+                                logger.debug(f"⏳ Histerese: ignorando inatividade de {symbol}-{agent_id} ({seconds_since_activation:.1f}s desde ativação)")
+                                continue
+                        
                         # Marca como inativo
                         old_status = pattern.status
                         pattern.status = RobotStatus.INACTIVE

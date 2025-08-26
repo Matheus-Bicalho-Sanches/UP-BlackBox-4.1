@@ -306,7 +306,8 @@ async def startup_event():
         max_price_variation=0.05,
         min_frequency_minutes=0.001,
         max_frequency_minutes=10.0,
-        min_confidence=0.3
+        min_confidence=0.3,
+        active_recency_minutes=1.0
     )
     logger.info("✅ TWAPDetectionConfig inicializado com sucesso")
     
