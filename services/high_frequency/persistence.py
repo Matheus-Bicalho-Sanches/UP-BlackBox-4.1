@@ -1,11 +1,28 @@
-import logging
 import asyncio
-from typing import List, Dict, Any
+import logging
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
 from psycopg_pool import AsyncConnectionPool
+from psycopg import AsyncConnection
 from services.high_frequency.models import Tick
 import os
+import time
 
-logger = logging.getLogger("high_frequency_persistence")
+logger = logging.getLogger(__name__)
+
+# ✅ NOVO: Controle de throttling para logs de ticks
+_last_tick_log_time = 0.0
+_tick_log_throttle_seconds = 1.0  # Log apenas a cada 1 segundo
+
+def _should_log_tick_batch() -> bool:
+    """Verifica se deve fazer log do lote de ticks (throttling)"""
+    global _last_tick_log_time
+    current_time = time.time()
+    
+    if current_time - _last_tick_log_time >= _tick_log_throttle_seconds:
+        _last_tick_log_time = current_time
+        return True
+    return False
 
 pool: AsyncConnectionPool | None = None
 
@@ -158,7 +175,9 @@ async def persist_ticks(ticks: List[Tick], conn_pool: AsyncConnectionPool):
                 async with conn.cursor() as cur:
                     await cur.executemany(sql, params)
                     await conn.commit()
-            logger.info(f"Lote de {len(ticks)} ticks salvo no banco de dados.")
+            # ✅ NOVO: Log com throttling (apenas a cada 1 segundo)
+            if _should_log_tick_batch():
+                logger.info(f"Lote de {len(ticks)} ticks salvo no banco de dados.")
             return
         except Exception as e:
             logger.warning(f"Tentativa {attempt} falhou para o lote de ticks: {e}")

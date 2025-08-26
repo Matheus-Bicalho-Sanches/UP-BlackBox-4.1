@@ -62,6 +62,7 @@ from services.high_frequency.simulation import simulate_ticks
 from services.high_frequency.robot_detector import TWAPDetector
 from services.high_frequency.robot_persistence import RobotPersistence
 from services.high_frequency.agent_mapping import get_agent_name
+from services.high_frequency.logging_config import LOGGING_CONFIG
 
 # Configuração de logging
 logging.basicConfig(
@@ -69,6 +70,35 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ✅ NOVO: Configuração robusta para desabilitar logs HTTP
+def configure_logging():
+    """Configura logging para desabilitar logs HTTP verbosos"""
+    
+    # Desabilita logs de acesso uvicorn em múltiplas camadas
+    logging.getLogger("uvicorn.access").disabled = True
+    logging.getLogger("uvicorn.access").propagate = False
+    logging.getLogger("uvicorn.access").handlers = []
+    
+    # Desabilita logs de servidor uvicorn
+    logging.getLogger("uvicorn.server").setLevel(logging.WARNING)
+    
+    # Desabilita logs de protocolo HTTP
+    logging.getLogger("uvicorn.protocols.http").setLevel(logging.WARNING)
+    
+    # Desabilita logs de middleware
+    logging.getLogger("uvicorn.middleware").setLevel(logging.WARNING)
+    
+    # Desabilita logs de aplicação FastAPI verbosos
+    logging.getLogger("fastapi").setLevel(logging.WARNING)
+    
+    # Configura logger principal para info mas sem spam
+    logging.getLogger().setLevel(logging.INFO)
+    
+    logger.info("🔇 Logging configurado: logs HTTP desabilitados")
+
+# Aplica configuração de logging
+configure_logging()
 
 # Inicialização do FastAPI
 app = FastAPI(
@@ -857,11 +887,18 @@ if __name__ == "__main__":
     
     logger.info(f"Starting server on {host}:{port}")
     
+    # ✅ NOVO: Configuração de logging já aplicada acima
+    # A função configure_logging() já foi chamada para desabilitar logs HTTP
+    
+    logger.info("🚀 Iniciando servidor com logs HTTP desabilitados...")
+    
     # Inicia o servidor
     uvicorn.run(
         "main:app",
         host=host,
         port=port,
         reload=False,  # Desabilita reload para produção
-        log_level="info"
+        log_level="info",  # Mantém info mas sem access logs
+        access_log=False,  # Desabilita logs de acesso HTTP
+        log_config=LOGGING_CONFIG  # ✅ NOVO: Usa configuração personalizada
     )
