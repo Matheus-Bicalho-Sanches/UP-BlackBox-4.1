@@ -209,6 +209,16 @@ export default function MotionTrackerPage() {
   const [websocketConnected, setWebsocketConnected] = useState(false);
   const [websocket, setWebsocket] = useState<WebSocket | null>(null);
 
+  // 🚀 NOVO: Estado para lazy loading das abas
+  const [activeTab, setActiveTab] = useState('startstop');
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(['startstop'])); // Começa com a primeira aba
+  const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({
+    startstop: false,
+    patterns: false,
+    activity: false,
+    analytics: false
+  });
+
   // Função para buscar padrões de robôs da API
   const fetchRobotPatterns = async () => {
     try {
@@ -453,18 +463,93 @@ export default function MotionTrackerPage() {
     }
   };
 
-  // Carrega dados quando o símbolo muda
+  // 🚀 NOVO: Carrega dados apenas da aba ativa (lazy loading)
   useEffect(() => {
-    if (selectedSymbol === 'TODOS') {
-      fetchRobotPatterns();
-      fetchRobotActivity();
-      fetchRobotStatusChanges();
-    } else {
-      fetchRobotPatterns();
-      fetchRobotActivity(selectedSymbol);
-      fetchRobotStatusChanges(selectedSymbol);
+    // Só carrega dados se a aba ainda não foi carregada
+    if (!loadedTabs.has(activeTab)) {
+      loadTabData(activeTab);
     }
-  }, [selectedSymbol]);
+  }, [activeTab, loadedTabs]);
+
+  // 🚀 NOVO: Carregamento inicial apenas da primeira aba
+  useEffect(() => {
+    // Carrega apenas a aba inicial (startstop)
+    loadTabData('startstop');
+  }, []); // Executa apenas uma vez ao montar
+
+  // 🚀 NOVO: Função para carregar dados de uma aba específica
+  const loadTabData = async (tabName: string) => {
+    if (loadedTabs.has(tabName)) {
+      console.log(`⏭️ Aba ${tabName} já carregada, pulando...`);
+      return; // Aba já foi carregada
+    }
+
+    console.log(`🔨 Iniciando carregamento da aba: ${tabName}`);
+    setTabLoading(prev => ({ ...prev, [tabName]: true }));
+
+    try {
+      switch (tabName) {
+        case 'startstop':
+          console.log(`📊 Carregando dados para Start/Stop...`);
+          await fetchRobotStatusChanges(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);
+          break;
+        case 'patterns':
+          console.log(`📊 Carregando dados para Patterns...`);
+          await fetchRobotPatterns();
+          break;
+        case 'activity':
+          console.log(`📊 Carregando dados para Activity...`);
+          await fetchRobotActivity(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);
+          break;
+        case 'analytics':
+          console.log(`📊 Analytics não precisa de dados específicos`);
+          break;
+      }
+
+      // Marca a aba como carregada
+      setLoadedTabs(prev => {
+        const newSet = new Set([...prev, tabName]);
+        console.log(`✅ Aba ${tabName} carregada com sucesso!`);
+        console.log(`📊 Total de abas carregadas:`, Array.from(newSet));
+        return newSet;
+      });
+    } catch (error) {
+      console.error(`❌ Erro ao carregar dados da aba ${tabName}:`, error);
+    } finally {
+      setTabLoading(prev => ({ ...prev, [tabName]: false }));
+      console.log(`🏁 Carregamento da aba ${tabName} finalizado`);
+    }
+  };
+
+  // 🚀 NOVO: Função para lidar com mudança de aba
+  const handleTabChange = (value: string) => {
+    console.log(`🔄 Mudando para aba: ${value}`);
+    console.log(`📊 Abas já carregadas:`, Array.from(loadedTabs));
+    
+    setActiveTab(value);
+    
+    // Se a aba ainda não foi carregada, carrega os dados
+    if (!loadedTabs.has(value)) {
+      console.log(`🚀 Carregando dados da aba: ${value}`);
+      loadTabData(value);
+    } else {
+      console.log(`✅ Aba ${value} já carregada, usando cache`);
+    }
+  };
+
+  // Carrega dados quando o símbolo muda (apenas para abas já carregadas)
+  useEffect(() => {
+    // Recarrega apenas as abas que já foram carregadas
+    loadedTabs.forEach(tabName => {
+      if (tabName === 'startstop') {
+        fetchRobotStatusChanges(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);
+      } else if (tabName === 'patterns') {
+        fetchRobotPatterns();
+      } else if (tabName === 'activity') {
+        fetchRobotActivity(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);
+      }
+    });
+  }, [selectedSymbol, loadedTabs]);
 
   // ✅ NOVO: Conecta ao WebSocket quando o componente monta
   useEffect(() => {
@@ -539,7 +624,13 @@ export default function MotionTrackerPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl text-white font-semibold">Motion Tracker</h2>
+        <div>
+          <h2 className="text-xl text-white font-semibold">Motion Tracker</h2>
+          {/* 🚀 NOVO: Indicador de performance */}
+          <div className="text-sm text-gray-400 mt-1">
+            🚀 Lazy Loading Ativo - Abas carregadas: {loadedTabs.size}/4
+          </div>
+        </div>
         <div className="flex items-center space-x-4">
           {/* ✅ NOVO: Indicador de status do WebSocket */}
           <div className="flex items-center space-x-2">
@@ -646,19 +737,71 @@ export default function MotionTrackerPage() {
       </div>
 
       {/* Abas Principais */}
-      <Tabs defaultValue="startstop" className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4">
         <TabsList className="grid w-full grid-cols-4 bg-gray-800 border-gray-600">
           <TabsTrigger value="startstop" className="text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
             Start/Stop
+            {tabLoading.startstop && <span className="ml-2">⏳</span>}
+            {loadedTabs.has('startstop') && (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLoadedTabs(prev => new Set([...prev].filter(tab => tab !== 'startstop')));
+                }}
+                className="ml-2 text-xs text-gray-500 hover:text-gray-300"
+                title="Recarregar aba"
+              >
+                🔄
+              </button>
+            )}
           </TabsTrigger>
           <TabsTrigger value="patterns" className="text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
             Padrões Detectados
+            {tabLoading.patterns && <span className="ml-2">⏳</span>}
+            {loadedTabs.has('patterns') && (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLoadedTabs(prev => new Set([...prev].filter(tab => tab !== 'patterns')));
+                }}
+                className="ml-2 text-xs text-gray-500 hover:text-gray-300"
+                title="Recarregar aba"
+              >
+                🔄
+              </button>
+            )}
           </TabsTrigger>
           <TabsTrigger value="activity" className="text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
             Atividade em Tempo Real
+            {tabLoading.activity && <span className="ml-2">⏳</span>}
+            {loadedTabs.has('activity') && (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLoadedTabs(prev => new Set([...prev].filter(tab => tab !== 'activity')));
+                }}
+                className="ml-2 text-xs text-gray-500 hover:text-gray-300"
+                title="Recarregar aba"
+              >
+                🔄
+              </button>
+            )}
           </TabsTrigger>
           <TabsTrigger value="analytics" className="text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
             Análise Avançada
+            {tabLoading.analytics && <span className="ml-2">⏳</span>}
+            {loadedTabs.has('analytics') && (
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLoadedTabs(prev => new Set([...prev].filter(tab => tab !== 'analytics')));
+                }}
+                className="ml-2 text-xs text-gray-500 hover:text-gray-300"
+                title="Recarregar aba"
+              >
+                🔄
+              </button>
+            )}
           </TabsTrigger>
         </TabsList>
 
@@ -673,7 +816,7 @@ export default function MotionTrackerPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {loading ? (
+              {tabLoading.startstop ? (
                 <div className="text-center py-8">
                   <div className="text-gray-400">Carregando histórico de mudanças...</div>
                 </div>
@@ -761,7 +904,7 @@ export default function MotionTrackerPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {loading ? (
+              {tabLoading.patterns ? (
                 <div className="text-center py-8">
                   <div className="text-gray-400">Carregando padrões de robôs...</div>
                 </div>
@@ -847,9 +990,9 @@ export default function MotionTrackerPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {loading ? (
+              {tabLoading.activity ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-400">Carregando atividade...</div>
+                  <div className="text-gray-400">Carregando atividade em tempo real...</div>
                 </div>
               ) : robotActivity.length === 0 ? (
                 <div className="text-center py-8">
