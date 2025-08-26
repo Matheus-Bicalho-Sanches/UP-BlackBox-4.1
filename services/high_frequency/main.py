@@ -367,15 +367,15 @@ async def start_twap_detection():
             # Limpa dados antigos a cada 24h
             await twap_detector.cleanup_old_data()
             
-            # Aguarda 5 minutos antes da próxima análise
-            await asyncio.sleep(300)
+            # Aguarda 1 minuto antes da próxima análise
+            await asyncio.sleep(60)
             
         except Exception as e:
             logger.error(f"Erro na detecção TWAP: {e}")
             await asyncio.sleep(60)  # Aguarda 1 minuto em caso de erro
 
 async def start_inactivity_monitoring():
-    """Inicia o monitoramento de inatividade dos robôs (a cada 2 minutos)"""
+    """Inicia o monitoramento de inatividade dos robôs (a cada 5 segundos)"""
     global system_initialized
     
     if not system_initialized:
@@ -386,8 +386,8 @@ async def start_inactivity_monitoring():
     
     while system_initialized:
         try:
-            # Verifica inatividade baseado em trades reais (a cada 2 minutos)
-            inactive_robots = await twap_detector.check_robot_inactivity_by_trades(inactivity_threshold_minutes=2)
+            # Verifica inatividade baseado em trades reais (a cada 5 segundos)
+            inactive_robots = await twap_detector.check_robot_inactivity_by_trades(inactivity_threshold_minutes=1)
             if inactive_robots:
                 logger.info(f"Detectados {len(inactive_robots)} robôs inativos por falta de trades")
                 for robot in inactive_robots:
@@ -398,8 +398,8 @@ async def start_inactivity_monitoring():
             if cleaned_patterns > 0:
                 logger.info(f"Removidos {cleaned_patterns} padrões inativos antigos da memória")
             
-            # Aguarda 2 minutos antes da próxima verificação
-            await asyncio.sleep(120)
+            # Aguarda 5 segundos antes da próxima verificação
+            await asyncio.sleep(5)
             
         except Exception as e:
             logger.error(f"Erro no monitoramento de inatividade: {e}")
