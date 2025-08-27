@@ -91,4 +91,4 @@ class TWAPDetectionConfig:
 
     # ✅ NOVO: Janela de recência para considerar um robô realmente ativo
     # Se o último trade do agente for mais antigo que este valor, marca como INACTIVE
-    active_recency_minutes: float = 1.0
+    active_recency_minutes: float = 15.0
