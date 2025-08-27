@@ -45,7 +45,8 @@ class RobotStatusTracker:
             'pattern_type': pattern.pattern_type,
             'confidence_score': pattern.confidence_score,
             'total_volume': pattern.total_volume,
-            'total_trades': pattern.total_trades
+            'total_trades': pattern.total_trades,
+            'market_volume_percentage': pattern.market_volume_percentage  # ✅ NOVO: Volume em % do mercado
         }
         
         # Adiciona no início da lista (mais recente primeiro)
@@ -223,9 +224,24 @@ class TWAPDetector:
                 market_volume_percentage=0.0  # Será calculado após salvar o padrão
             )
             
-            # ✅ NOVO: Salva os trades individuais na tabela robot_trades
+            # ✅ NOVO: Salva padrão e trades de forma atômica para evitar FK inválida
             if pattern.confidence_score >= self.config.min_confidence:
-                await self._save_robot_trades(trades, pattern)
+                # Converte TickData -> RobotTrade para persistir em lote
+                robot_trades_batch = [
+                    RobotTrade(
+                        symbol=t.symbol,
+                        price=t.price,
+                        volume=t.volume,
+                        timestamp=t.timestamp,
+                        trade_type=t.trade_type,
+                        agent_id=t.agent_id,
+                        exchange=t.exchange
+                    )
+                    for t in trades
+                ]
+                saved_pattern_id = await self.persistence.save_pattern_and_trades(pattern, robot_trades_batch)
+                if not saved_pattern_id:
+                    logger.warning(f"⚠️ Não foi possível salvar padrão+trades de {symbol}-{agent_id} (transação)")
             
             return pattern
             

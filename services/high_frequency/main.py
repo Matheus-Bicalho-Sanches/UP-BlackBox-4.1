@@ -312,7 +312,7 @@ async def startup_event():
     logger.info("✅ TWAPDetectionConfig inicializado com sucesso")
     
     # ✅ NOVO: Inicializa o persistence ANTES de criar o detector
-    database_url = os.getenv('DATABASE_URL') or "postgresql://postgres:postgres@localhost:5432/high_frequency"
+    database_url = os.getenv('DATABASE_URL') or "postgres://postgres:postgres@localhost:5432/market_data"
     logger.info(f"🔗 Conectando ao banco: {database_url.split('@')[1] if '@' in database_url else 'URL oculta'}")
     
     twap_persistence = RobotPersistence(database_url=database_url)
@@ -608,7 +608,8 @@ async def get_robot_patterns():
                     'avg_trade_size': pattern.avg_trade_size,
                     'frequency_minutes': pattern.frequency_minutes,
                     'price_aggression': pattern.price_aggression,
-                    'status': pattern.status.value
+                    'status': pattern.status.value,
+                    'market_volume_percentage': pattern.market_volume_percentage
                 })
         
         logger.info(f"🎉 Convertidos {len(all_patterns)} padrões para formato JSON")

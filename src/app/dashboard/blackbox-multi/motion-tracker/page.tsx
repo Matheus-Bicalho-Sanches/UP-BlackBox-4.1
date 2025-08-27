@@ -38,6 +38,7 @@ interface RobotStatusChange {
   confidence_score: number;
   total_volume: number;
   total_trades: number;
+  market_volume_percentage?: number;  // ✅ NOVO: Volume em % do mercado
 }
 
 // ✅ NOVO: Interface para trades de robôs
@@ -223,9 +224,12 @@ export default function MotionTrackerPage() {
 
   // ✅ NOVO: Estado para modal de trades
   const [tradesModalOpen, setTradesModalOpen] = useState(false);
-  const [selectedRobot, setSelectedRobot] = useState<RobotPattern | null>(null);
+  const [selectedRobot, setSelectedRobot] = useState<Partial<RobotPattern> | null>(null);
   const [robotTrades, setRobotTrades] = useState<RobotTrade[]>([]);
   const [tradesLoading, setTradesLoading] = useState(false);
+
+  // 🔎 Filtro de status para a aba Padrões Detectados
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Função para buscar padrões de robôs da API
   const fetchRobotPatterns = async () => {
@@ -454,6 +458,14 @@ export default function MotionTrackerPage() {
     setTradesModalOpen(true);
     await fetchRobotTrades(robot.symbol, robot.agent_id);
   };
+
+  // ✅ NOVO: Abrir modal de trades a partir do item de Start/Stop
+  const openTradesModalFromChange = async (change: RobotStatusChange) => {
+    // Usa apenas os campos necessários (symbol e agent_id)
+    setSelectedRobot({ symbol: change.symbol, agent_id: change.agent_id } as unknown as RobotPattern);
+    setTradesModalOpen(true);
+    await fetchRobotTrades(change.symbol, change.agent_id);
+  };
   
   const disconnectWebSocket = () => {
     if (websocket) {
@@ -604,12 +616,22 @@ export default function MotionTrackerPage() {
   // Função para filtrar padrões por símbolo
   const getFilteredPatterns = () => {
     if (!Array.isArray(robotPatterns)) return [];
+    return robotPatterns.filter(p => 
+      (selectedSymbol === 'TODOS' || p.symbol === selectedSymbol) &&
+      (statusFilter === 'all' || p.status === statusFilter)
+    );
+  };
+
+  // Função auxiliar: apenas por símbolo (usada nos cards de resumo)
+  const getSymbolFilteredPatterns = () => {
+    if (!Array.isArray(robotPatterns)) return [];
     return robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol);
   };
 
   // Função para obter estatísticas filtradas
   const getFilteredStats = () => {
-    const filteredPatterns = getFilteredPatterns();
+    // Usa apenas filtro por símbolo para não afetar os cards com o filtro de status
+    const filteredPatterns = getSymbolFilteredPatterns();
     return {
       activeCount: filteredPatterns.filter(p => p.status === 'active').length,
       totalVolume: filteredPatterns.reduce((sum, p) => sum + p.total_volume, 0),
@@ -860,8 +882,24 @@ export default function MotionTrackerPage() {
                           <div className="text-white font-medium">{change.total_trades}</div>
                         </div>
                         <div>
+                          <div className="text-gray-400">Volume %</div>
+                          <div className="text-white font-medium">
+                            {change.market_volume_percentage ? 
+                              `${change.market_volume_percentage.toFixed(2)}%` : 
+                              'N/A'
+                            }
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                        <div>
                           <div className="text-gray-400">Timestamp</div>
                           <div className="text-white font-medium">{formatTime(change.timestamp)}</div>
+                        </div>
+                        <div className="col-span-3">
+                          <div className="text-gray-400">Tipo de Padrão</div>
+                          <div className="text-white font-medium">{change.pattern_type}</div>
                         </div>
                       </div>
                       
@@ -870,6 +908,17 @@ export default function MotionTrackerPage() {
                           `🟢 Robô ${change.agent_name || getAgentName(change.agent_id)} iniciou operação em ${change.symbol}` :
                           `🔴 Robô ${change.agent_name || getAgentName(change.agent_id)} parou operação em ${change.symbol}`
                         }
+                      </div>
+
+                      {/* ✅ NOVO: Botão para listar operações também no Start/Stop */}
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          onClick={() => openTradesModalFromChange(change)}
+                          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 text-xs"
+                          size="sm"
+                        >
+                          📊 Listar Operações
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -881,10 +930,24 @@ export default function MotionTrackerPage() {
 
         <TabsContent value="patterns" className="space-y-4">
           <Card className="bg-gray-800 border-gray-600">
-            <CardHeader>
+            <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
               <CardTitle className="text-white">
                 Robôs Detectados - {selectedSymbol === 'TODOS' ? 'Todos os Ativos' : selectedSymbol}
               </CardTitle>
+              {/* Filtro por status */}
+              <div className="flex items-center gap-2">
+                <span className="text-gray-300 text-sm">Status:</span>
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'all' | 'active' | 'inactive')}>
+                  <SelectTrigger className="w-36 bg-gray-800 border-gray-600 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-gray-800 border-gray-600">
+                    <SelectItem value="all" className="text-white hover:bg-gray-700">Todos</SelectItem>
+                    <SelectItem value="active" className="text-white hover:bg-gray-700">Ativos</SelectItem>
+                    <SelectItem value="inactive" className="text-white hover:bg-gray-700">Inativos</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               {tabLoading.patterns ? (
@@ -901,6 +964,12 @@ export default function MotionTrackerPage() {
                   {selectedSymbol !== 'TODOS' && (
                     <div className="bg-blue-900/20 border border-blue-500 text-blue-300 px-3 py-2 rounded-lg text-sm">
                       🔍 Filtrado para mostrar apenas padrões de <strong>{selectedSymbol}</strong>
+                    </div>
+                  )}
+                  {/* Filtro visual adicional para status específico */}
+                  {statusFilter !== 'all' && (
+                    <div className="bg-yellow-900/20 border border-yellow-500 text-yellow-300 px-3 py-2 rounded-lg text-sm">
+                      🔎 Filtrado por status: <strong>{statusFilter === 'active' ? 'Ativos' : 'Inativos'}</strong>
                     </div>
                   )}
                   

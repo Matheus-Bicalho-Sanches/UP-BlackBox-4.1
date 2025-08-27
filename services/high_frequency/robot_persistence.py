@@ -119,6 +119,115 @@ class RobotPersistence:
         except Exception as e:
             logger.error(f"Erro ao salvar trade de robô: {e}")
             return False
+
+    async def save_pattern_and_trades(self, pattern: TWAPPattern, trades: List[RobotTrade]) -> Optional[int]:
+        """Salva o padrão e todos os trades em uma única transação (atômico).
+        Retorna o pattern_id se sucesso, ou None em caso de erro."""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    # 1) Busca padrão existente (símbolo+agente) para decidir entre UPDATE/INSERT
+                    await cur.execute("""
+                        SELECT id FROM robot_patterns
+                         WHERE symbol = %s AND agent_id = %s AND pattern_type = 'TWAP'
+                         ORDER BY last_seen DESC
+                         LIMIT 1
+                    """, (pattern.symbol, pattern.agent_id))
+                    row = await cur.fetchone()
+                    if row:
+                        pattern_id = row[0]
+                        # Atualiza padrão existente
+                        await cur.execute("""
+                            UPDATE robot_patterns SET
+                                last_seen = %s,
+                                total_volume = %s,
+                                total_trades = %s,
+                                avg_trade_size = %s,
+                                frequency_minutes = %s,
+                                price_aggression = %s,
+                                confidence_score = %s,
+                                status = %s,
+                                market_volume_percentage = %s,
+                                inactivity_notified = CASE WHEN %s = 'active' THEN FALSE ELSE inactivity_notified END
+                             WHERE id = %s
+                        """, (
+                            pattern.last_seen, pattern.total_volume, pattern.total_trades,
+                            pattern.avg_trade_size, pattern.frequency_minutes,
+                            pattern.price_aggression, pattern.confidence_score,
+                            pattern.status.value, pattern.market_volume_percentage,
+                            pattern.status.value, pattern_id
+                        ))
+                    else:
+                        # Insere novo padrão e obtém ID
+                        await cur.execute("""
+                            INSERT INTO robot_patterns (
+                                symbol, exchange, pattern_type, confidence_score, agent_id,
+                                first_seen, last_seen, total_volume, total_trades,
+                                avg_trade_size, frequency_minutes, price_aggression, status,
+                                market_volume_percentage, created_at
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            RETURNING id
+                        """, (
+                            pattern.symbol, pattern.exchange, 'TWAP', pattern.confidence_score,
+                            pattern.agent_id, pattern.first_seen, pattern.last_seen,
+                            pattern.total_volume, pattern.total_trades, pattern.avg_trade_size,
+                            pattern.frequency_minutes, pattern.price_aggression, pattern.status.value,
+                            pattern.market_volume_percentage, datetime.now(timezone.utc)
+                        ))
+                        row2 = await cur.fetchone()
+                        if not row2:
+                            await conn.rollback()
+                            logger.error("Falha ao inserir padrão TWAP (sem retorno de ID)")
+                            return None
+                        pattern_id = row2[0]
+
+                    # 2) Calcula e atualiza market_volume_percentage (se aplicável)
+                    try:
+                        await cur.execute("""
+                            SELECT COALESCE(SUM(price * volume), 0) as total_market_volume
+                            FROM ticks_raw 
+                            WHERE symbol = %s 
+                              AND timestamp BETWEEN %s AND %s
+                        """, (pattern.symbol, pattern.first_seen, pattern.last_seen))
+                        r2 = await cur.fetchone()
+                        market_volume = float(r2[0]) if r2 and r2[0] else 0.0
+                        if market_volume > 0:
+                            volume_pct = round((pattern.total_volume / market_volume) * 100.0, 2)
+                            await cur.execute("""
+                                UPDATE robot_patterns
+                                   SET market_volume_percentage = %s
+                                 WHERE id = %s
+                            """, (volume_pct, pattern_id))
+                            pattern.market_volume_percentage = volume_pct
+                    except Exception as e:
+                        logger.warning(f"Não foi possível calcular/atualizar market_volume_percentage: {e}")
+
+                    # 3) Insere os trades referenciando o pattern_id
+                    inserted = 0
+                    for t in trades:
+                        side_str = None
+                        try:
+                            side_str = t.trade_type.name.lower()
+                        except Exception:
+                            side_str = 'buy' if int(t.trade_type) == 2 else 'sell'
+                        await cur.execute("""
+                            INSERT INTO robot_trades (
+                                robot_pattern_id, symbol, agent_id, timestamp, price, volume, side, created_at
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            pattern_id, t.symbol, t.agent_id, t.timestamp,
+                            t.price, t.volume, side_str, datetime.now(timezone.utc)
+                        ))
+                        inserted += 1
+
+                    # 4) Commit de tudo
+                    await conn.commit()
+                    logger.info(f"✅ Padrão {pattern_id} e {inserted}/{len(trades)} trades salvos (transação atômica)")
+                    return pattern_id
+
+        except Exception as e:
+            logger.error(f"💥 Erro em save_pattern_and_trades: {e}")
+            return None
     
     async def get_existing_pattern(self, symbol: str, agent_id: int) -> Optional[tuple]:
         """Busca um padrão existente para o símbolo e agente"""
@@ -310,9 +419,9 @@ class RobotPersistence:
                             created_at
                         FROM robot_trades 
                         WHERE symbol = %s AND agent_id = %s 
-                        AND timestamp >= NOW() - INTERVAL '%s hours'
+                          AND timestamp >= NOW() - (%s || ' hours')::interval
                         ORDER BY timestamp DESC
-                    """, (symbol, agent_id, hours))
+                    """, (symbol.upper(), agent_id, str(hours)))
                     
                     rows = await cur.fetchall()
                     trades = [
