@@ -199,34 +199,102 @@ class TWAPDetector:
             status = self._determine_status(confidence_score, avg_frequency, price_variation)
             
             # ✅ NOVO: Gate de recência - se último trade for antigo, força INACTIVE
-            from datetime import datetime, timezone, timedelta
             last_seen = trades[-1].timestamp
             now_utc = datetime.now(timezone.utc)
-            recency_minutes = (now_utc - last_seen).total_seconds() / 60.0
-            if recency_minutes > self.config.active_recency_minutes:
+            recency_minutes = (now_utc - last_seen).total_seconds() / 300.0
+            if recency_minutes > self.config.active_recency_threshold_minutes:
                 status = RobotStatus.INACTIVE
             
-            # Cria o padrão
+            # ✅ NOVO: Cria o padrão TWAP
             pattern = TWAPPattern(
                 symbol=symbol,
-                exchange=trades[0].exchange,
-                pattern_type="TWAP",
+                exchange=trades[0].exchange if trades else 'B3',
+                pattern_type='TWAP',
+                confidence_score=confidence_score,
                 agent_id=agent_id,
-                first_seen=trades[0].timestamp,
-                last_seen=last_seen,
+                first_seen=trades[0].timestamp if trades else datetime.now(timezone.utc),
+                last_seen=trades[-1].timestamp if trades else datetime.now(timezone.utc),
                 total_volume=total_volume,
                 total_trades=total_trades,
                 avg_trade_size=avg_trade_size,
                 frequency_minutes=avg_frequency,
                 price_aggression=price_aggression,
-                confidence_score=confidence_score,
-                status=status
+                status=status,
+                market_volume_percentage=0.0  # Será calculado após salvar o padrão
             )
             
+            # ✅ NOVO: Salva os trades individuais na tabela robot_trades
+            if pattern.confidence_score >= self.config.min_confidence:
+                await self._save_robot_trades(trades, pattern)
+            
             return pattern
+            
         except Exception as e:
             logger.error(f"Erro ao analisar trades do agente {agent_id} em {symbol}: {e}")
             return None
+
+    async def _save_robot_trades(self, trades: List[TickData], pattern: TWAPPattern) -> None:
+        """Salva os trades individuais na tabela robot_trades"""
+        try:
+            logger.info(f"💾 Salvando {len(trades)} trades para robô {pattern.agent_id} em {pattern.symbol}")
+            
+            # Primeiro, salva o padrão para obter o ID
+            pattern_id = await self.persistence.save_twap_pattern(pattern)
+            if not pattern_id:
+                logger.warning(f"⚠️ Não foi possível salvar o padrão TWAP para {pattern.symbol} - {pattern.agent_id}")
+                return
+            
+            # ✅ NOVO: Calcula volume % inicial do mercado
+            try:
+                market_volume = await self.persistence.get_market_volume_for_period(
+                    pattern.symbol, pattern.first_seen, pattern.last_seen
+                )
+                
+                if market_volume > 0:
+                    volume_percentage = (pattern.total_volume / market_volume) * 100
+                    pattern.market_volume_percentage = round(volume_percentage, 2)
+                    
+                    # Atualiza o padrão com o volume % calculado
+                    await self.persistence.update_market_volume_percentage(pattern_id, pattern.market_volume_percentage)
+                    
+                    logger.info(f"📊 Volume % calculado para robô {pattern.agent_id}: {pattern.market_volume_percentage:.2f}% (R$ {pattern.total_volume:,.2f} / R$ {market_volume:,.2f})")
+                else:
+                    logger.warning(f"⚠️ Volume do mercado zero para {pattern.symbol} - não foi possível calcular %")
+                    
+            except Exception as e:
+                logger.error(f"❌ Erro ao calcular volume % inicial: {e}")
+            
+            # Agora salva cada trade individual
+            saved_count = 0
+            for trade in trades:
+                try:
+                    # Cria um objeto RobotTrade para salvar
+                    robot_trade = RobotTrade(
+                        symbol=trade.symbol,
+                        price=trade.price,
+                        volume=trade.volume,
+                        timestamp=trade.timestamp,
+                        trade_type=trade.trade_type,
+                        agent_id=trade.agent_id,
+                        exchange=trade.exchange
+                    )
+                    
+                    # Salva o trade
+                    success = await self.persistence.save_robot_trade(robot_trade, pattern_id)
+                    if success:
+                        saved_count += 1
+                    else:
+                        logger.warning(f"⚠️ Falha ao salvar trade {trade.timestamp} para robô {pattern.agent_id}")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Erro ao salvar trade individual: {e}")
+                    continue
+            
+            logger.info(f"✅ {saved_count}/{len(trades)} trades salvos para robô {pattern.agent_id} em {pattern.symbol}")
+            
+        except Exception as e:
+            logger.error(f"💥 Erro ao salvar trades do robô {pattern.agent_id} em {pattern.symbol}: {e}")
+            logger.error(f"📋 Traceback completo:", exc_info=True)
     
     def _calculate_price_aggression(self, trades: List[TickData]) -> float:
         """Calcula a agressividade de preço do agente"""
@@ -478,9 +546,13 @@ class TWAPDetector:
             return []
     
     async def cleanup_inactive_patterns(self, max_inactive_hours: int = 3):
-        """Remove padrões que estão inativos há muito tempo (padrão: 3 horas)"""
+        """Remove padrões que estão inativos há muito tempo (padrão: 3 horas) - LIMPEZA COMPLETA"""
         try:
-            current_time = datetime.now(timezone.utc)  # ✅ CORRIGIDO: Usa timezone UTC
+            # ✅ NOVO: Primeiro faz limpeza direta no banco (pega TODOS os robôs antigos)
+            database_cleaned = await self.persistence.cleanup_inactive_patterns_from_database(max_inactive_hours)
+            
+            # ✅ DEPOIS: Remove da memória (só os que estão ativos na memória)
+            current_time = datetime.now(timezone.utc)
             cutoff_time = current_time - timedelta(hours=max_inactive_hours)
             
             patterns_to_remove = []
@@ -490,15 +562,24 @@ class TWAPDetector:
                     if pattern.status == RobotStatus.INACTIVE and pattern.last_seen < cutoff_time:
                         patterns_to_remove.append((symbol, agent_id))
             
-            # Remove padrões inativos antigos
+            # Remove da memória
+            memory_cleaned = 0
             for symbol, agent_id in patterns_to_remove:
-                del self.active_patterns[symbol][agent_id]
-                if not self.active_patterns[symbol]:
-                    del self.active_patterns[symbol]
-                
-                logger.info(f"Padrão inativo removido da memória: {symbol} - {get_agent_name(agent_id)} ({agent_id}) (inativo há {max_inactive_hours}h)")
+                try:
+                    # Remove da memória
+                    del self.active_patterns[symbol][agent_id]
+                    if not self.active_patterns[symbol]:
+                        del self.active_patterns[symbol]
+                    
+                    memory_cleaned += 1
+                    logger.info(f"🧹 Padrão inativo removido da memória: {symbol} - {get_agent_name(agent_id)} ({agent_id}) (inativo há {max_inactive_hours}h)")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Erro ao remover padrão {symbol}-{agent_id} da memória: {e}")
             
-            return len(patterns_to_remove)
+            total_cleaned = database_cleaned + memory_cleaned
+            logger.info(f"✅ Limpeza completa: {database_cleaned} padrões removidos do banco, {memory_cleaned} da memória = Total: {total_cleaned}")
+            return total_cleaned
             
         except Exception as e:
             logger.error(f"Erro ao limpar padrões inativos: {e}")

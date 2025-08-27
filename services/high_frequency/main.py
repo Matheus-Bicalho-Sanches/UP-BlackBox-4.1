@@ -447,10 +447,12 @@ async def start_inactivity_monitoring():
             else:
                 logger.info("✅ Todos os robôs estão ativos")
             
-            # Limpa padrões inativos antigos (a cada 3 horas)
+            # Limpa padrões inativos antigos (a cada 3 horas) - LIMPEZA COMPLETA NO BANCO E MEMÓRIA
             cleaned_patterns = await twap_detector.cleanup_inactive_patterns(max_inactive_hours=3)
             if cleaned_patterns > 0:
-                logger.info(f"🧹 Removidos {cleaned_patterns} padrões inativos antigos da memória")
+                logger.info(f"🗑️ LIMPEZA COMPLETA: {cleaned_patterns} padrões inativos antigos removidos (banco + memória)")
+            else:
+                logger.debug("✅ Nenhum padrão inativo antigo para remover")
             
             # ✅ DEBUG: Log para verificar se está aguardando
             logger.info("⏳ Aguardando 5 segundos para próxima verificação...")
@@ -689,6 +691,23 @@ async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24
 		
 	except Exception as e:
 		logger.error(f"Erro ao buscar mudanças de status de robôs: {e}")
+		raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/robots/{symbol}/{agent_id}/trades")
+async def get_robot_trades(symbol: str, agent_id: int, hours: int = 24):
+	"""Retorna todas as operações de um robô específico"""
+	try:
+		if not twap_detector:
+			raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
+		
+		# Busca trades do robô específico
+		trades = await twap_detector.persistence.get_robot_trades(symbol, agent_id, hours)
+		
+		logger.info(f"Retornando {len(trades)} trades para robô {agent_id} em {symbol}")
+		return trades
+		
+	except Exception as e:
+		logger.error(f"Erro ao buscar trades do robô {agent_id} em {symbol}: {e}")
 		raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/ws/robot-status")

@@ -23,6 +23,7 @@ interface RobotPattern {
   frequency_minutes: number;
   price_aggression: number;
   status: string;
+  market_volume_percentage?: number;  // ✅ NOVO: Volume em % do mercado
 }
 
 interface RobotStatusChange {
@@ -37,6 +38,19 @@ interface RobotStatusChange {
   confidence_score: number;
   total_volume: number;
   total_trades: number;
+}
+
+// ✅ NOVO: Interface para trades de robôs
+interface RobotTrade {
+  id: number;
+  symbol: string;
+  agent_id: number;
+  timestamp: string;
+  price: number;
+  volume: number;
+  side: string;
+  pattern_id: number;
+  created_at: string;
 }
 
 // Configuração da API
@@ -206,6 +220,12 @@ export default function MotionTrackerPage() {
     patterns: false,
     analytics: false
   });
+
+  // ✅ NOVO: Estado para modal de trades
+  const [tradesModalOpen, setTradesModalOpen] = useState(false);
+  const [selectedRobot, setSelectedRobot] = useState<RobotPattern | null>(null);
+  const [robotTrades, setRobotTrades] = useState<RobotTrade[]>([]);
+  const [tradesLoading, setTradesLoading] = useState(false);
 
   // Função para buscar padrões de robôs da API
   const fetchRobotPatterns = async () => {
@@ -396,6 +416,43 @@ export default function MotionTrackerPage() {
         document.body.removeChild(notification);
       }, 300);
     }, 5000);
+  };
+
+  // ✅ NOVO: Função para buscar trades de um robô específico
+  const fetchRobotTrades = async (symbol: string, agentId: number) => {
+    try {
+      setTradesLoading(true);
+      setError(null);
+      
+      const response = await fetch(`${API_BASE_URL}/robots/${symbol}/${agentId}/trades?hours=24`);
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(`Trades recebidos para robô ${agentId} em ${symbol}:`, data);
+      
+      if (Array.isArray(data)) {
+        setRobotTrades(data);
+      } else {
+        console.warn('Formato inesperado dos dados de trades:', data);
+        setRobotTrades([]);
+      }
+      
+    } catch (err) {
+      console.error('Erro ao buscar trades do robô:', err);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      setRobotTrades([]);
+    } finally {
+      setTradesLoading(false);
+    }
+  };
+
+  // ✅ NOVO: Função para abrir modal de trades
+  const openTradesModal = async (robot: RobotPattern) => {
+    setSelectedRobot(robot);
+    setTradesModalOpen(true);
+    await fetchRobotTrades(robot.symbol, robot.agent_id);
   };
   
   const disconnectWebSocket = () => {
@@ -867,11 +924,23 @@ export default function MotionTrackerPage() {
                             Corretora: {getAgentName(pattern.agent_id)}
                           </span>
                         </div>
-                        <div className="text-right">
-                          <div className="text-lg font-bold text-white">
-                            {(pattern.confidence_score * 100).toFixed(0)}%
+                        <div className="flex items-center space-x-3">
+                          <div className="text-right">
+                            <div className="text-lg font-bold text-white">
+                              {(pattern.confidence_score * 100).toFixed(0)}%
+                            </div>
+                            <div className="text-xs text-gray-400">Confiança</div>
                           </div>
-                          <div className="text-xs text-gray-400">Confiança</div>
+                          {/* ✅ NOVO: Dropdown para listar operações */}
+                          <div className="relative">
+                            <Button
+                              onClick={() => openTradesModal(pattern)}
+                              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 text-xs"
+                              size="sm"
+                            >
+                              📊 Listar Operações
+                            </Button>
+                          </div>
                         </div>
                       </div>
                       
@@ -893,6 +962,18 @@ export default function MotionTrackerPage() {
                           <div className="text-white font-medium">{pattern.frequency_minutes} min</div>
                         </div>
                       </div>
+                      
+                      {/* ✅ NOVO: Volume em % do mercado */}
+                      {pattern.market_volume_percentage !== undefined && (
+                        <div className="mt-3 pt-3 border-t border-gray-600">
+                          <div className="flex justify-between items-center">
+                            <span className="text-gray-400 text-sm">Volume em % do mercado:</span>
+                            <span className="text-white font-semibold text-lg">
+                              {pattern.market_volume_percentage.toFixed(2)}%
+                            </span>
+                          </div>
+                        </div>
+                      )}
                       
                       <div className="mt-3 pt-3 border-t border-gray-600">
                         <div className="flex justify-between text-xs text-gray-400">
@@ -982,6 +1063,78 @@ export default function MotionTrackerPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* ✅ NOVO: Modal para exibir trades de um robô específico */}
+      {tradesModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-gray-800 border border-gray-600 rounded-lg p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-white">
+                Operações do Robô {selectedRobot?.agent_id} ({getAgentName(selectedRobot?.agent_id || 0)}) em {selectedRobot?.symbol}
+              </h3>
+              <Button
+                onClick={() => setTradesModalOpen(false)}
+                className="bg-gray-600 hover:bg-gray-700 text-white"
+                size="sm"
+              >
+                ✕ Fechar
+              </Button>
+            </div>
+            
+            <div className="mb-4 text-sm text-gray-400">
+              <p>Últimas 24 horas • {robotTrades.length} operações encontradas</p>
+            </div>
+            
+            {tradesLoading ? (
+              <div className="text-center py-8">
+                <div className="text-gray-400">Carregando operações...</div>
+              </div>
+            ) : robotTrades.length === 0 ? (
+              <div className="text-center py-8">
+                <div className="text-gray-400">Nenhuma operação encontrada para este robô</div>
+              </div>
+            ) : (
+              <div className="overflow-y-auto max-h-[60vh]">
+                <div className="grid gap-3">
+                  {robotTrades.map((trade) => (
+                    <div key={trade.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-3">
+                          <Badge className={trade.side === 'buy' ? 'bg-green-600' : 'bg-red-600'}>
+                            {trade.side === 'buy' ? '🟢 COMPRA' : '🔴 VENDA'}
+                          </Badge>
+                          <span className="text-white font-medium">
+                            {trade.volume.toLocaleString()} ações
+                          </span>
+                          <span className="text-gray-300">
+                            R$ {trade.price.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm text-gray-400">
+                            {formatTime(trade.timestamp)}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {formatDate(trade.timestamp)}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="text-xs text-gray-400">
+                        <span>Volume: {formatVolume(trade.volume)}</span>
+                        <span className="mx-2">•</span>
+                        <span>Valor: R$ {formatVolume(trade.volume * trade.price)}</span>
+                        <span className="mx-2">•</span>
+                        <span>Pattern ID: {trade.pattern_id}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

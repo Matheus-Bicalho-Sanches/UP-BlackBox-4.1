@@ -44,6 +44,7 @@ class TWAPPattern:
     price_aggression: float = 0.0
     confidence_score: float = 0.0
     status: RobotStatus = RobotStatus.INACTIVE
+    market_volume_percentage: float = 0.0  # ✅ NOVO: Volume em % do mercado
     
     def __post_init__(self):
         """Validação pós-inicialização"""

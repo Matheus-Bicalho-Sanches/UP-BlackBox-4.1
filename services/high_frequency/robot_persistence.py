@@ -2,7 +2,7 @@ import psycopg
 import os
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 # Corrige imports para funcionar como módulo standalone
 try:
@@ -30,15 +30,16 @@ class RobotPersistence:
                         INSERT INTO robot_patterns (
                             symbol, exchange, pattern_type, confidence_score, agent_id,
                             first_seen, last_seen, total_volume, total_trades,
-                            avg_trade_size, frequency_minutes, price_aggression, status, created_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            avg_trade_size, frequency_minutes, price_aggression, status, 
+                            market_volume_percentage, created_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                     """, (
                         pattern.symbol, pattern.exchange, 'TWAP', pattern.confidence_score,
                         pattern.agent_id, pattern.first_seen, pattern.last_seen,
                         pattern.total_volume, pattern.total_trades, pattern.avg_trade_size,
                         pattern.frequency_minutes, pattern.price_aggression, pattern.status.value,
-                        datetime.now(timezone.utc)
+                        pattern.market_volume_percentage, datetime.now(timezone.utc)
                     ))
                     
                     result = await cur.fetchone()
@@ -68,6 +69,7 @@ class RobotPersistence:
                             price_aggression = %s,
                             confidence_score = %s,
                             status = %s,
+                            market_volume_percentage = %s,
                             inactivity_notified = CASE 
                                 WHEN %s = 'active' THEN FALSE 
                                 ELSE inactivity_notified 
@@ -77,7 +79,8 @@ class RobotPersistence:
                         pattern.last_seen, pattern.total_volume, pattern.total_trades,
                         pattern.avg_trade_size, pattern.frequency_minutes,
                         pattern.price_aggression, pattern.confidence_score,
-                        pattern.status.value, pattern.status.value, pattern_id
+                        pattern.status.value, pattern.market_volume_percentage,
+                        pattern.status.value, pattern_id
                     ))
                     
                     await conn.commit()
@@ -95,13 +98,11 @@ class RobotPersistence:
                 async with conn.cursor() as cur:
                     await cur.execute("""
                         INSERT INTO robot_trades (
-                            robot_pattern_id, symbol, price, volume, timestamp,
-                            trade_type, agent_id, created_at
+                            robot_pattern_id, symbol, agent_id, timestamp, price, volume, side, created_at
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
-                        robot_pattern_id, trade.symbol, trade.price, trade.volume,
-                        trade.timestamp, trade.trade_type.value, trade.agent_id,
-                        datetime.now(timezone.utc)
+                        robot_pattern_id, trade.symbol, trade.agent_id, trade.timestamp,
+                        trade.price, trade.volume, trade.trade_type.value, datetime.now(timezone.utc)
                     ))
                     
                     await conn.commit()
@@ -280,3 +281,179 @@ class RobotPersistence:
         except Exception as e:
             logger.error(f"❌ Erro ao resetar flag de notificação para padrão {pattern_id}: {e}")
             return False
+
+    async def get_robot_trades(self, symbol: str, agent_id: int, hours: int = 24) -> List[Dict]:
+        """Busca todas as operações de um robô específico"""
+        try:
+            logger.info(f"🔍 Buscando trades do robô {agent_id} em {symbol} (últimas {hours}h)")
+            
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT 
+                            id,
+                            symbol,
+                            agent_id,
+                            timestamp,
+                            price,
+                            volume,
+                            side,
+                            robot_pattern_id,
+                            created_at
+                        FROM robot_trades 
+                        WHERE symbol = %s AND agent_id = %s 
+                        AND timestamp >= NOW() - INTERVAL '%s hours'
+                        ORDER BY timestamp DESC
+                    """, (symbol, agent_id, hours))
+                    
+                    rows = await cur.fetchall()
+                    trades = [
+                        {
+                            'id': row[0],
+                            'symbol': row[1],
+                            'agent_id': row[2],
+                            'timestamp': row[3].isoformat() if row[3] else None,
+                            'price': float(row[4]) if row[4] else 0.0,
+                            'volume': int(row[5]) if row[5] else 0,
+                            'side': row[6],
+                            'pattern_id': row[7],
+                            'created_at': row[8].isoformat() if row[8] else None
+                        }
+                        for row in rows
+                    ]
+                    
+                    logger.info(f"📊 Encontrados {len(trades)} trades para robô {agent_id} em {symbol}")
+                    return trades
+                    
+        except Exception as e:
+            logger.error(f"💥 Erro ao buscar trades do robô {agent_id} em {symbol}: {e}")
+            logger.error(f"📋 Traceback completo:", exc_info=True)
+            return []
+
+    async def get_market_volume_for_period(self, symbol: str, start_time: datetime, end_time: datetime) -> float:
+        """Retorna volume total do mercado para um período específico"""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT COALESCE(SUM(price * volume), 0) as total_market_volume
+                        FROM ticks_raw 
+                        WHERE symbol = %s 
+                        AND timestamp BETWEEN %s AND %s
+                    """, (symbol, start_time, end_time))
+                    
+                    result = await cur.fetchone()
+                    market_volume = float(result[0]) if result and result[0] else 0.0
+                    
+                    logger.debug(f"📊 Volume do mercado {symbol}: {market_volume:,.2f} ({start_time} até {end_time})")
+                    return market_volume
+                    
+        except Exception as e:
+            logger.error(f"💥 Erro ao calcular volume do mercado {symbol}: {e}")
+            return 0.0
+
+    async def update_market_volume_percentage(self, pattern_id: int, new_percentage: float) -> bool:
+        """Atualiza apenas o campo market_volume_percentage de um padrão"""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        UPDATE robot_patterns 
+                        SET market_volume_percentage = %s 
+                        WHERE id = %s
+                    """, (new_percentage, pattern_id))
+                    
+                    await conn.commit()
+                    logger.debug(f"📊 Volume % atualizado para padrão {pattern_id}: {new_percentage:.2f}%")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"💥 Erro ao atualizar volume % do padrão {pattern_id}: {e}")
+            return False
+
+    async def delete_robot_trades_by_pattern(self, pattern_id: int) -> bool:
+        """Remove todos os trades relacionados a um padrão específico"""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        DELETE FROM robot_trades 
+                        WHERE robot_pattern_id = %s
+                    """, (pattern_id,))
+                    
+                    deleted_count = cur.rowcount
+                    await conn.commit()
+                    logger.info(f"🗑️ {deleted_count} trades removidos para padrão {pattern_id}")
+                    return True
+                    
+        except Exception as e:
+            logger.error(f"💥 Erro ao remover trades do padrão {pattern_id}: {e}")
+            return False
+
+    async def delete_robot_pattern(self, pattern_id: int) -> bool:
+        """Remove um padrão específico do banco"""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        DELETE FROM robot_patterns 
+                        WHERE id = %s
+                    """, (pattern_id,))
+                    
+                    deleted_count = cur.rowcount
+                    await conn.commit()
+                    logger.info(f"🗑️ Padrão {pattern_id} removido do banco")
+                    return deleted_count > 0
+                    
+        except Exception as e:
+            logger.error(f"💥 Erro ao remover padrão {pattern_id}: {e}")
+            return False
+
+    async def cleanup_inactive_patterns_from_database(self, max_inactive_hours: int = 3) -> int:
+        """Remove diretamente do banco padrões inativos há mais de X horas"""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    # Busca padrões inativos antigos
+                    await cur.execute("""
+                        SELECT id, symbol, agent_id, last_seen 
+                        FROM robot_patterns 
+                        WHERE last_seen < NOW() - INTERVAL '%s hours'
+                        ORDER BY last_seen ASC
+                    """, (max_inactive_hours,))
+                    
+                    patterns_to_remove = await cur.fetchall()
+                    removed_count = 0
+                    
+                    for pattern in patterns_to_remove:
+                        pattern_id, symbol, agent_id, last_seen = pattern
+                        try:
+                            # Remove trades relacionados primeiro (foreign key)
+                            await cur.execute("""
+                                DELETE FROM robot_trades 
+                                WHERE robot_pattern_id = %s
+                            """, (pattern_id,))
+                            
+                            trades_deleted = cur.rowcount
+                            
+                            # Remove o padrão
+                            await cur.execute("""
+                                DELETE FROM robot_patterns 
+                                WHERE id = %s
+                            """, (pattern_id,))
+                            
+                            if cur.rowcount > 0:
+                                removed_count += 1
+                                logger.info(f"🗑️ Padrão removido do banco: {symbol} - {get_agent_name(agent_id)} ({agent_id}) - último trade: {last_seen} (há {max_inactive_hours}h)")
+                            
+                        except Exception as e:
+                            logger.error(f"❌ Erro ao remover padrão {pattern_id}: {e}")
+                            continue
+                    
+                    await conn.commit()
+                    logger.info(f"✅ Limpeza direta no banco: {removed_count} padrões removidos")
+                    return removed_count
+                    
+        except Exception as e:
+            logger.error(f"💥 Erro na limpeza direta do banco: {e}")
+            return 0

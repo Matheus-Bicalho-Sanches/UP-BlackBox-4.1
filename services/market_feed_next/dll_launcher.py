@@ -102,7 +102,7 @@ def main():
         dll_instance.subscribe("HGLG11")
         # dll_instance.subscribe("KDIF11")
         # dll_instance.subscribe("HGRE11")
-        #  dll_instance.subscribe("AFHI11")
+        # dll_instance.subscribe("AFHI11")
         # dll_instance.subscribe("MGLU3")
         # dll_instance.subscribe("BPAC11")
         # dll_instance.subscribe("SIMH3")
