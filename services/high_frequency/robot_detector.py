@@ -201,7 +201,7 @@ class TWAPDetector:
             # ✅ NOVO: Gate de recência - se último trade for antigo, força INACTIVE
             last_seen = trades[-1].timestamp
             now_utc = datetime.now(timezone.utc)
-            recency_minutes = (now_utc - last_seen).total_seconds() / 300.0
+            recency_minutes = (now_utc - last_seen).total_seconds() / 60.0
             if recency_minutes > self.config.active_recency_minutes:
                 status = RobotStatus.INACTIVE
             

@@ -307,7 +307,7 @@ async def startup_event():
         min_frequency_minutes=0.001,
         max_frequency_minutes=10.0,
         min_confidence=0.3,
-        active_recency_minutes=1.0
+        active_recency_minutes=60.0
     )
     logger.info("✅ TWAPDetectionConfig inicializado com sucesso")
     
@@ -432,7 +432,7 @@ async def start_inactivity_monitoring():
             # Verifica inatividade baseado em trades reais (a cada 5 segundos)
             # Agora usa a nova coluna inactivity_notified para evitar notificações repetitivas
             inactive_robots = await twap_detector.check_robot_inactivity_by_trades(
-                inactivity_threshold_minutes=1,
+                inactivity_threshold_minutes=60,
                 use_notification_control=True  # Novo parâmetro para usar controle de notificação
             )
             
