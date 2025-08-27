@@ -96,13 +96,21 @@ class RobotPersistence:
         try:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
+                    # Converte o tipo de trade para string 'buy'/'sell' conforme a constraint da tabela
+                    side_str = None
+                    try:
+                        # Enum name is 'BUY' or 'SELL'
+                        side_str = trade.trade_type.name.lower()
+                    except Exception:
+                        # Fallback seguro
+                        side_str = 'buy' if int(trade.trade_type) == 2 else 'sell'
                     await cur.execute("""
                         INSERT INTO robot_trades (
                             robot_pattern_id, symbol, agent_id, timestamp, price, volume, side, created_at
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     """, (
                         robot_pattern_id, trade.symbol, trade.agent_id, trade.timestamp,
-                        trade.price, trade.volume, trade.trade_type.value, datetime.now(timezone.utc)
+                        trade.price, trade.volume, side_str, datetime.now(timezone.utc)
                     ))
                     
                     await conn.commit()
