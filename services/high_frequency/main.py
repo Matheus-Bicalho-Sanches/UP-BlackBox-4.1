@@ -695,14 +695,14 @@ async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24
 		raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/{symbol}/{agent_id}/trades")
-async def get_robot_trades(symbol: str, agent_id: int, hours: int = 24):
+async def get_robot_trades(symbol: str, agent_id: int, hours: int = 24, limit: int = 200):
 	"""Retorna todas as operações de um robô específico"""
 	try:
 		if not twap_detector:
 			raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
 		
 		# Busca trades do robô específico
-		trades = await twap_detector.persistence.get_robot_trades(symbol, agent_id, hours)
+		trades = await twap_detector.persistence.get_robot_trades(symbol, agent_id, hours, limit)
 		
 		logger.info(f"Retornando {len(trades)} trades para robô {agent_id} em {symbol}")
 		return trades

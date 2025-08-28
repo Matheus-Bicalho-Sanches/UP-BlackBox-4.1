@@ -399,7 +399,7 @@ class RobotPersistence:
             logger.error(f"❌ Erro ao resetar flag de notificação para padrão {pattern_id}: {e}")
             return False
 
-    async def get_robot_trades(self, symbol: str, agent_id: int, hours: int = 24) -> List[Dict]:
+    async def get_robot_trades(self, symbol: str, agent_id: int, hours: int = 24, limit: int = 200) -> List[Dict]:
         """Busca todas as operações de um robô específico"""
         try:
             logger.info(f"🔍 Buscando trades do robô {agent_id} em {symbol} (últimas {hours}h)")
@@ -421,7 +421,8 @@ class RobotPersistence:
                         WHERE symbol = %s AND agent_id = %s 
                           AND timestamp >= NOW() - (%s || ' hours')::interval
                         ORDER BY timestamp DESC
-                    """, (symbol.upper(), agent_id, str(hours)))
+                        LIMIT %s
+                    """, (symbol.upper(), agent_id, str(hours), limit))
                     
                     rows = await cur.fetchall()
                     trades = [

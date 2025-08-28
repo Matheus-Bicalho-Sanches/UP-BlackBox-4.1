@@ -535,7 +535,7 @@ export default function MotionTrackerPage() {
       setTradesLoading(true);
       setError(null);
       
-      const response = await fetch(`${API_BASE_URL}/robots/${symbol}/${agentId}/trades?hours=24`);
+      const response = await fetch(`${API_BASE_URL}/robots/${symbol}/${agentId}/trades?hours=24&limit=200`);
       if (!response.ok) {
         throw new Error(`Erro na API: ${response.status}`);
       }
