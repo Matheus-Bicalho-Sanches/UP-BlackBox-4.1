@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -231,6 +231,10 @@ export default function MotionTrackerPage() {
   // 🔎 Filtro de status para a aba Padrões Detectados
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
+  // 🔄 Controle de atualização silenciosa (debounce)
+  const lastPatternsFetchRef = useRef<number>(0);
+  const debounceMs = 3000;
+
   // Função para buscar padrões de robôs da API
   const fetchRobotPatterns = async () => {
     try {
@@ -264,6 +268,27 @@ export default function MotionTrackerPage() {
       setRobotPatterns([]); // ✅ NOVO: Garante que sempre seja um array
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Versão silenciosa: atualiza os padrões sem mudar o estado global de loading
+  const refreshRobotPatterns = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/robots/patterns`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setRobotPatterns(data);
+      } else if (data && Array.isArray(data.patterns)) {
+        setRobotPatterns(data.patterns);
+      } else if (data && data.success && Array.isArray(data.data)) {
+        setRobotPatterns(data.data);
+      }
+    } catch (error) {
+      // Evita poluir a UI; apenas loga
+      console.warn('Refresh silencioso falhou:', error);
     }
   };
 
@@ -366,6 +391,13 @@ export default function MotionTrackerPage() {
               }
               return prevChanges;
             });
+
+            // 🔄 Atualiza cards do topo após mudanças de status (com debounce)
+            const now = Date.now();
+            if (now - lastPatternsFetchRef.current > debounceMs) {
+              lastPatternsFetchRef.current = now;
+              refreshRobotPatterns();
+            }
           }
         } catch (error) {
           // ✅ NOVO: Ignora erros de parsing para mensagens não-JSON (como "pong")
@@ -573,6 +605,16 @@ export default function MotionTrackerPage() {
       disconnectWebSocket();
     };
   }, []); // Executa apenas uma vez ao montar
+
+  // 🔁 Fallback de atualização periódica a cada 5s (para manter os cards atualizados)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (activeTab === 'startstop' || activeTab === 'patterns') {
+        refreshRobotPatterns();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [activeTab]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
