@@ -215,7 +215,7 @@ export default function MotionTrackerPage() {
 
   // 🚀 NOVO: Estado para lazy loading das abas
   const [activeTab, setActiveTab] = useState('startstop');
-  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(['startstop'])); // Começa com a primeira aba
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set()); // Será carregada explicitamente abaixo
   const [tabLoading, setTabLoading] = useState<Record<string, boolean>>({
     startstop: false,
     patterns: false,
@@ -487,10 +487,11 @@ export default function MotionTrackerPage() {
     }
   }, [activeTab, loadedTabs]);
 
-  // 🚀 NOVO: Carregamento inicial apenas da primeira aba
+  // 🚀 NOVO: Carregamento inicial da aba Start/Stop + padrões (para os cards)
   useEffect(() => {
-    // Carrega apenas a aba inicial (startstop)
-    loadTabData('startstop');
+    (async () => {
+      await loadTabData('startstop');
+    })();
   }, []); // Executa apenas uma vez ao montar
 
   // 🚀 NOVO: Função para carregar dados de uma aba específica
@@ -507,7 +508,9 @@ export default function MotionTrackerPage() {
       switch (tabName) {
         case 'startstop':
           console.log(`📊 Carregando dados para Start/Stop...`);
+          // Precisamos dos patterns para preencher os cards do topo
           await fetchRobotStatusChanges(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);
+          await fetchRobotPatterns();
           break;
         case 'patterns':
           console.log(`📊 Carregando dados para Patterns...`);
@@ -710,7 +713,17 @@ export default function MotionTrackerPage() {
       )}
 
       {/* Resumo dos Robôs Detectados */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <Card className="bg-gray-800 border-gray-600">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-gray-300">Total de Robôs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-white">
+              {loading ? '...' : getSymbolFilteredPatterns().length}
+            </div>
+          </CardContent>
+        </Card>
         <Card className="bg-gray-800 border-gray-600">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-gray-300">Robôs Ativos</CardTitle>

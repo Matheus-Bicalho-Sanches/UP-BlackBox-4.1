@@ -257,7 +257,7 @@ class RobotPersistence:
                     await cur.execute("""
                         SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange
                         FROM ticks_raw
-                        WHERE symbol = %s AND timestamp >= NOW() - INTERVAL '%s hours'
+                        WHERE symbol = %s AND timestamp >= NOW() - make_interval(hours => %s)
                         ORDER BY timestamp DESC
                     """, (symbol, hours))
                     
@@ -288,7 +288,7 @@ class RobotPersistence:
                         SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange
                         FROM ticks_raw
                         WHERE symbol = %s 
-                          AND timestamp >= NOW() - INTERVAL '%s minutes'
+                          AND timestamp >= NOW() - make_interval(mins => %s)
                           AND (buy_agent = %s OR sell_agent = %s)
                         ORDER BY timestamp DESC
                     """, (symbol, minutes, agent_id, agent_id))
@@ -344,13 +344,13 @@ class RobotPersistence:
                     # Remove trades antigos primeiro (foreign key)
                     await cur.execute("""
                         DELETE FROM robot_trades 
-                        WHERE created_at < NOW() - INTERVAL '%s days'
+                        WHERE created_at < NOW() - make_interval(days => %s)
                     """, (days,))
                     
                     # Remove padrões antigos
                     await cur.execute("""
                         DELETE FROM robot_patterns 
-                        WHERE last_seen < NOW() - INTERVAL '%s days'
+                        WHERE last_seen < NOW() - make_interval(days => %s)
                     """, (days,))
                     
                     await conn.commit()
@@ -535,7 +535,7 @@ class RobotPersistence:
                     await cur.execute("""
                         SELECT id, symbol, agent_id, last_seen 
                         FROM robot_patterns 
-                        WHERE last_seen < NOW() - INTERVAL '%s hours'
+                        WHERE last_seen < NOW() - make_interval(hours => %s)
                         ORDER BY last_seen ASC
                     """, (max_inactive_hours,))
                     
