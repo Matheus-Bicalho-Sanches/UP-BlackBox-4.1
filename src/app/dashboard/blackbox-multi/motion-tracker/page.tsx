@@ -234,6 +234,81 @@ export default function MotionTrackerPage() {
   // 🔄 Controle de atualização silenciosa (debounce)
   const lastPatternsFetchRef = useRef<number>(0);
   const debounceMs = 3000;
+  const prevActiveKeysRef = useRef<Set<string>>(new Set());
+
+  // Atualiza padrões e detecta ativações para exibir notificação (fallback caso WS não envie)
+  const setPatternsWithStartDetection = (patterns: any[]) => {
+    setRobotPatterns(patterns);
+    try {
+      // Monta conjunto de robôs ativos (chave: SYMBOL_AGENT)
+      const newActive = new Set<string>();
+      for (const p of patterns) {
+        if (p && p.status === 'active' && p.symbol && typeof p.agent_id !== 'undefined') {
+          newActive.add(`${p.symbol}_${p.agent_id}`);
+        }
+      }
+      // Na primeira carga, apenas sincroniza sem notificar
+      if (prevActiveKeysRef.current.size === 0) {
+        prevActiveKeysRef.current = newActive;
+        return;
+      }
+      // Detecta novos ativos (reativações/inícios)
+      const started: string[] = [];
+      newActive.forEach((key) => {
+        if (!prevActiveKeysRef.current.has(key)) started.push(key);
+      });
+      if (started.length > 0) {
+        // Exibe no máximo 3 notificações individuais para evitar spam
+        const maxNotifs = 3;
+        for (let i = 0; i < Math.min(started.length, maxNotifs); i++) {
+          const [sym, agentStr] = started[i].split('_');
+          const agentId = Number(agentStr);
+          showNotification(`🟢 Robô ${getAgentName(agentId)} iniciou em ${sym}`);
+        }
+        // Se houver mais, mostra um resumo
+        if (started.length > maxNotifs) {
+          showNotification(`🟢 +${started.length - maxNotifs} robôs iniciaram/reativaram`);
+        }
+
+        // ➕ Também injeta itens sintéticos no histórico Start/Stop (fallback caso WS não traga o evento)
+        setRobotStatusChanges(prev => {
+          const nowIso = new Date().toISOString();
+          const newItems = [] as any[];
+          for (const key of started) {
+            const [sym, agentStr] = key.split('_');
+            const agentId = Number(agentStr);
+            const pat = patterns.find((p: any) => p.symbol === sym && p.agent_id === agentId);
+            if (!pat) continue;
+            const itemId = `${sym}_${agentId}_${Date.now()}`;
+            const exists = prev.some(ch => ch.id === itemId);
+            if (!exists) {
+              newItems.push({
+                id: itemId,
+                symbol: sym,
+                agent_id: agentId,
+                agent_name: getAgentName(agentId),
+                old_status: 'inactive',
+                new_status: 'active',
+                timestamp: nowIso,
+                pattern_type: pat.pattern_type || 'TWAP',
+                confidence_score: pat.confidence_score || 0,
+                total_volume: pat.total_volume || 0,
+                total_trades: pat.total_trades || 0,
+                market_volume_percentage: pat.market_volume_percentage,
+              });
+            }
+          }
+          if (newItems.length === 0) return prev;
+          const updated = [...newItems, ...prev];
+          return updated.slice(0, 50);
+        });
+      }
+      // Atualiza baseline
+      prevActiveKeysRef.current = newActive;
+    } catch (e) {
+      // silencioso
+    }
+  };
 
   // Função para buscar padrões de robôs da API
   const fetchRobotPatterns = async () => {
@@ -250,13 +325,13 @@ export default function MotionTrackerPage() {
       
       // ✅ NOVO: Verificação de segurança para garantir que é um array
       if (Array.isArray(data)) {
-        setRobotPatterns(data);
+        setPatternsWithStartDetection(data);
       } else if (data && Array.isArray(data.patterns)) {
         // Se a API retorna { patterns: [...] }
-        setRobotPatterns(data.patterns);
+        setPatternsWithStartDetection(data.patterns);
       } else if (data && data.success && Array.isArray(data.data)) {
         // Se a API retorna { success: true, data: [...] }
-        setRobotPatterns(data.data);
+        setPatternsWithStartDetection(data.data);
       } else {
         console.warn('Formato inesperado dos dados:', data);
         setRobotPatterns([]);
@@ -280,11 +355,11 @@ export default function MotionTrackerPage() {
       }
       const data = await response.json();
       if (Array.isArray(data)) {
-        setRobotPatterns(data);
+        setPatternsWithStartDetection(data);
       } else if (data && Array.isArray(data.patterns)) {
-        setRobotPatterns(data.patterns);
+        setPatternsWithStartDetection(data.patterns);
       } else if (data && data.success && Array.isArray(data.data)) {
-        setRobotPatterns(data.data);
+        setPatternsWithStartDetection(data.data);
       }
     } catch (error) {
       // Evita poluir a UI; apenas loga
