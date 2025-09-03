@@ -510,6 +510,7 @@ export default function BoletasPage() {
                   <option value="buy">Compra</option>
                   <option value="sell">Venda</option>
                 </select>
+                <div style={{ height: 60 }} />
                 <button type="submit" disabled={loading} style={{ padding: 10, borderRadius: 4, background: "#06b6d4", color: "#fff", fontWeight: 600, border: 0 }}>
                   {loading ? "Enviando..." : "Enviar ordem"}
                 </button>
@@ -844,6 +845,7 @@ export default function BoletasPage() {
                 <input type="number" placeholder="Group Size" value={closeGroupSize} onChange={e=>setCloseGroupSize(Number(e.target.value))} style={{ padding: 8, borderRadius: 4, border: '1px solid #444' }} />
               </>
             )}
+            <div style={{ height: 80 }} />
             <button type="submit" disabled={closeLoading} style={{ padding: 10, borderRadius: 4, background: '#d946ef', color: '#fff', fontWeight: 600, border: 0 }}>
               {closeLoading ? 'Enviando...' : 'Fechar/Reduzir'}
             </button>
