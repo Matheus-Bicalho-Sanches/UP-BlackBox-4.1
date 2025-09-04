@@ -155,6 +155,7 @@ export default function SyncPage() {
   
   // Estados para ordem iceberg
   const [icebergLote, setIcebergLote] = useState(1);
+  const [icebergGroupSize, setIcebergGroupSize] = useState(1); // Contas por onda
   const [icebergTwapEnabled, setIcebergTwapEnabled] = useState(false);
   const [icebergTwapInterval, setIcebergTwapInterval] = useState(30);
 
@@ -1897,7 +1898,7 @@ Deseja prosseguir?
         twap_enabled: individualIcebergTwapEnabled,
         twap_interval: individualIcebergTwapInterval,
         strategy_id: selectedStrategy?.id || 'sync-iceberg-master',
-        group_size: 1 // Execução sequencial (uma conta por vez)
+        group_size: icebergGroupSize // Contas por onda (configurável pelo usuário)
       };
 
       console.log('[sendIndividualIcebergOrder] Enviando ordem iceberg master:', masterPayload);
@@ -3829,6 +3830,43 @@ Deseja prosseguir?
                     </p>
                   </div>
 
+                  {/* Campo Contas por Onda */}
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{
+                      display: 'block',
+                      color: '#fff',
+                      marginBottom: 8,
+                      fontWeight: 'bold',
+                      fontSize: 14
+                    }}>
+                      Contas por Onda:
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={icebergGroupSize}
+                      onChange={(e) => setIcebergGroupSize(parseInt(e.target.value) || 1)}
+                      style={{
+                        width: '100%',
+                        padding: '12px 16px',
+                        background: '#333',
+                        color: '#fff',
+                        border: '1px solid #555',
+                        borderRadius: 6,
+                        fontSize: 14,
+                        fontWeight: 'bold'
+                      }}
+                      placeholder="1"
+                    />
+                    <p style={{ 
+                      margin: '4px 0 0 0', 
+                      fontSize: '12px', 
+                      color: '#6b7280' 
+                    }}>
+                      Número de contas que executarão simultaneamente em cada onda
+                    </p>
+                  </div>
+
                   {/* TWAP Checkbox */}
                   <div>
                     <label style={{
@@ -3939,6 +3977,9 @@ Deseja prosseguir?
                     </p>
                     <p style={{ margin: '4px 0' }}>
                       • Tamanho do lote: {icebergLote.toLocaleString('pt-BR')} ações
+                    </p>
+                    <p style={{ margin: '4px 0' }}>
+                      • Contas por onda: {icebergGroupSize} conta{icebergGroupSize > 1 ? 's' : ''}
                     </p>
                     {icebergTwapEnabled && (
                       <p style={{ margin: '4px 0' }}>
@@ -4231,6 +4272,7 @@ Detalhes da Ordem:
 • Quantidade Total: ${quantidadeFinal.toLocaleString('pt-BR')} ações
 • Tamanho do Lote: ${icebergLote.toLocaleString('pt-BR')} ações
 • Total de Lotes: ${totalLotes} lotes
+• Contas por Onda: ${icebergGroupSize} conta${icebergGroupSize > 1 ? 's' : ''}
 • Preço: R$ ${precoFinal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
 • Exchange: ${selectedExchange === 'B' ? 'B3 (Ações)' : selectedExchange === 'F' ? 'Futuros' : selectedExchange === 'M' ? 'Câmbio' : 'ETF'}
 • Conta: ${account["Nome Cliente"]} (${account.AccountID})
@@ -5105,6 +5147,36 @@ ${result.log || ''}`);
                     />
                   </div>
 
+                  {/* Contas por Onda */}
+                  <div>
+                    <label style={{ color: '#fff', fontSize: '14px', marginBottom: 8, display: 'block' }}>
+                      Contas por Onda
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={icebergGroupSize}
+                      onChange={(e) => setIcebergGroupSize(parseInt(e.target.value) || 1)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 12px',
+                        background: '#333',
+                        border: '1px solid #555',
+                        borderRadius: 6,
+                        color: '#fff',
+                        fontSize: '14px'
+                      }}
+                    />
+                    <div style={{ 
+                      color: '#9ca3af', 
+                      fontSize: '12px', 
+                      marginTop: 4,
+                      fontStyle: 'italic'
+                    }}>
+                      Número de contas que executarão simultaneamente
+                    </div>
+                  </div>
+
                   {/* Ligar TWAP */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <input
@@ -5159,7 +5231,7 @@ ${result.log || ''}`);
                   <h5 style={{ color: '#06b6d4', margin: '0 0 12px 0', fontSize: '14px' }}>
                     📋 Resumo Iceberg
                   </h5>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
                     <div>
                       <div style={{ color: '#9ca3af', fontSize: '12px' }}>Total de Lotes</div>
                       <div style={{ color: '#fff', fontSize: '16px', fontWeight: 'bold' }}>
@@ -5170,6 +5242,12 @@ ${result.log || ''}`);
                       <div style={{ color: '#9ca3af', fontSize: '12px' }}>Tamanho do Lote</div>
                       <div style={{ color: '#fff', fontSize: '16px', fontWeight: 'bold' }}>
                         {individualIcebergLote}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ color: '#9ca3af', fontSize: '12px' }}>Contas por Onda</div>
+                      <div style={{ color: '#fff', fontSize: '16px', fontWeight: 'bold' }}>
+                        {icebergGroupSize}
                       </div>
                     </div>
                     <div>
