@@ -367,6 +367,18 @@ export default function SyncPage() {
     }
   }, [positions]);
 
+  // Pré-carregar posições das contas exibidas quando estratégia, contas e posições de referência estiverem prontos
+  useEffect(() => {
+    if (!selectedStrategy || positions.length === 0 || filteredAccounts.length === 0) return;
+    const missingAccounts = filteredAccounts
+      .map(acc => acc._id)
+      .filter(accId => !accountPositions[accId]);
+    if (missingAccounts.length > 0) {
+      console.log('[Sincronizador] Pré-carregando posições para contas sem cache:', missingAccounts);
+      missingAccounts.forEach(accId => loadAccountPositions(accId));
+    }
+  }, [selectedStrategy, positions, filteredAccounts]);
+
   const handleNewPosition = () => {
     setNewPositionData({
       ticker: "",
@@ -1294,12 +1306,34 @@ export default function SyncPage() {
 
   // Função para calcular percentual de sincronização
   const calculateSyncPercentage = (accountId: string) => {
+    const tolerancePctForPercent = 2; // Tolerância usada para considerar sincronizado no percentual (alinhado ao UI)
+    try {
+      console.log('[calculateSyncPercentage] Iniciando cálculo', { accountId });
+    } catch (_) {}
     if (!positions.length || !accountPositions[accountId] || !selectedStrategy) {
+      try {
+        console.log('[calculateSyncPercentage] Dados insuficientes', {
+          hasPositions: !!positions.length,
+          hasAccountPositions: !!accountPositions[accountId],
+          hasStrategy: !!selectedStrategy,
+          availableAccountKeys: Object.keys(accountPositions || {})
+        });
+        // Se faltam posições da conta, tentar carregar on-demand
+        if (selectedStrategy && positions.length && !accountPositions[accountId]) {
+          console.log('[calculateSyncPercentage] Carregando posições on-demand para conta', accountId);
+          loadAccountPositions(accountId);
+        }
+      } catch (_) {}
       return { percentage: 0, color: '#6b7280' };
     }
     
     const referencePositions = positions.filter(pos => pos.ticker !== 'LFTS11');
     const clientPositions = accountPositions[accountId].filter(cp => cp.ticker !== 'LFTS11');
+
+    try {
+      console.log('[calculateSyncPercentage] Tickers considerados (referência):', referencePositions.map(p => p.ticker));
+      console.log('[calculateSyncPercentage] Tickers considerados (cliente):', clientPositions.map(cp => cp.ticker));
+    } catch (_) {}
     
     // Encontrar a conta para obter o valor investido na estratégia
     const account = filteredAccounts.find(acc => acc._id === accountId);
@@ -1316,14 +1350,26 @@ export default function SyncPage() {
         // Comparar percentual real vs ideal
         const percentageDifference = Math.abs((clientPos.percentage || 0) - (clientPos.idealPercentage || 0));
         
-        // Considerar sincronizado se diferença < 0.5%
-        if (percentageDifference < 0.5) {
+        // Considerar sincronizado se diferença < tolerância
+        if (percentageDifference < tolerancePctForPercent) {
           totalMatches++;
         }
+        try {
+          console.log('[calculateSyncPercentage] Diferença', {
+            ticker: refPos.ticker,
+            atual: clientPos.percentage || 0,
+            ideal: clientPos.idealPercentage || 0,
+            diff: percentageDifference,
+            dentroDaTolerancia: percentageDifference < tolerancePctForPercent
+          });
+        } catch (_) {}
       }
     });
     
     const syncPercentage = totalPositions > 0 ? (totalMatches / totalPositions) * 100 : 0;
+    try {
+      console.log('[calculateSyncPercentage] Totais', { totalMatches, totalPositions, syncPercentage });
+    } catch (_) {}
     
     // Definir cor baseada no percentual
     let color = '#dc2626'; // Vermelho (0-50%)
