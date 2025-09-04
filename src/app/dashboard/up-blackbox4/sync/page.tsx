@@ -1298,8 +1298,8 @@ export default function SyncPage() {
       return { percentage: 0, color: '#6b7280' };
     }
     
-    const referencePositions = positions;
-    const clientPositions = accountPositions[accountId];
+    const referencePositions = positions.filter(pos => pos.ticker !== 'LFTS11');
+    const clientPositions = accountPositions[accountId].filter(cp => cp.ticker !== 'LFTS11');
     
     // Encontrar a conta para obter o valor investido na estratégia
     const account = filteredAccounts.find(acc => acc._id === accountId);
@@ -2774,7 +2774,7 @@ Deseja prosseguir?
                                   Carregando posições...
                                 </td>
                               </tr>
-                            ) : accountPositions[account._id].length === 0 ? (
+                            ) : accountPositions[account._id].filter(p => p.ticker !== 'LFTS11').length === 0 ? (
                               <tr>
                                 <td colSpan={7} style={{ 
                                   padding: '20px', 
@@ -2788,7 +2788,7 @@ Deseja prosseguir?
                                 </td>
                               </tr>
                     ) : (
-                              sortAccountPositions(account._id, accountPositions[account._id]).map((position) => (
+                              sortAccountPositions(account._id, accountPositions[account._id].filter(p => p.ticker !== 'LFTS11')).map((position) => (
                                 <tr key={position.id} style={{ borderBottom: '1px solid #444' }}>
                                   <td style={{ 
                                     padding: '12px 16px', 
@@ -4585,7 +4585,7 @@ ${result.log || ''}`);
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ color: '#fff', fontSize: '24px', fontWeight: 'bold' }}>
-                    {syncAllData.length}
+                    {syncAllData.filter(item => item.ticker !== 'LFTS11').length}
                   </div>
                   <div style={{ color: '#9ca3af', fontSize: '12px' }}>
                     Ativos para Sincronizar
@@ -4593,7 +4593,7 @@ ${result.log || ''}`);
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ color: '#16a34a', fontSize: '24px', fontWeight: 'bold' }}>
-                    {syncAllData.filter(item => item.action === 'buy').length}
+                    {syncAllData.filter(item => item.ticker !== 'LFTS11' && item.action === 'buy').length}
                   </div>
                   <div style={{ color: '#9ca3af', fontSize: '12px' }}>
                     Compras Necessárias
@@ -4601,7 +4601,7 @@ ${result.log || ''}`);
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ color: '#dc2626', fontSize: '24px', fontWeight: 'bold' }}>
-                    {syncAllData.filter(item => item.action === 'sell').length}
+                    {syncAllData.filter(item => item.ticker !== 'LFTS11' && item.action === 'sell').length}
                   </div>
                   <div style={{ color: '#9ca3af', fontSize: '12px' }}>
                     Vendas Necessárias
@@ -4609,7 +4609,7 @@ ${result.log || ''}`);
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ color: '#f59e0b', fontSize: '24px', fontWeight: 'bold' }}>
-                    {syncAllData.filter(item => item.hasConflicts).length}
+                    {syncAllData.filter(item => item.ticker !== 'LFTS11' && item.hasConflicts).length}
                   </div>
                   <div style={{ color: '#9ca3af', fontSize: '12px' }}>
                     Conflitos Detectados
@@ -4617,7 +4617,7 @@ ${result.log || ''}`);
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ color: '#06b6d4', fontSize: '24px', fontWeight: 'bold' }}>
-                    R$ {syncAllData.reduce((total, item) => total + item.totalValue, 0).toLocaleString('pt-BR')}
+                    R$ {syncAllData.filter(item => item.ticker !== 'LFTS11').reduce((total, item) => total + item.totalValue, 0).toLocaleString('pt-BR')}
                   </div>
                   <div style={{ color: '#9ca3af', fontSize: '12px' }}>
                     Valor Total
@@ -4628,7 +4628,7 @@ ${result.log || ''}`);
 
             {/* Resumo de Conflitos */}
             {(() => {
-              const conflicts = syncAllData.filter(asset => asset.hasConflicts);
+              const conflicts = syncAllData.filter(asset => asset.ticker !== 'LFTS11' && asset.hasConflicts);
               const conflictTickers = [...new Set(conflicts.map(c => c.ticker))];
               
               if (conflictTickers.length > 0) {
@@ -4662,7 +4662,7 @@ ${result.log || ''}`);
               </h4>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {syncAllData.map((asset, index) => (
+                {syncAllData.filter(asset => asset.ticker !== 'LFTS11').map((asset, index) => (
                   <div key={index} style={{
                     background: '#222',
                     borderRadius: 8,
