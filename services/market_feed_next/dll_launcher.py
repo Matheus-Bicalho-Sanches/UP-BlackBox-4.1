@@ -98,6 +98,7 @@ def main():
         
         # A inscrição virá da API, mas pré-inscrevemos para teste
         dll_instance.subscribe("PORD11")
+        dll_instance.subscribe("BINC11")
         dll_instance.subscribe("CACR11")
         dll_instance.subscribe("HGLG11")
         dll_instance.subscribe("KDIF11")

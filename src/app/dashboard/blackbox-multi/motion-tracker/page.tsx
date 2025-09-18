@@ -13,6 +13,7 @@ interface RobotPattern {
   symbol: string;
   exchange: string;
   pattern_type: string;
+  robot_type: string;  // ✅ NOVO: Tipo do robô
   confidence_score: number;
   agent_id: number;
   first_seen: string;
@@ -31,6 +32,7 @@ interface RobotStatusChange {
   symbol: string;
   agent_id: number;
   agent_name?: string;  // ✅ NOVO: Nome da corretora
+  robot_type: string;  // ✅ NOVO: Tipo do robô
   old_status: string;
   new_status: string;
   timestamp: string;
@@ -39,6 +41,51 @@ interface RobotStatusChange {
   total_volume: number;
   total_trades: number;
   market_volume_percentage?: number;  // ✅ NOVO: Volume em % do mercado
+}
+
+// ✅ NOVO: Interface para mudanças de tipo de robô
+interface RobotTypeChange {
+  id: string;
+  symbol: string;
+  agent_id: number;
+  agent_name: string;
+  old_type: string;
+  new_type: string;
+  old_volume_percentage: number;
+  new_volume_percentage: number;
+  timestamp: string;
+  confidence_score: number;
+  total_volume: number;
+  total_trades: number;
+  change_type: string;
+  pattern_type: string;
+}
+
+// ✅ NOVO: Interface unificada para todas as mudanças
+interface RobotChange {
+  id: string;
+  symbol: string;
+  agent_id: number;
+  agent_name?: string;
+  robot_type?: string;
+  timestamp: string;
+  confidence_score: number;
+  total_volume: number;
+  total_trades: number;
+  pattern_type: string;
+  change_category: 'status' | 'type';
+  
+  // Campos específicos para mudanças de status
+  old_status?: string;
+  new_status?: string;
+  market_volume_percentage?: number;
+  
+  // Campos específicos para mudanças de tipo
+  old_type?: string;
+  new_type?: string;
+  old_volume_percentage?: number;
+  new_volume_percentage?: number;
+  change_type?: string;
 }
 
 // ✅ NOVO: Interface para trades de robôs
@@ -157,6 +204,7 @@ const mockSymbols = [
   'BBDC4',
   'BBAS3',
   'BBSE3',
+  'BINC11',
   'BODB11',
   'BPAC11',
   'BRBI11',
@@ -201,11 +249,15 @@ const mockSymbols = [
 
 const mockExchanges = ['B3', 'BMF'];
 
+// 🤖 Tipos de robôs disponíveis
+const robotTypes = ['Robô Tipo 0', 'Robô Tipo 1', 'Robô Tipo 2', 'Robô Tipo 3'];
+
 export default function MotionTrackerPage() {
   const [selectedSymbol, setSelectedSymbol] = useState('TODOS');
   const [selectedExchange, setSelectedExchange] = useState('B3');
   const [robotPatterns, setRobotPatterns] = useState<RobotPattern[]>([]);
   const [robotStatusChanges, setRobotStatusChanges] = useState<RobotStatusChange[]>([]);
+  const [allRobotChanges, setAllRobotChanges] = useState<RobotChange[]>([]);  // ✅ NOVO: Estado unificado
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -230,6 +282,9 @@ export default function MotionTrackerPage() {
 
   // 🔎 Filtro de status para a aba Padrões Detectados
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+
+  // 🤖 NOVO: Filtro por tipos de robôs (seleção múltipla)
+  const [selectedRobotTypes, setSelectedRobotTypes] = useState<string[]>(['Robô Tipo 0', 'Robô Tipo 1', 'Robô Tipo 2', 'Robô Tipo 3']);
 
   // 🔄 Controle de atualização silenciosa (debounce)
   const lastPatternsFetchRef = useRef<number>(0);
@@ -367,6 +422,45 @@ export default function MotionTrackerPage() {
     }
   };
 
+  // ✅ NOVO: Função para buscar todas as mudanças (status + tipo)
+  const fetchAllRobotChanges = async (symbol?: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const url = symbol && symbol !== 'TODOS' 
+        ? `${API_BASE_URL}/robots/all-changes?symbol=${symbol}&hours=24`
+        : `${API_BASE_URL}/robots/all-changes?hours=24`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      console.log('Dados recebidos da API /robots/all-changes:', data);
+      
+      if (Array.isArray(data)) {
+        setAllRobotChanges(data.slice(0, 50));
+      } else if (data && Array.isArray(data.changes)) {
+        setAllRobotChanges(data.changes.slice(0, 50));
+      } else if (data && data.success && Array.isArray(data.data)) {
+        setAllRobotChanges(data.data.slice(0, 50));
+      } else {
+        console.warn('Formato inesperado dos dados de mudanças:', data);
+        setAllRobotChanges([]);
+      }
+      
+    } catch (err) {
+      console.error('Erro ao buscar mudanças dos robôs:', err);
+      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      setAllRobotChanges([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Função para buscar mudanças de status dos robôs
   const fetchRobotStatusChanges = async (symbol?: string) => {
     try {
@@ -456,13 +550,13 @@ export default function MotionTrackerPage() {
               showNotification(`🔴 Robô ${newChange.agent_name || getAgentName(newChange.agent_id)} parou em ${newChange.symbol}`);
             }
             
-            // Adiciona a nova mudança no topo da lista
-            setRobotStatusChanges(prevChanges => {
-              // Verifica se já existe para evitar duplicatas
+            // Adiciona a nova mudança no topo da lista unificada
+            setAllRobotChanges(prevChanges => {
+              const changeWithCategory = { ...newChange, change_category: 'status' as const };
               const exists = prevChanges.find(change => change.id === newChange.id);
               if (!exists) {
-                const updated = [newChange, ...prevChanges];
-                return updated.slice(0, 50); // ✅ mantém apenas os 50 mais recentes
+                const updated = [changeWithCategory, ...prevChanges];
+                return updated.slice(0, 50);
               }
               return prevChanges;
             });
@@ -473,6 +567,26 @@ export default function MotionTrackerPage() {
               lastPatternsFetchRef.current = now;
               refreshRobotPatterns();
             }
+          } else if (message.type === 'type_change') {
+            console.log('Nova mudança de tipo recebida:', message.data);
+            
+            // ✅ NOVO: Notificação visual para mudanças de tipo
+            const typeChange = message.data;
+            showNotification(`🔄 Robô ${typeChange.agent_name} em ${typeChange.symbol} mudou de ${typeChange.old_type} para ${typeChange.new_type}`);
+            
+            // Adiciona a mudança de tipo na lista unificada
+            setAllRobotChanges(prevChanges => {
+              const changeWithCategory = { ...typeChange, change_category: 'type' as const };
+              const exists = prevChanges.find(change => change.id === typeChange.id);
+              if (!exists) {
+                const updated = [changeWithCategory, ...prevChanges];
+                return updated.slice(0, 50);
+              }
+              return prevChanges;
+            });
+
+            // Atualiza padrões para refletir novo tipo
+            refreshRobotPatterns();
           }
         } catch (error) {
           // ✅ NOVO: Ignora erros de parsing para mensagens não-JSON (como "pong")
@@ -567,7 +681,7 @@ export default function MotionTrackerPage() {
   };
 
   // ✅ NOVO: Abrir modal de trades a partir do item de Start/Stop
-  const openTradesModalFromChange = async (change: RobotStatusChange) => {
+  const openTradesModalFromChange = async (change: RobotChange) => {
     // Usa apenas os campos necessários (symbol e agent_id)
     setSelectedRobot({ symbol: change.symbol, agent_id: change.agent_id } as unknown as RobotPattern);
     setTradesModalOpen(true);
@@ -616,7 +730,7 @@ export default function MotionTrackerPage() {
         case 'startstop':
           console.log(`📊 Carregando dados para Start/Stop...`);
           // Precisamos dos patterns para preencher os cards do topo
-          await fetchRobotStatusChanges(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);
+          await fetchAllRobotChanges(selectedSymbol === 'TODOS' ? undefined : selectedSymbol);  // ✅ NOVO: Usa endpoint unificado
           await fetchRobotPatterns();
           break;
         case 'patterns':
@@ -709,6 +823,17 @@ export default function MotionTrackerPage() {
     }
   };
 
+  // 🤖 NOVO: Função para cores dos tipos de robôs
+  const getRobotTypeColor = (robotType: string) => {
+    switch (robotType) {
+      case 'Robô Tipo 0': return 'bg-gray-600';   // Cinza para volume muito baixo (0-1%)
+      case 'Robô Tipo 1': return 'bg-green-600';  // Verde para baixo volume (1-5%)
+      case 'Robô Tipo 2': return 'bg-yellow-600'; // Amarelo para médio volume (5-10%)
+      case 'Robô Tipo 3': return 'bg-red-600';    // Vermelho para alto volume (> 10%)
+      default: return 'bg-blue-600';
+    }
+  };
+
   const formatVolume = (volume: number) => {
     if (volume >= 1000000) return `${(volume / 1000000).toFixed(1)}M`;
     if (volume >= 1000) return `${(volume / 1000).toFixed(1)}K`;
@@ -733,12 +858,37 @@ export default function MotionTrackerPage() {
     });
   };
 
-  // Função para filtrar padrões por símbolo
+  // 🤖 NOVO: Função para alternar tipos de robôs selecionados
+  const toggleRobotType = (robotType: string) => {
+    setSelectedRobotTypes(prev => {
+      if (prev.includes(robotType)) {
+        // Remove o tipo se já estiver selecionado
+        return prev.filter(type => type !== robotType);
+      } else {
+        // Adiciona o tipo se não estiver selecionado
+        return [...prev, robotType];
+      }
+    });
+  };
+
+  // 🤖 NOVO: Função para selecionar/deselecionar todos os tipos
+  const toggleAllRobotTypes = () => {
+    if (selectedRobotTypes.length === robotTypes.length) {
+      // Se todos estão selecionados, deseleciona todos
+      setSelectedRobotTypes([]);
+    } else {
+      // Se nem todos estão selecionados, seleciona todos
+      setSelectedRobotTypes([...robotTypes]);
+    }
+  };
+
+  // Função para filtrar padrões por símbolo, status e tipo de robô
   const getFilteredPatterns = () => {
     if (!Array.isArray(robotPatterns)) return [];
     return robotPatterns.filter(p => 
       (selectedSymbol === 'TODOS' || p.symbol === selectedSymbol) &&
-      (statusFilter === 'all' || p.status === statusFilter)
+      (statusFilter === 'all' || p.status === statusFilter) &&
+      (p.robot_type ? selectedRobotTypes.includes(p.robot_type) : selectedRobotTypes.includes('Robô Tipo 1'))
     );
   };
 
@@ -808,6 +958,43 @@ export default function MotionTrackerPage() {
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        {/* 🤖 NOVO: Filtro por Tipos de Robôs */}
+        <div className="flex items-center space-x-2">
+          <span className="text-gray-300 text-sm">Tipos:</span>
+          <div className="relative">
+            <Button
+              onClick={toggleAllRobotTypes}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 text-sm border border-gray-600"
+              size="sm"
+            >
+              {selectedRobotTypes.length === robotTypes.length ? '✓ Todos' : 
+               selectedRobotTypes.length === 0 ? 'Nenhum' : 
+               `${selectedRobotTypes.length} tipos`}
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* 🤖 NOVO: Checkboxes para seleção individual de tipos */}
+      <div className="flex flex-wrap items-center gap-3 bg-gray-800/50 p-3 rounded-lg border border-gray-600">
+        <span className="text-gray-300 text-sm font-medium">Filtrar por tipos:</span>
+        {robotTypes.map(robotType => (
+          <label key={robotType} className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedRobotTypes.includes(robotType)}
+              onChange={() => toggleRobotType(robotType)}
+              className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+            />
+            <Badge className={`${getRobotTypeColor(robotType)} text-white text-xs`}>
+              {robotType}
+            </Badge>
+          </label>
+        ))}
+        <div className="text-xs text-gray-400 ml-auto">
+          {selectedRobotTypes.length} de {robotTypes.length} selecionados
         </div>
       </div>
 
@@ -954,9 +1141,9 @@ export default function MotionTrackerPage() {
                 <div className="text-center py-8">
                   <div className="text-gray-400">Carregando histórico de mudanças...</div>
                 </div>
-              ) : robotStatusChanges.length === 0 ? (
+              ) : allRobotChanges.length === 0 ? (
                 <div className="text-center py-8">
-                  <div className="text-gray-400">Nenhuma mudança de status detectada</div>
+                  <div className="text-gray-400">Nenhuma mudança detectada</div>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -967,78 +1154,211 @@ export default function MotionTrackerPage() {
                     </div>
                   )}
                   
-                  {robotStatusChanges
-                    .filter(change => selectedSymbol === 'TODOS' || change.symbol === selectedSymbol)
+                  {/* 🤖 NOVO: Filtro visual para tipos de robôs */}
+                  {selectedRobotTypes.length < robotTypes.length && (
+                    <div className="bg-purple-900/20 border border-purple-500 text-purple-300 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
+                      <span>🤖 Filtrando por tipos:</span>
+                      {selectedRobotTypes.map(type => (
+                        <Badge key={type} className={`${getRobotTypeColor(type)} text-white text-xs`}>
+                          {type}
+                        </Badge>
+                      ))}
+                      <span className="text-xs text-purple-400 ml-2">
+                        ({selectedRobotTypes.length} de {robotTypes.length} tipos selecionados)
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* 📊 NOVO: Contador de resultados */}
+                  <div className="text-xs text-gray-400 text-center py-2">
+                    Exibindo {allRobotChanges
+                      .filter(change => 
+                        (selectedSymbol === 'TODOS' || change.symbol === selectedSymbol) &&
+                        (change.robot_type || change.new_type || change.old_type ? 
+                          selectedRobotTypes.includes(change.robot_type || change.new_type || change.old_type || 'Robô Tipo 1') : 
+                          selectedRobotTypes.includes('Robô Tipo 1'))
+                      )
+                      .slice(0, 50).length
+                    } de {allRobotChanges.length} mudanças
+                  </div>
+                  
+                  {allRobotChanges
+                    .filter(change => {
+                      const symbolMatch = selectedSymbol === 'TODOS' || change.symbol === selectedSymbol;
+                      
+                      // Lógica de filtro por tipo mais inclusiva
+                      const robotType = change.robot_type || change.new_type || change.old_type;
+                      let typeMatch = true; // Por padrão, inclui
+                      
+                      if (robotType) {
+                        // Se tem tipo definido, verifica se está selecionado
+                        typeMatch = selectedRobotTypes.includes(robotType);
+                        
+                        // ✅ FALLBACK: Se não está na lista conhecida, assume Tipo 0 para volumes baixos
+                        if (!typeMatch && !robotTypes.includes(robotType)) {
+                          typeMatch = selectedRobotTypes.includes('Robô Tipo 0');
+                        }
+                      }
+                      
+                      return symbolMatch && typeMatch;
+                    })
                     .slice(0, 50) // ✅ garante que apenas 50 sejam renderizados
                     .map((change, index) => (
                     <div key={change.id || index} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center space-x-3">
-                          <Badge className={change.new_status === 'active' ? 'bg-green-600' : 'bg-red-600'}>
-                            {change.new_status === 'active' ? '🟢 INICIADO' : '🔴 PARADO'}
-                          </Badge>
-                          <Badge className="bg-gray-600 text-white">
-                            {change.symbol}
-                          </Badge>
-                          <span className="text-gray-300 text-sm">
-                            Corretora: {change.agent_name || getAgentName(change.agent_id)}
-                          </span>
-                          <span className="text-gray-400 text-sm">
-                            {change.pattern_type}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-lg font-bold text-white">
-                            {(change.confidence_score * 100).toFixed(0)}%
+                      {change.change_category === 'status' ? (
+                        // ✅ Card de mudança de status (existente)
+                        <>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              <Badge className={`${getRobotTypeColor(change.robot_type || 'Robô Tipo 0')} text-white`}>
+                                {change.robot_type || 'Robô Tipo 0'}
+                              </Badge>
+                              <Badge className={change.new_status === 'active' ? 'bg-green-600' : 'bg-red-600'}>
+                                {change.new_status === 'active' ? '🟢 INICIADO' : '🔴 PARADO'}
+                              </Badge>
+                              <Badge className="bg-gray-600 text-white">
+                                {change.symbol}
+                              </Badge>
+                              <span className="text-gray-300 text-sm">
+                                Corretora: {change.agent_name || getAgentName(change.agent_id)}
+                              </span>
+                              <span className="text-gray-400 text-sm">
+                                {change.pattern_type}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-lg font-bold text-white">
+                                {(change.confidence_score * 100).toFixed(0)}%
+                              </div>
+                              <div className="text-xs text-gray-400">Confiança</div>
+                            </div>
                           </div>
-                          <div className="text-xs text-gray-400">Confiança</div>
-                        </div>
-                      </div>
+                        </>
+                      ) : (
+                        // ✅ NOVO: Card de mudança de tipo
+                        <>
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              <Badge className="bg-purple-600 text-white">
+                                🔄 ATUALIZAÇÃO
+                              </Badge>
+                              <Badge className={`${getRobotTypeColor(change.old_type || 'Robô Tipo 1')} text-white`}>
+                                {change.old_type}
+                              </Badge>
+                              <span className="text-gray-300 text-sm">→</span>
+                              <Badge className={`${getRobotTypeColor(change.new_type || 'Robô Tipo 1')} text-white`}>
+                                {change.new_type}
+                              </Badge>
+                              <Badge className="bg-gray-600 text-white">
+                                {change.symbol}
+                              </Badge>
+                              <span className="text-gray-300 text-sm">
+                                Corretora: {change.agent_name || getAgentName(change.agent_id)}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-lg font-bold text-white">
+                                {change.new_volume_percentage?.toFixed(2)}%
+                              </div>
+                              <div className="text-xs text-gray-400">Volume Atual</div>
+                            </div>
+                          </div>
+                        </>
+                      )}
                       
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
-                        <div>
-                          <div className="text-gray-400">Status Anterior</div>
-                          <div className="text-white font-medium">
-                            {change.old_status === 'active' ? '🟢 Ativo' : 
-                             change.old_status === 'inactive' ? '🔴 Inativo' : '🟡 Suspeito'}
+                      {change.change_category === 'status' ? (
+                        // ✅ Detalhes para mudança de status
+                        <>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                            <div>
+                              <div className="text-gray-400">Status Anterior</div>
+                              <div className="text-white font-medium">
+                                {change.old_status === 'active' ? '🟢 Ativo' : 
+                                 change.old_status === 'inactive' ? '🔴 Inativo' : '🟡 Suspeito'}
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-gray-400">Volume Total</div>
+                              <div className="text-white font-medium">{formatVolume(change.total_volume)}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-400">Total Trades</div>
+                              <div className="text-white font-medium">{change.total_trades}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-400">Volume %</div>
+                              <div className="text-white font-medium">
+                                {change.market_volume_percentage ? 
+                                  `${change.market_volume_percentage.toFixed(2)}%` : 
+                                  'N/A'
+                                }
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                        <div>
-                          <div className="text-gray-400">Volume Total</div>
-                          <div className="text-white font-medium">{formatVolume(change.total_volume)}</div>
-                        </div>
-                        <div>
-                          <div className="text-gray-400">Total Trades</div>
-                          <div className="text-white font-medium">{change.total_trades}</div>
-                        </div>
-                        <div>
-                          <div className="text-gray-400">Volume %</div>
-                          <div className="text-white font-medium">
-                            {change.market_volume_percentage ? 
-                              `${change.market_volume_percentage.toFixed(2)}%` : 
-                              'N/A'
+                          
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                            <div>
+                              <div className="text-gray-400">Tipo do Robô</div>
+                              <div className="text-white font-medium">{change.robot_type || 'Robô Tipo 1'}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-400">Timestamp</div>
+                              <div className="text-white font-medium">{formatTime(change.timestamp)}</div>
+                            </div>
+                            <div className="col-span-2">
+                              <div className="text-gray-400">Tipo de Padrão</div>
+                              <div className="text-white font-medium">{change.pattern_type}</div>
+                            </div>
+                          </div>
+                          
+                          <div className="text-xs text-gray-400 text-center pt-2 border-t border-gray-600">
+                            {change.new_status === 'active' ? 
+                              `🟢 Robô ${change.agent_name || getAgentName(change.agent_id)} iniciou operação em ${change.symbol}` :
+                              `🔴 Robô ${change.agent_name || getAgentName(change.agent_id)} parou operação em ${change.symbol}`
                             }
                           </div>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
-                        <div>
-                          <div className="text-gray-400">Timestamp</div>
-                          <div className="text-white font-medium">{formatTime(change.timestamp)}</div>
-                        </div>
-                        <div className="col-span-3">
-                          <div className="text-gray-400">Tipo de Padrão</div>
-                          <div className="text-white font-medium">{change.pattern_type}</div>
-                        </div>
-                      </div>
-                      
-                      <div className="text-xs text-gray-400 text-center pt-2 border-t border-gray-600">
-                        {change.new_status === 'active' ? 
-                          `🟢 Robô ${change.agent_name || getAgentName(change.agent_id)} iniciou operação em ${change.symbol}` :
-                          `🔴 Robô ${change.agent_name || getAgentName(change.agent_id)} parou operação em ${change.symbol}`
-                        }
-                      </div>
+                        </>
+                      ) : (
+                        // ✅ NOVO: Detalhes para mudança de tipo
+                        <>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-3">
+                            <div>
+                              <div className="text-gray-400">Volume Anterior</div>
+                              <div className="text-white font-medium">{change.old_volume_percentage?.toFixed(2)}%</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-400">Volume Atual</div>
+                              <div className="text-white font-medium">{change.new_volume_percentage?.toFixed(2)}%</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-400">Variação</div>
+                              <div className={`font-medium ${(change.new_volume_percentage || 0) > (change.old_volume_percentage || 0) ? 'text-green-400' : 'text-red-400'}`}>
+                                {(change.new_volume_percentage || 0) > (change.old_volume_percentage || 0) ? '+' : ''}
+                                {((change.new_volume_percentage || 0) - (change.old_volume_percentage || 0)).toFixed(2)}%
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-gray-400">Timestamp</div>
+                              <div className="text-white font-medium">{formatTime(change.timestamp)}</div>
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 md:grid-cols-2 gap-4 text-sm mb-3">
+                            <div>
+                              <div className="text-gray-400">Total Trades</div>
+                              <div className="text-white font-medium">{change.total_trades}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-400">Volume Total</div>
+                              <div className="text-white font-medium">{formatVolume(change.total_volume)}</div>
+                            </div>
+                          </div>
+                          
+                          <div className="text-xs text-gray-400 text-center pt-2 border-t border-gray-600">
+                            🔄 Robô {change.agent_name || getAgentName(change.agent_id)} em {change.symbol} mudou de {change.old_type} para {change.new_type}
+                          </div>
+                        </>
+                      )}
 
                       {/* ✅ NOVO: Botão para listar operações também no Start/Stop */}
                       <div className="mt-3 flex justify-end">
@@ -1103,10 +1423,24 @@ export default function MotionTrackerPage() {
                     </div>
                   )}
                   
+                  {/* 🤖 NOVO: Filtro visual para tipos de robôs */}
+                  {selectedRobotTypes.length < robotTypes.length && (
+                    <div className="bg-purple-900/20 border border-purple-500 text-purple-300 px-3 py-2 rounded-lg text-sm">
+                      🤖 Mostrando apenas: {selectedRobotTypes.map(type => (
+                        <Badge key={type} className={`${getRobotTypeColor(type)} text-white text-xs ml-1`}>
+                          {type}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  
                   {getFilteredPatterns().map(pattern => (
                     <div key={pattern.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center space-x-3">
+                          <Badge className={`${getRobotTypeColor(pattern.robot_type)} text-white`}>
+                            {pattern.robot_type}
+                          </Badge>
                           <Badge className={getPatternTypeColor(pattern.pattern_type)}>
                             {pattern.pattern_type}
                           </Badge>

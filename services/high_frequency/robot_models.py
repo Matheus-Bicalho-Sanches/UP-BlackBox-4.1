@@ -17,6 +17,13 @@ class RobotStatus(str, Enum):
     INACTIVE = "inactive"
     SUSPICIOUS = "suspicious"
 
+class RobotType(str, Enum):
+    TYPE_0 = "Robô Tipo 0"  # 0-1% do mercado
+    TYPE_1 = "Robô Tipo 1"  # 1-5% do mercado
+    TYPE_2 = "Robô Tipo 2"  # 5-10% do mercado
+    TYPE_3 = "Robô Tipo 3"  # > 10% do mercado
+    UNKNOWN = "Tipo Desconhecido"
+
 @dataclass
 class TickData:
     """Dados de um tick para análise"""
@@ -34,6 +41,7 @@ class TWAPPattern:
     symbol: str
     exchange: str
     pattern_type: str = "TWAP"  # Tipo do padrão (TWAP, VWAP, etc.)
+    robot_type: str = RobotType.TYPE_0.value  # ✅ NOVO: Tipo do robô (padrão Tipo 0)
     agent_id: int = 0
     first_seen: datetime = None
     last_seen: datetime = None

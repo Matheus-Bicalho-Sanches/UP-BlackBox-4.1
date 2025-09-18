@@ -342,6 +342,7 @@ async def startup_event():
     
     asyncio.create_task(start_twap_detection())
     asyncio.create_task(start_inactivity_monitoring())
+    asyncio.create_task(start_volume_percentage_monitoring())  # ✅ NOVA TASK
     
     # PASSO 4: Inicializa sistemas de alta frequência
     try:
@@ -432,7 +433,7 @@ async def start_inactivity_monitoring():
             # Verifica inatividade baseado em trades reais (a cada 5 segundos)
             # Agora usa a nova coluna inactivity_notified para evitar notificações repetitivas
             inactive_robots = await twap_detector.check_robot_inactivity_by_trades(
-                inactivity_threshold_minutes=60,
+                inactivity_threshold_minutes=15,  # ✅ REDUZIDO: De 60 para 15 minutos
                 use_notification_control=True  # Novo parâmetro para usar controle de notificação
             )
             
@@ -463,6 +464,37 @@ async def start_inactivity_monitoring():
         except Exception as e:
             logger.error(f"❌ Erro no monitoramento de inatividade: {e}")
             await asyncio.sleep(60)  # Aguarda 1 minuto em caso de erro
+
+async def start_volume_percentage_monitoring():
+    """Monitora e atualiza volume % dos robôs ativos a cada 1 minuto"""
+    global system_initialized
+    
+    if not system_initialized:
+        logger.error("Sistema não inicializado. Aguarde...")
+        return
+    
+    logger.info("📊 Iniciando monitoramento de volume % dos robôs...")
+    
+    while system_initialized:
+        try:
+            logger.info("🔍 Recalculando volume % dos robôs ativos...")
+            
+            # Atualiza volume % de todos os robôs ativos
+            type_changes = await twap_detector.update_active_robots_volume_percentage()
+            
+            if type_changes:
+                logger.info(f"🔄 {len(type_changes)} mudanças de tipo detectadas")
+                for change in type_changes:
+                    logger.info(f"   📈 {change['symbol']} - {change['agent_name']} ({change['agent_id']}): {change['old_type']} -> {change['new_type']} ({change['old_volume_percentage']:.2f}% -> {change['new_volume_percentage']:.2f}%)")
+            else:
+                logger.debug("✅ Nenhuma mudança de tipo detectada")
+            
+            # Aguarda 1 minuto antes da próxima verificação
+            await asyncio.sleep(60)
+            
+        except Exception as e:
+            logger.error(f"❌ Erro no monitoramento de volume %: {e}")
+            await asyncio.sleep(60)
 
 # Endpoints da API
 @app.post("/subscribe")
@@ -599,6 +631,7 @@ async def get_robot_patterns():
                     'symbol': pattern.symbol,
                     'exchange': pattern.exchange,
                     'pattern_type': pattern.pattern_type,
+                    'robot_type': pattern.robot_type,  # ✅ NOVO CAMPO
                     'confidence_score': pattern.confidence_score,
                     'agent_id': pattern.agent_id,
                     'first_seen': pattern.first_seen.isoformat(),
@@ -692,6 +725,23 @@ async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24
 		
 	except Exception as e:
 		logger.error(f"Erro ao buscar mudanças de status de robôs: {e}")
+		raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/robots/all-changes")
+async def get_all_robot_changes(symbol: Optional[str] = None, hours: int = 24):
+	"""Retorna todas as mudanças (status + tipo) dos robôs"""
+	try:
+		if not twap_detector:
+			raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
+		
+		# Busca todas as mudanças (status + tipo)
+		all_changes = twap_detector.get_all_changes(symbol, hours)
+		
+		logger.info(f"Retornando {len(all_changes)} mudanças totais (status + tipo)")
+		return all_changes
+		
+	except Exception as e:
+		logger.error(f"Erro ao buscar mudanças dos robôs: {e}")
 		raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/{symbol}/{agent_id}/trades")

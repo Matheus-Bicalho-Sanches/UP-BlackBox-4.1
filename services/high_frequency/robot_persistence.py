@@ -28,14 +28,14 @@ class RobotPersistence:
                     # Insere o padrão
                     await cur.execute("""
                         INSERT INTO robot_patterns (
-                            symbol, exchange, pattern_type, confidence_score, agent_id,
+                            symbol, exchange, pattern_type, robot_type, confidence_score, agent_id,
                             first_seen, last_seen, total_volume, total_trades,
                             avg_trade_size, frequency_minutes, price_aggression, status, 
                             market_volume_percentage, created_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                     """, (
-                        pattern.symbol, pattern.exchange, 'TWAP', pattern.confidence_score,
+                        pattern.symbol, pattern.exchange, 'TWAP', pattern.robot_type, pattern.confidence_score,
                         pattern.agent_id, pattern.first_seen, pattern.last_seen,
                         pattern.total_volume, pattern.total_trades, pattern.avg_trade_size,
                         pattern.frequency_minutes, pattern.price_aggression, pattern.status.value,
@@ -61,6 +61,7 @@ class RobotPersistence:
                 async with conn.cursor() as cur:
                     await cur.execute("""
                         UPDATE robot_patterns SET
+                            robot_type = %s,
                             last_seen = %s,
                             total_volume = %s,
                             total_trades = %s,
@@ -76,7 +77,7 @@ class RobotPersistence:
                             END
                         WHERE id = %s
                     """, (
-                        pattern.last_seen, pattern.total_volume, pattern.total_trades,
+                        pattern.robot_type, pattern.last_seen, pattern.total_volume, pattern.total_trades,
                         pattern.avg_trade_size, pattern.frequency_minutes,
                         pattern.price_aggression, pattern.confidence_score,
                         pattern.status.value, pattern.market_volume_percentage,
@@ -139,6 +140,7 @@ class RobotPersistence:
                         # Atualiza padrão existente
                         await cur.execute("""
                             UPDATE robot_patterns SET
+                                robot_type = %s,
                                 last_seen = %s,
                                 total_volume = %s,
                                 total_trades = %s,
@@ -151,7 +153,7 @@ class RobotPersistence:
                                 inactivity_notified = CASE WHEN %s = 'active' THEN FALSE ELSE inactivity_notified END
                              WHERE id = %s
                         """, (
-                            pattern.last_seen, pattern.total_volume, pattern.total_trades,
+                            pattern.robot_type, pattern.last_seen, pattern.total_volume, pattern.total_trades,
                             pattern.avg_trade_size, pattern.frequency_minutes,
                             pattern.price_aggression, pattern.confidence_score,
                             pattern.status.value, pattern.market_volume_percentage,
@@ -161,14 +163,14 @@ class RobotPersistence:
                         # Insere novo padrão e obtém ID
                         await cur.execute("""
                             INSERT INTO robot_patterns (
-                                symbol, exchange, pattern_type, confidence_score, agent_id,
+                                symbol, exchange, pattern_type, robot_type, confidence_score, agent_id,
                                 first_seen, last_seen, total_volume, total_trades,
-                                avg_trade_size, frequency_minutes, price_aggression, status,
+                                avg_trade_size, frequency_minutes, price_aggression, status, 
                                 market_volume_percentage, created_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             RETURNING id
                         """, (
-                            pattern.symbol, pattern.exchange, 'TWAP', pattern.confidence_score,
+                            pattern.symbol, pattern.exchange, 'TWAP', pattern.robot_type, pattern.confidence_score,
                             pattern.agent_id, pattern.first_seen, pattern.last_seen,
                             pattern.total_volume, pattern.total_trades, pattern.avg_trade_size,
                             pattern.frequency_minutes, pattern.price_aggression, pattern.status.value,
@@ -193,12 +195,27 @@ class RobotPersistence:
                         market_volume = float(r2[0]) if r2 and r2[0] else 0.0
                         if market_volume > 0:
                             volume_pct = round((pattern.total_volume / market_volume) * 100.0, 2)
+                            
+                            # ✅ NOVO: Determina o tipo do robô baseado no volume %
+                            from robot_models import RobotType
+                            if volume_pct > 10.0:
+                                robot_type = RobotType.TYPE_3.value  # "Robô Tipo 3" - > 10%
+                            elif volume_pct >= 5.0:
+                                robot_type = RobotType.TYPE_2.value  # "Robô Tipo 2" - 5% a 10%
+                            elif volume_pct >= 1.0:
+                                robot_type = RobotType.TYPE_1.value  # "Robô Tipo 1" - 1% a 5%
+                            else:
+                                robot_type = RobotType.TYPE_0.value  # "Robô Tipo 0" - 0% a 1%
+                            
+                            # Atualiza volume % e tipo do robô
                             await cur.execute("""
                                 UPDATE robot_patterns
-                                   SET market_volume_percentage = %s
+                                   SET market_volume_percentage = %s,
+                                       robot_type = %s
                                  WHERE id = %s
-                            """, (volume_pct, pattern_id))
+                            """, (volume_pct, robot_type, pattern_id))
                             pattern.market_volume_percentage = volume_pct
+                            pattern.robot_type = robot_type
                     except Exception as e:
                         logger.warning(f"Não foi possível calcular/atualizar market_volume_percentage: {e}")
 
@@ -235,7 +252,7 @@ class RobotPersistence:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
-                        SELECT id, status, first_seen, total_volume, total_trades, avg_trade_size, inactivity_notified
+                        SELECT id, status, robot_type, first_seen, total_volume, total_trades, avg_trade_size, inactivity_notified
                         FROM robot_patterns
                         WHERE symbol = %s AND agent_id = %s AND pattern_type = 'TWAP'
                         ORDER BY last_seen DESC
@@ -447,6 +464,27 @@ class RobotPersistence:
             logger.error(f"💥 Erro ao buscar trades do robô {agent_id} em {symbol}: {e}")
             logger.error(f"📋 Traceback completo:", exc_info=True)
             return []
+
+    async def get_robot_volume_for_period(self, symbol: str, agent_id: int, 
+                                        start_time: datetime, end_time: datetime) -> float:
+        """Calcula volume total do robô em um período específico"""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT COALESCE(SUM(price * volume), 0) as robot_volume
+                        FROM ticks_raw 
+                        WHERE symbol = %s 
+                          AND timestamp BETWEEN %s AND %s
+                          AND (buy_agent = %s OR sell_agent = %s)
+                    """, (symbol, start_time, end_time, agent_id, agent_id))
+                    
+                    result = await cur.fetchone()
+                    return float(result[0]) if result and result[0] else 0.0
+                    
+        except Exception as e:
+            logger.error(f"Erro ao calcular volume do robô: {e}")
+            return 0.0
 
     async def get_market_volume_for_period(self, symbol: str, start_time: datetime, end_time: datetime) -> float:
         """Retorna volume total do mercado para um período específico"""
