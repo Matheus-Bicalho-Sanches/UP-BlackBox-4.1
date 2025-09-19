@@ -706,19 +706,6 @@ class TWAPDetector:
             logger.error(f"Erro ao atualizar volume % dos robôs ativos: {e}")
             return []
 
-    def get_status_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
-        """Retorna mudanças de status filtradas por símbolo e tempo"""
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)  # ✅ CORRIGIDO: Usa timezone UTC
-        
-        filtered_changes = []
-        for change in self.status_history:
-            change_time = datetime.fromisoformat(change['timestamp'])
-            if change_time >= cutoff_time:
-                if symbol is None or change['symbol'] == symbol:
-                    filtered_changes.append(change)
-        
-        return filtered_changes
-
     async def detect_stopped_robots(self, inactivity_threshold_minutes: int = 5) -> List[Dict]:
         """Detecta robôs que pararam de operar nas últimas X minutos"""
         try:

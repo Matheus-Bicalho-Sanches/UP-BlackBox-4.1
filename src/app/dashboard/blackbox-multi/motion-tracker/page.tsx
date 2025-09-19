@@ -471,9 +471,13 @@ export default function MotionTrackerPage() {
         ? `${API_BASE_URL}/robots/status-changes?symbol=${symbol}&hours=24`
         : `${API_BASE_URL}/robots/status-changes?hours=24`;
       
+      console.log(`🔍 Buscando mudanças de status: ${url}`);
+      
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`Erro na API: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`❌ Erro HTTP ${response.status}:`, errorText);
+        throw new Error(`Erro na API: ${response.status} - ${errorText || 'Servidor indisponível'}`);
       }
       
       const data = await response.json();
@@ -498,7 +502,11 @@ export default function MotionTrackerPage() {
       
     } catch (err) {
       console.error('Erro ao buscar mudanças de status:', err);
-      setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('Servidor de API não está disponível (localhost:8002). Verifique se o servidor está rodando.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Erro desconhecido');
+      }
       setRobotStatusChanges([]);
     } finally {
       setLoading(false);
@@ -1096,32 +1104,32 @@ export default function MotionTrackerPage() {
             Padrões Detectados
             {tabLoading.patterns && <span className="ml-2">⏳</span>}
             {loadedTabs.has('patterns') && (
-              <button 
+              <span 
                 onClick={(e) => {
                   e.stopPropagation();
                   setLoadedTabs(prev => new Set([...prev].filter(tab => tab !== 'patterns')));
                 }}
-                className="ml-2 text-xs text-gray-500 hover:text-gray-300"
+                className="ml-2 text-xs text-gray-500 hover:text-gray-300 cursor-pointer"
                 title="Recarregar aba"
               >
                 🔄
-              </button>
+              </span>
             )}
           </TabsTrigger>
           <TabsTrigger value="analytics" className="text-gray-300 data-[state=active]:bg-gray-700 data-[state=active]:text-white">
             Análise Avançada
             {tabLoading.analytics && <span className="ml-2">⏳</span>}
             {loadedTabs.has('analytics') && (
-              <button 
+              <span 
                 onClick={(e) => {
                   e.stopPropagation();
                   setLoadedTabs(prev => new Set([...prev].filter(tab => tab !== 'analytics')));
                 }}
-                className="ml-2 text-xs text-gray-500 hover:text-gray-300"
+                className="ml-2 text-xs text-gray-500 hover:text-gray-300 cursor-pointer"
                 title="Recarregar aba"
               >
                 🔄
-              </button>
+              </span>
             )}
           </TabsTrigger>
         </TabsList>
