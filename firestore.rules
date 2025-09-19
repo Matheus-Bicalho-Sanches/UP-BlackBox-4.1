@@ -243,6 +243,41 @@ service cloud.firestore {
           : true);
     }
 
+    // Regras para a coleção logs (auditoria de ações da aba)
+    match /logs/{logId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasOnly(['timestamp', 'action', 'accountId', 'accountName', 'details', 'status'])
+        && request.resource.data.timestamp is timestamp
+        && request.resource.data.action is string
+        && request.resource.data.action.size() > 0
+        && request.resource.data.accountId is string
+        && request.resource.data.accountName is string
+        && request.resource.data.details is string
+        && request.resource.data.status in ['success', 'error', 'warning', 'info'];
+
+      allow delete: if isAuthenticated();
+      allow update: if isAuthenticated();
+    }
+
+    // Regras para a coleção saldologs (histórico de ajustes de saldo)
+    match /saldologs/{logId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated()
+        && request.resource.data.keys().hasOnly(['accountId', 'accountName', 'accountDocId', 'changes', 'changedBy', 'createdAt', 'createdAtIso'])
+        && request.resource.data.accountId is string
+        && request.resource.data.accountId.size() > 0
+        && request.resource.data.accountName is string
+        && request.resource.data.accountDocId is string
+        && request.resource.data.changes is list
+        && request.resource.data.changes.size() > 0
+        && request.resource.data.createdAtIso is string;
+
+      allow delete: if hasRole('admin');
+    }
+
     // Regras para a coleção CarteirasDeRefDLL (Carteiras de Referência - Aba Sync)
     match /CarteirasDeRefDLL/{positionId} {
       // Qualquer usuário autenticado pode ler as posições de referência

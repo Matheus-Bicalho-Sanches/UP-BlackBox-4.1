@@ -1,113 +1,120 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Site-UP Platform
 
-## Project Overview
+Site-UP is a multi-application platform that combines the public marketing site, the client portal, and the internal operations dashboard used by the UP team. The repository also ships helper services that provide quantitative trading automation, market data ingestion, and an OpenAI-powered assistant for the homepage.
 
-This project is a web application built using [Next.js](https://nextjs.org), a React framework for production. It leverages Firebase for authentication and data storage, providing a robust platform for building scalable web applications.
+## Highlights
+- Next.js 14 front end with Firebase auth, Firestore, and Postgres integrations
+- Client portal so investors can follow portfolios, payments, and documents in real time
+- Internal dashboard with CRM, tasks, market data, and UP BlackBox operations tooling
+- API layer that connects to Asaas billing, Profit data feeds, and UP back office services
+- Python services for quant strategies, high-frequency data orchestration, and diagnostics
+- Optional Node backend that proxies questions to OpenAI for the interactive homepage hero
 
-## Features
+## Repository Layout
+```
+.
++-- src/                  # Next.js application (marketing site, dashboard, portal)
++-- docs/                 # Internal guides and runbooks (mostly Portuguese)
++-- services/             # Python tooling for quant, market feed, and profit bridge
++-- backendhomepagesiteUP # Node service that exposes /ask -> OpenAI
++-- scripts/              # Helper scripts for local setup
++-- public/               # Static assets served by Next.js
++-- data/                 # Sample datasets used by the marketing pages
+```
 
-- User Authentication with Firebase
-- Task Management System
-- Responsive Design
-- Modular and Reusable Components
+## Requirements
+- Node.js 22.x (enforced via package.json "engines")
+- npm 9+ (or pnpm/bun if you prefer, but npm is the default in this repo)
+- Python 3.11+ for the services in `services/`
+- Postgres reachable through `DATABASE_URL` when running dashboard features that read server data
 
-## Prerequisites
-
-Before you begin, ensure you have met the following requirements:
-
-- Node.js and npm installed on your machine
-- Firebase account and project setup
-
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   ```
-
-2. Navigate to the project directory:
-   ```bash
-   cd project-directory
-   ```
-
-3. Install dependencies:
+## Getting Started (Next.js App)
+1. Install dependencies
    ```bash
    npm install
    ```
-
-## Configuration
-
-1. Create a `.env.local` file in the root directory and add your Firebase configuration:
+2. Copy your environment variables into `.env.local` (see the next section)
+3. Start the development server
+   ```bash
+   npm run dev
    ```
-   NEXT_PUBLIC_FIREBASE_API_KEY=your-api-key
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your-auth-domain
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your-storage-bucket
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your-messaging-sender-id
-   NEXT_PUBLIC_FIREBASE_APP_ID=your-app-id
-   ```
+4. Open `http://localhost:3000` and edit `src/app/newhome/page.tsx` (the root route re-exports this file)
 
-## Running the Application
-
-To start the development server, run:
-
+The build and production commands follow the standard Next.js flow:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run build
+npm run start
+npm run lint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Environment Variables
+Create `.env.local` and add the values you have for each service. The most commonly used variables are listed below.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Public Firebase client (required for auth/ui)
+```
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Server credentials and integrations
+```
+FIREBASE_PROJECT_ID=
+FIREBASE_PRIVATE_KEY_ID=
+FIREBASE_PRIVATE_KEY=    # remember to keep newline escapes (\n) if pasting a JSON key
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_CLIENT_ID=
+FIREBASE_CERT_URL=
+DATABASE_URL=            # Postgres connection string
+ASAAS_API_KEY=
+ASAAS_ENVIRONMENT=       # production | sandbox
+PROFIT_FEED_URL=         # e.g. http://localhost:8001
+BACKEND_URL=             # default http://localhost:8000 (UP back office)
+NEXT_PUBLIC_BACKEND_ASK_URL= # matches backendhomepagesiteUP deployment, defaults to http://localhost:3001/ask
+NEXT_PUBLIC_EXCHANGE_TZ=      # optional, defaults to America/Sao_Paulo
+```
 
-## Project Structure
+Check any `.env.*` files already present for reference values that you may need in your environment.
 
-- `src/`: Contains the source code of the application
-  - `components/`: Reusable React components
-  - `config/`: Configuration files
-  - `contexts/`: Context API for state management
-  - `app/`: Next.js pages and API routes
+## Supporting Services
 
-## Learn More
+### Homepage AI backend (`backendhomepagesiteUP`)
+This Express service exposes `POST /ask` and forwards questions to OpenAI.
+```bash
+cd backendhomepagesiteUP
+npm install
+# .env -> OPENAI_API_KEY=<your key>
+npm start
+```
+Set `NEXT_PUBLIC_BACKEND_ASK_URL` so the marketing hero component can reach this endpoint.
 
-To learn more about Next.js, take a look at the following resources:
+### Python engines (`services/`)
+Each folder contains its own README or quick-start guide:
+- `services/quant`: Quant strategy engine integrated with UP BlackBox and Firebase
+- `services/high_frequency`: Market data ingestion, diagnostics, and maintenance scripts
+- `services/profit` & `services/market_feed_next`: Bridges to Profit data feeds and other internal tools
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Typical setup:
+```bash
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+pip install -r requirements.txt
+```
+Follow the docs inside each folder for service-specific environment variables, credentials, and run commands.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## Deployment
-
-To deploy the application, follow the [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying).
+## Documentation
+Inside the `docs/` directory you will find detailed guides (currently written in Portuguese) that cover workflow procedures, bug fixes, and deployment plans for the trading stack.
 
 ## Contributing
-
-Contributions are welcome! Please follow these steps:
-
 1. Fork the repository
-2. Create a new branch (`git checkout -b feature/YourFeature`)
-3. Make your changes
-4. Commit your changes (`git commit -m 'Add some feature'`)
-5. Push to the branch (`git push origin feature/YourFeature`)
-6. Open a pull request
+2. Create a feature branch (`git checkout -b feature/my-change`)
+3. Commit with clear messages (`git commit -m "Add my change"`)
+4. Push and open a pull request for review
+
+Please also run `npm run lint` before submitting frontend changes, and run the relevant Python test scripts when touching the services.
 
 ## License
-
-This project is licensed under the MIT License.
-
-
-Teste mudança Git
+This project is distributed under the MIT License.

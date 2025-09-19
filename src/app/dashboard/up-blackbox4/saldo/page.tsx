@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, getDoc, setDoc, updateDoc, doc, serverTimestamp, collection as fbCollection, query, where, Timestamp } from "firebase/firestore";
+import { getFirestore, collection, getDocs, getDoc, setDoc, updateDoc, doc, serverTimestamp, collection as fbCollection, query, where, Timestamp, addDoc } from "firebase/firestore";
 import { FiEdit2, FiHelpCircle, FiDollarSign } from "react-icons/fi";
 
 const firebaseConfig = {
@@ -15,6 +16,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+interface SaldoLogChange {
+  field: string;
+  before: number;
+  after: number;
+  format: "currency" | "percent" | "quantity";
+}
 
 function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayValues, setDisplayValues, loading, clientName, clientAccountId, indicators }: any) {
   if (!isOpen) return null;
@@ -250,6 +258,7 @@ export default function SaldoPage() {
   const [adjustSummary, setAdjustSummary] = useState<string[]>([]);
   // Seleção de contas para ajuste em massa
   const [selectedAccounts, setSelectedAccounts] = useState<Set<string>>(new Set());
+  const { user } = useAuth();
 
   function toggleSelectAccount(accountId: string) {
     setSelectedAccounts((prev) => {
@@ -1229,21 +1238,65 @@ export default function SaldoPage() {
               const cliente = clientes[editIdx];
               const accountId = cliente.AccountID;
               const clienteDocId = cliente._id;
+              const accountName = cliente["Nome Cliente"] || "";
               
+              const previousSaldoHoje = Number(cliente["Saldo Hoje"] ?? 0);
+              const previousSaldoD1Final = (saldosFuturos[accountId]?.d1 ?? 0) + Number(cliente["AjusteSaldoD1"] ?? 0);
+              const previousSaldoD2Final = (saldosFuturos[accountId]?.d2 ?? 0) + Number(cliente["AjusteSaldoD2"] ?? 0);
+              const previousPctMin = Number(cliente.PctSaldoMin ?? DEFAULT_PCT_MIN);
+              const previousPctMax = Number(cliente.PctSaldoMax ?? DEFAULT_PCT_MAX);
+              const previousQuantityFinal = Number(lftsPositions[accountId]?.quantity ?? 0);
+
+              const getNumericValue = (value: unknown, fallback: number) =>
+                typeof value === "number" && !Number.isNaN(value) ? value : fallback;
+
+              const newValores = {
+                saldoHoje: getNumericValue(editValues["Saldo Hoje"], previousSaldoHoje),
+                saldoD1: getNumericValue(editValues["Saldo D+1"], previousSaldoD1Final),
+                saldoD2: getNumericValue(editValues["Saldo D+2"], previousSaldoD2Final),
+                pctMin: getNumericValue(editValues.PctSaldoMin, previousPctMin),
+                pctMax: getNumericValue(editValues.PctSaldoMax, previousPctMax),
+                quantity: getNumericValue(editValues.quantity, previousQuantityFinal),
+              };
+
+              const changes: SaldoLogChange[] = [];
+              const logChange = (
+                field: string,
+                before: number,
+                after: number,
+                format: SaldoLogChange["format"]
+              ) => {
+                const safeBefore = Number.isFinite(before) ? before : 0;
+                const safeAfter = Number.isFinite(after) ? after : 0;
+                let tolerance = 0.0001;
+                if (format === "currency") tolerance = 0.005;
+                if (format === "percent") tolerance = 0.001;
+                if (Math.abs(safeBefore - safeAfter) > tolerance) {
+                  changes.push({ field, before: safeBefore, after: safeAfter, format });
+                }
+              };
+
+              logChange("Saldo Hoje", previousSaldoHoje, newValores.saldoHoje, "currency");
+              logChange("Saldo D+1", previousSaldoD1Final, newValores.saldoD1, "currency");
+              logChange("Saldo D+2", previousSaldoD2Final, newValores.saldoD2, "currency");
+              logChange("% min caixa", previousPctMin, newValores.pctMin, "percent");
+              logChange("% max caixa", previousPctMax, newValores.pctMax, "percent");
+              logChange("Quantidade LFTS11", previousQuantityFinal, newValores.quantity, "quantity");
+
               // ========== SALVAR DADOS DE SALDO ==========
               const saldoUpdateData: any = {
                 updatedAt: new Date().toISOString(),
               };
               
               // Saldo Hoje e percentuais são salvos normalmente
-              if (editValues["Saldo Hoje"] !== undefined) saldoUpdateData["Saldo Hoje"] = editValues["Saldo Hoje"];
-              if (editValues.PctSaldoMin !== undefined) saldoUpdateData.PctSaldoMin = editValues.PctSaldoMin;
-              if (editValues.PctSaldoMax !== undefined) saldoUpdateData.PctSaldoMax = editValues.PctSaldoMax;
+              if (editValues["Saldo Hoje"] !== undefined) saldoUpdateData["Saldo Hoje"] = newValores.saldoHoje;
+              if (editValues.PctSaldoMin !== undefined) saldoUpdateData.PctSaldoMin = newValores.pctMin;
+              if (editValues.PctSaldoMax !== undefined) saldoUpdateData.PctSaldoMax = newValores.pctMax;
               
               // ========== CALCULAR E SALVAR AJUSTES DE SALDO D+1 E D+2 ==========
               if (editValues["Saldo D+1"] !== undefined) {
                 const saldoD1Calculado = saldosFuturos[accountId]?.d1 ?? 0;
-                const novoSaldoD1 = editValues["Saldo D+1"];
+                const novoSaldoD1 = newValores.saldoD1;
                 const novoAjusteD1 = novoSaldoD1 - saldoD1Calculado;
                 
                 console.log(`[SAVE] Saldo D+1 - Conta ${accountId}:`, {
@@ -1257,7 +1310,7 @@ export default function SaldoPage() {
               
               if (editValues["Saldo D+2"] !== undefined) {
                 const saldoD2Calculado = saldosFuturos[accountId]?.d2 ?? 0;
-                const novoSaldoD2 = editValues["Saldo D+2"];
+                const novoSaldoD2 = newValores.saldoD2;
                 const novoAjusteD2 = novoSaldoD2 - saldoD2Calculado;
                 
                 console.log(`[SAVE] Saldo D+2 - Conta ${accountId}:`, {
@@ -1301,11 +1354,11 @@ export default function SaldoPage() {
                 }
 
                 // Calcular novo ajuste de quantidade (preço médio agora é fixo)
-                const novoAjusteQuantity = editValues.quantity - posicaoCalculada.quantity;
+                const novoAjusteQuantity = newValores.quantity - posicaoCalculada.quantity;
                 
                 console.log(`[SAVE] LFTS11 - Conta ${accountId}:`, {
                   posicaoCalculada,
-                  novoValor: { quantity: editValues.quantity, avgPrice: manualLftsPrice || 0 },
+                  novoValor: { quantity: newValores.quantity, avgPrice: manualLftsPrice || 0 },
                   novoAjusteQuantity,
                   precoFixo: manualLftsPrice || 0
                 });
@@ -1319,13 +1372,39 @@ export default function SaldoPage() {
               // SALVAR TODOS OS DADOS NO FIREBASE (incluindo ajustes de LFTS11)
               await updateDoc(doc(db, "contasDll", clienteDocId), saldoUpdateData);
 
+              if (changes.length > 0) {
+                try {
+                  await addDoc(collection(db, "saldologs"), {
+                    accountId,
+                    accountName,
+                    accountDocId: clienteDocId,
+                    changes,
+                    changedBy: user
+                      ? {
+                          uid: user.uid,
+                          email: user.email || null,
+                          displayName: user.displayName || user.email || null,
+                        }
+                      : {
+                          uid: null,
+                          email: null,
+                          displayName: null,
+                        },
+                    createdAt: serverTimestamp(),
+                    createdAtIso: new Date().toISOString(),
+                  });
+                } catch (logError) {
+                  console.error("[SALDO] Erro ao registrar log de saldo:", logError);
+                }
+              }
+
               // Atualiza os dados do cliente no estado local
               const novosClientes = [...clientes];
               novosClientes[editIdx] = {
                 ...novosClientes[editIdx],
-                "Saldo Hoje": editValues["Saldo Hoje"],
-                PctSaldoMin: editValues.PctSaldoMin,
-                PctSaldoMax: editValues.PctSaldoMax,
+                "Saldo Hoje": newValores.saldoHoje,
+                PctSaldoMin: newValores.pctMin,
+                PctSaldoMax: newValores.pctMax,
                 // Atualiza os ajustes calculados
                 "AjusteSaldoD1": saldoUpdateData["AjusteSaldoD1"] ?? novosClientes[editIdx]["AjusteSaldoD1"],
                 "AjusteSaldoD2": saldoUpdateData["AjusteSaldoD2"] ?? novosClientes[editIdx]["AjusteSaldoD2"],
