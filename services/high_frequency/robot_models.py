@@ -22,6 +22,7 @@ class RobotType(str, Enum):
     TYPE_1 = "Robô Tipo 1"  # 1-5% do mercado
     TYPE_2 = "Robô Tipo 2"  # 5-10% do mercado
     TYPE_3 = "Robô Tipo 3"  # > 10% do mercado
+    MARKET_TWAP = "TWAP à Mercado"  # Padrão de volume fixo + intervalo regular
     UNKNOWN = "Tipo Desconhecido"
 
 @dataclass
@@ -34,6 +35,7 @@ class TickData:
     trade_type: TradeType
     agent_id: int
     exchange: str
+    raw_trade_type: Optional[int] = None  # ✅ NOVO: trade_type real da tabela (2=comprador agressor, 3=vendedor agressor)
 
 @dataclass
 class TWAPPattern:

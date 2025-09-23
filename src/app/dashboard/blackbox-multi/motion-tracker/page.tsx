@@ -250,7 +250,7 @@ const mockSymbols = [
 const mockExchanges = ['B3', 'BMF'];
 
 // 🤖 Tipos de robôs disponíveis
-const robotTypes = ['Robô Tipo 0', 'Robô Tipo 1', 'Robô Tipo 2', 'Robô Tipo 3'];
+const robotTypes = ['Robô Tipo 0', 'Robô Tipo 1', 'Robô Tipo 2', 'Robô Tipo 3', 'TWAP à Mercado'];
 
 export default function MotionTrackerPage() {
   const [selectedSymbol, setSelectedSymbol] = useState('TODOS');
@@ -284,7 +284,7 @@ export default function MotionTrackerPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // 🤖 NOVO: Filtro por tipos de robôs (seleção múltipla)
-  const [selectedRobotTypes, setSelectedRobotTypes] = useState<string[]>(['Robô Tipo 0', 'Robô Tipo 1', 'Robô Tipo 2', 'Robô Tipo 3']);
+  const [selectedRobotTypes, setSelectedRobotTypes] = useState<string[]>(['Robô Tipo 0', 'Robô Tipo 1', 'Robô Tipo 2', 'Robô Tipo 3', 'TWAP à Mercado']);
 
   // 🔄 Controle de atualização silenciosa (debounce)
   const lastPatternsFetchRef = useRef<number>(0);
@@ -652,12 +652,16 @@ export default function MotionTrackerPage() {
   };
 
   // ✅ NOVO: Função para buscar trades de um robô específico
-  const fetchRobotTrades = async (symbol: string, agentId: number) => {
+  const fetchRobotTrades = async (symbol: string, agentId: number, opts?: { marketTwapOnly?: boolean }) => {
     try {
       setTradesLoading(true);
       setError(null);
       
-      const response = await fetch(`${API_BASE_URL}/robots/${symbol}/${agentId}/trades?hours=24&limit=200`);
+      const params = new URLSearchParams({ hours: '24', limit: '200' });
+      if (opts?.marketTwapOnly) {
+        params.set('pattern_type', 'MARKET_TWAP');
+      }
+      const response = await fetch(`${API_BASE_URL}/robots/${symbol}/${agentId}/trades?${params.toString()}`);
       if (!response.ok) {
         throw new Error(`Erro na API: ${response.status}`);
       }
@@ -685,7 +689,8 @@ export default function MotionTrackerPage() {
   const openTradesModal = async (robot: RobotPattern) => {
     setSelectedRobot(robot);
     setTradesModalOpen(true);
-    await fetchRobotTrades(robot.symbol, robot.agent_id);
+    const marketTwapOnly = robot.robot_type === 'TWAP à Mercado';
+    await fetchRobotTrades(robot.symbol, robot.agent_id, { marketTwapOnly });
   };
 
   // ✅ NOVO: Abrir modal de trades a partir do item de Start/Stop
@@ -693,7 +698,9 @@ export default function MotionTrackerPage() {
     // Usa apenas os campos necessários (symbol e agent_id)
     setSelectedRobot({ symbol: change.symbol, agent_id: change.agent_id } as unknown as RobotPattern);
     setTradesModalOpen(true);
-    await fetchRobotTrades(change.symbol, change.agent_id);
+    // fallback: sem o tipo no objeto change, buscar padrão ativo para decidir
+    // por simplicidade, prioriza mostrar TWAP à Mercado quando houver
+    await fetchRobotTrades(change.symbol, change.agent_id, { marketTwapOnly: true });
   };
   
   const disconnectWebSocket = () => {
@@ -838,6 +845,7 @@ export default function MotionTrackerPage() {
       case 'Robô Tipo 1': return 'bg-green-600';  // Verde para baixo volume (1-5%)
       case 'Robô Tipo 2': return 'bg-yellow-600'; // Amarelo para médio volume (5-10%)
       case 'Robô Tipo 3': return 'bg-red-600';    // Vermelho para alto volume (> 10%)
+      case 'TWAP à Mercado': return 'bg-cyan-600'; // Ciano para TWAP à Mercado
       default: return 'bg-blue-600';
     }
   };

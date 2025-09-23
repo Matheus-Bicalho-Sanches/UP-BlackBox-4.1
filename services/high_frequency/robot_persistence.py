@@ -35,7 +35,7 @@ class RobotPersistence:
                         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                     """, (
-                        pattern.symbol, pattern.exchange, 'TWAP', pattern.robot_type, pattern.confidence_score,
+                        pattern.symbol, pattern.exchange, pattern.pattern_type, pattern.robot_type, pattern.confidence_score,
                         pattern.agent_id, pattern.first_seen, pattern.last_seen,
                         pattern.total_volume, pattern.total_trades, pattern.avg_trade_size,
                         pattern.frequency_minutes, pattern.price_aggression, pattern.status.value,
@@ -130,7 +130,7 @@ class RobotPersistence:
                     # 1) Busca padrão existente (símbolo+agente) para decidir entre UPDATE/INSERT
                     await cur.execute("""
                         SELECT id FROM robot_patterns
-                         WHERE symbol = %s AND agent_id = %s AND pattern_type = 'TWAP'
+                         WHERE symbol = %s AND agent_id = %s AND pattern_type IN ('TWAP','MARKET_TWAP')
                          ORDER BY last_seen DESC
                          LIMIT 1
                     """, (pattern.symbol, pattern.agent_id))
@@ -170,7 +170,7 @@ class RobotPersistence:
                             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                             RETURNING id
                         """, (
-                            pattern.symbol, pattern.exchange, 'TWAP', pattern.robot_type, pattern.confidence_score,
+                            pattern.symbol, pattern.exchange, pattern.pattern_type, pattern.robot_type, pattern.confidence_score,
                             pattern.agent_id, pattern.first_seen, pattern.last_seen,
                             pattern.total_volume, pattern.total_trades, pattern.avg_trade_size,
                             pattern.frequency_minutes, pattern.price_aggression, pattern.status.value,
@@ -254,7 +254,7 @@ class RobotPersistence:
                     await cur.execute("""
                         SELECT id, status, robot_type, first_seen, total_volume, total_trades, avg_trade_size, inactivity_notified
                         FROM robot_patterns
-                        WHERE symbol = %s AND agent_id = %s AND pattern_type = 'TWAP'
+                        WHERE symbol = %s AND agent_id = %s AND pattern_type IN ('TWAP','MARKET_TWAP')
                         ORDER BY last_seen DESC
                         LIMIT 1
                     """, (symbol, agent_id))
@@ -272,10 +272,10 @@ class RobotPersistence:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
-                        SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange
+                        SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange, trade_type
                         FROM ticks_raw
                         WHERE symbol = %s AND timestamp >= NOW() - make_interval(hours => %s)
-                        ORDER BY timestamp DESC
+                        ORDER BY timestamp ASC
                     """, (symbol, hours))
                     
                     rows = await cur.fetchall()
@@ -287,13 +287,43 @@ class RobotPersistence:
                             'timestamp': row[3],
                             'buy_agent': row[4],
                             'sell_agent': row[5],
-                            'exchange': row[6]
+                            'exchange': row[6],
+                            'trade_type': row[7]  # ✅ NOVO: trade_type real da tabela
                         }
                         for row in rows
                     ]
                     
         except Exception as e:
             logger.error(f"Erro ao buscar ticks recentes para {symbol}: {e}")
+            return []
+
+    async def get_recent_ticks_minutes(self, symbol: str, minutes: int) -> List[dict]:
+        """Busca ticks recentes de um símbolo usando janela em minutos (ordem ASC)."""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange, trade_type
+                        FROM ticks_raw
+                        WHERE symbol = %s AND timestamp >= NOW() - make_interval(mins => %s)
+                        ORDER BY timestamp ASC
+                    """, (symbol, minutes))
+                    rows = await cur.fetchall()
+                    return [
+                        {
+                            'symbol': row[0],
+                            'price': row[1],
+                            'volume': row[2],
+                            'timestamp': row[3],
+                            'buy_agent': row[4],
+                            'sell_agent': row[5],
+                            'exchange': row[6],
+                            'trade_type': row[7]
+                        }
+                        for row in rows
+                    ]
+        except Exception as e:
+            logger.error(f"Erro ao buscar ticks (minutos) para {symbol}: {e}")
             return []
     
     async def get_recent_ticks_for_agent(self, symbol: str, agent_id: int, minutes: int) -> List[dict]:
@@ -302,12 +332,12 @@ class RobotPersistence:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
-                        SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange
+                        SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange, trade_type
                         FROM ticks_raw
                         WHERE symbol = %s 
                           AND timestamp >= NOW() - make_interval(mins => %s)
                           AND (buy_agent = %s OR sell_agent = %s)
-                        ORDER BY timestamp DESC
+                        ORDER BY timestamp ASC
                     """, (symbol, minutes, agent_id, agent_id))
                     
                     rows = await cur.fetchall()
@@ -319,7 +349,8 @@ class RobotPersistence:
                             'timestamp': row[3],
                             'buy_agent': row[4],
                             'sell_agent': row[5],
-                            'exchange': row[6]
+                            'exchange': row[6],
+                            'trade_type': row[7]  # ✅ NOVO: trade_type real da tabela
                         }
                         for row in rows
                     ]
@@ -416,30 +447,77 @@ class RobotPersistence:
             logger.error(f"❌ Erro ao resetar flag de notificação para padrão {pattern_id}: {e}")
             return False
 
-    async def get_robot_trades(self, symbol: str, agent_id: int, hours: int = 24, limit: int = 200) -> List[Dict]:
-        """Busca todas as operações de um robô específico"""
+    async def get_robot_trades(self, symbol: str, agent_id: int, hours: int = 24, limit: int = 200, pattern_type: Optional[str] = None) -> List[Dict]:
+        """Busca operações de um robô específico.
+        Se pattern_type (ex.: 'MARKET_TWAP') for informado, filtra apenas
+        trades associados a padrões com esse tipo.
+        """
         try:
             logger.info(f"🔍 Buscando trades do robô {agent_id} em {symbol} (últimas {hours}h)")
             
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute("""
-                        SELECT 
-                            id,
-                            symbol,
-                            agent_id,
-                            timestamp,
-                            price,
-                            volume,
-                            side,
-                            robot_pattern_id,
-                            created_at
-                        FROM robot_trades 
-                        WHERE symbol = %s AND agent_id = %s 
-                          AND timestamp >= NOW() - (%s || ' hours')::interval
-                        ORDER BY timestamp DESC
-                        LIMIT %s
-                    """, (symbol.upper(), agent_id, str(hours), limit))
+                    if pattern_type:
+                        # Junta com robot_patterns para filtrar pelo tipo solicitado
+                        if pattern_type == 'MARKET_TWAP':
+                            # Compatibilidade retroativa: aceita padrões antigos salvos com robot_type 'TWAP à Mercado'
+                            await cur.execute("""
+                                SELECT 
+                                    t.id,
+                                    t.symbol,
+                                    t.agent_id,
+                                    t.timestamp,
+                                    t.price,
+                                    t.volume,
+                                    t.side,
+                                    t.robot_pattern_id,
+                                    t.created_at
+                                FROM robot_trades t
+                                JOIN robot_patterns p ON p.id = t.robot_pattern_id
+                                WHERE t.symbol = %s AND t.agent_id = %s
+                                  AND t.timestamp >= NOW() - (%s || ' hours')::interval
+                                  AND (p.pattern_type = %s OR p.robot_type = 'TWAP à Mercado')
+                                ORDER BY t.timestamp DESC
+                                LIMIT %s
+                            """, (symbol.upper(), agent_id, str(hours), pattern_type, limit))
+                        else:
+                            await cur.execute("""
+                                SELECT 
+                                    t.id,
+                                    t.symbol,
+                                    t.agent_id,
+                                    t.timestamp,
+                                    t.price,
+                                    t.volume,
+                                    t.side,
+                                    t.robot_pattern_id,
+                                    t.created_at
+                                FROM robot_trades t
+                                JOIN robot_patterns p ON p.id = t.robot_pattern_id
+                                WHERE t.symbol = %s AND t.agent_id = %s
+                                  AND t.timestamp >= NOW() - (%s || ' hours')::interval
+                                  AND p.pattern_type = %s
+                                ORDER BY t.timestamp DESC
+                                LIMIT %s
+                            """, (symbol.upper(), agent_id, str(hours), pattern_type, limit))
+                    else:
+                        await cur.execute("""
+                            SELECT 
+                                id,
+                                symbol,
+                                agent_id,
+                                timestamp,
+                                price,
+                                volume,
+                                side,
+                                robot_pattern_id,
+                                created_at
+                            FROM robot_trades 
+                            WHERE symbol = %s AND agent_id = %s 
+                              AND timestamp >= NOW() - (%s || ' hours')::interval
+                            ORDER BY timestamp DESC
+                            LIMIT %s
+                        """, (symbol.upper(), agent_id, str(hours), limit))
                     
                     rows = await cur.fetchall()
                     trades = [

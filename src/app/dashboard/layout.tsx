@@ -109,6 +109,18 @@ export default function DashboardLayout({
               {isSidebarOpen && <span className="ml-3">BlackBox Multi</span>}
             </Link>
 
+            {/* AI Lab */}
+            <Link
+              href="/dashboard/ai-lab"
+              title="AI Lab"
+              className="flex items-center px-6 py-3 text-gray-300 hover:bg-gray-700 hover:text-white"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              {isSidebarOpen && <span className="ml-3">AI Lab</span>}
+            </Link>
+
             <Link
               href="/dashboard/clients"
               title="Clientes"

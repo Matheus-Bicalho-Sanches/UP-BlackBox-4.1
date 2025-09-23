@@ -13,7 +13,7 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _PROJECT_ROOT_STR = str(_PROJECT_ROOT)
 if _PROJECT_ROOT_STR not in sys.path:
-	sys.path.insert(0, _PROJECT_ROOT_STR)
+    sys.path.insert(0, _PROJECT_ROOT_STR)
 
 # Carrega variáveis do .env (procura em vários locais)
 from dotenv import load_dotenv
@@ -709,57 +709,64 @@ async def get_robot_activity(symbol: Optional[str] = None, hours: int = 24):
 
 @app.get("/robots/status-changes")
 async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24):
-	"""Retorna mudanças de status dos robôs (start/stop) - limitado aos 50 mais recentes"""
-	try:
-		if not twap_detector:
-			raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
-		
-		# Busca mudanças de status do detector
-		status_changes = twap_detector.get_status_changes(symbol, hours)
-		
-		# ✅ Limita aos 50 mais recentes
-		limited = status_changes[:50]
-		
-		logger.info(f"Retornando {len(limited)} mudanças de status de robôs (de {len(status_changes)} no total)")
-		return limited
-		
-	except Exception as e:
-		logger.error(f"Erro ao buscar mudanças de status de robôs: {e}")
-		raise HTTPException(status_code=500, detail=str(e))
+    """Retorna mudanças de status dos robôs (start/stop) - limitado aos 50 mais recentes"""
+    try:
+        if not twap_detector:
+            raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
+        
+        # Busca mudanças de status do detector
+        status_changes = twap_detector.get_status_changes(symbol, hours)
+        
+        # ✅ Limita aos 50 mais recentes
+        limited = status_changes[:50]
+        
+        logger.info(f"Retornando {len(limited)} mudanças de status de robôs (de {len(status_changes)} no total)")
+        return limited
+        
+    except Exception as e:
+        logger.error(f"Erro ao buscar mudanças de status de robôs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/all-changes")
 async def get_all_robot_changes(symbol: Optional[str] = None, hours: int = 24):
-	"""Retorna todas as mudanças (status + tipo) dos robôs"""
-	try:
-		if not twap_detector:
-			raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
-		
-		# Busca todas as mudanças (status + tipo)
-		all_changes = twap_detector.get_all_changes(symbol, hours)
-		
-		logger.info(f"Retornando {len(all_changes)} mudanças totais (status + tipo)")
-		return all_changes
-		
-	except Exception as e:
-		logger.error(f"Erro ao buscar mudanças dos robôs: {e}")
-		raise HTTPException(status_code=500, detail=str(e))
+    """Retorna todas as mudanças (status + tipo) dos robôs"""
+    try:
+        if not twap_detector:
+            raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
+        
+        # Busca todas as mudanças (status + tipo)
+        all_changes = twap_detector.get_all_changes(symbol, hours)
+        
+        logger.info(f"Retornando {len(all_changes)} mudanças totais (status + tipo)")
+        return all_changes
+        
+    except Exception as e:
+        logger.error(f"Erro ao buscar mudanças dos robôs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/{symbol}/{agent_id}/trades")
-async def get_robot_trades(symbol: str, agent_id: int, hours: int = 24, limit: int = 200):
-	"""Retorna todas as operações de um robô específico"""
-	try:
-		if not twap_detector:
-			raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
-		
-		# Busca trades do robô específico
-		trades = await twap_detector.persistence.get_robot_trades(symbol, agent_id, hours, limit)
-		
-		logger.info(f"Retornando {len(trades)} trades para robô {agent_id} em {symbol}")
-		return trades
-		
-	except Exception as e:
-		logger.error(f"Erro ao buscar trades do robô {agent_id} em {symbol}: {e}")
-		raise HTTPException(status_code=500, detail=str(e))
+async def get_robot_trades(symbol: str, agent_id: int, hours: int = 24, limit: int = 200, pattern_type: Optional[str] = None):
+    """Retorna operações de um robô específico.
+    Se pattern_type for informado (ex.: 'MARKET_TWAP'), retorna apenas operações
+    associadas a padrões desse tipo.
+    """
+    try:
+        if not twap_detector:
+            raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
+
+        # Busca trades do robô específico (com filtro opcional por tipo do padrão)
+        # Permite filtrar por MARKET_TWAP e também por TWAP para compatibilidade
+        pt = pattern_type
+        trades = await twap_detector.persistence.get_robot_trades(
+            symbol, agent_id, hours, limit, pattern_type=pt
+        )
+
+        logger.info(f"Retornando {len(trades)} trades para robô {agent_id} em {symbol}")
+        return trades
+
+    except Exception as e:
+        logger.error(f"Erro ao buscar trades do robô {agent_id} em {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/ws/robot-status")
 async def websocket_endpoint(websocket: WebSocket):
@@ -970,6 +977,8 @@ async def test_endpoint():
         "timestamp": time.time(),
         "version": "1.0.0"
     }
+
+## AI Lab (removido) – endpoints migrados para services/ml_lab
 
 if __name__ == "__main__":
     # Configuração do servidor

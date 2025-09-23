@@ -13,6 +13,7 @@ try:
     )
     from .robot_persistence import RobotPersistence
     from .agent_mapping import get_agent_name
+    from .market_twap_detector import MarketTWAPDetector
 except ImportError:
     from robot_models import (
         TWAPPattern, RobotTrade, TradeType, RobotStatus, 
@@ -20,6 +21,7 @@ except ImportError:
     )
     from robot_persistence import RobotPersistence
     from agent_mapping import get_agent_name
+    from market_twap_detector import MarketTWAPDetector
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +138,20 @@ class TWAPDetector:
         self.active_patterns: Dict[str, Dict[int, TWAPPattern]] = defaultdict(dict)
         self.status_tracker = RobotStatusTracker()  # Adiciona tracker de status
         
+        # ✅ NOVO: Detector de TWAP à Mercado com configuração mais permissiva
+        try:
+            from .market_twap_detector import MarketTWAPConfig
+        except ImportError:
+            from market_twap_detector import MarketTWAPConfig
+            
+        market_twap_config = MarketTWAPConfig()
+        market_twap_config.min_volume_repetitions = 5  # Reduzido de 8 para 2
+        market_twap_config.min_volume_frequency = 0.01  # Reduzido de 0.6 para 0.1
+        market_twap_config.min_confidence = 0.3  # Reduzido de 0.75 para 0.3
+        market_twap_config.min_time_intervals = 1  # Reduzido de 5 para 1
+        market_twap_config.time_consistency_threshold = 0.1  # Reduzido de 0.75 para 0.1
+        self.market_twap_detector = MarketTWAPDetector(market_twap_config)
+        
         # ✅ NOVO: Histerese de ativação para evitar flip-flop imediato
         self.activation_times: Dict[Tuple[str, int], datetime] = {}
         self.activation_cooldown_seconds: int = 90
@@ -149,16 +165,24 @@ class TWAPDetector:
         return dt.astimezone(timezone.utc)
 
     async def analyze_symbol(self, symbol: str) -> List[TWAPPattern]:
-        """Analisa um símbolo específico para detectar padrões TWAP"""
+        """Analisa um símbolo específico para detectar padrões TWAP
+        Estratégia em duas fases para reduzir latência:
+        - Fase rápida: busca ticks dos últimos 60 minutos para atualizar robôs ativos
+        - Fase completa (fallback): se nada encontrado, analisa janela maior (24h)
+        """
         try:
             logger.info(f"Analisando {symbol} para padrões TWAP...")
             
-            # Busca ticks das últimas 24h
-            ticks_data = await self.persistence.get_recent_ticks(symbol, 24)
+            # FASE 1: janela curta para atualização rápida (< 1 min sem atualização)
+            ticks_data = await self.persistence.get_recent_ticks_minutes(symbol, 60)
             
             if not ticks_data:
-                logger.info(f"Nenhum tick encontrado para {symbol}")
-                return []
+                # FASE 2: fallback para janela completa
+                logger.info(f"Nenhum tick recente (60m) para {symbol}, tentando 24h...")
+                ticks_data = await self.persistence.get_recent_ticks(symbol, 24)
+                if not ticks_data:
+                    logger.info(f"Nenhum tick encontrado para {symbol}")
+                    return []
             
             # Agrupa por agente (buy_agent ou sell_agent)
             agent_trades = self._group_trades_by_agent(ticks_data)
@@ -177,7 +201,33 @@ class TWAPDetector:
                     # Salva ou atualiza o padrão
                     await self._persist_pattern(pattern)
             
-            logger.info(f"Detectados {len(detected_patterns)} padrões TWAP para {symbol}")
+            # ✅ NOVO: Detecta padrões TWAP à Mercado (janela curta primeiro)
+            logger.info(f"Analisando {symbol} para padrões TWAP à Mercado...")
+            
+            # Analisa cada agente separadamente para TWAP à Mercado
+            for agent_id, agent_trades in agent_trades.items():
+                if len(agent_trades) < self.market_twap_detector.config.min_volume_repetitions:
+                    continue
+                
+                # Detecta padrões TWAP à Mercado para este agente específico
+                # Tenta primeiro com subset dos últimos 60 minutos para latência baixa
+                recent_agent_trades = [t for t in agent_trades if (datetime.now(timezone.utc) - t.timestamp).total_seconds() <= 60*60]
+                candidate_trades = recent_agent_trades if len(recent_agent_trades) >= self.market_twap_detector.config.min_volume_repetitions else agent_trades
+                market_twap_patterns = await self.market_twap_detector.detect_market_twap_patterns(candidate_trades)
+                
+                for pattern in market_twap_patterns:
+                    if pattern and pattern.confidence_score >= self.market_twap_detector.config.min_confidence:
+                        detected_patterns.append(pattern)
+                        
+                        # Salva o padrão e seus trades
+                        await self.market_twap_detector.save_pattern_and_trades(pattern, agent_trades)
+                        
+                        # ✅ NOVO: Armazena no active_patterns para exibição
+                        await self._persist_pattern(pattern)
+            
+            # Conta padrões TWAP à Mercado
+            market_twap_count = sum(1 for p in detected_patterns if p.robot_type == RobotType.MARKET_TWAP.value)
+            logger.info(f"Detectados {len(detected_patterns)} padrões TWAP para {symbol} (incluindo {market_twap_count} TWAP à Mercado)")
             return detected_patterns
             
         except Exception as e:
@@ -198,7 +248,8 @@ class TWAPDetector:
                     timestamp=self._to_utc(tick['timestamp']),
                     trade_type=TradeType.BUY,
                     agent_id=tick['buy_agent'],
-                    exchange=tick['exchange']
+                    exchange=tick['exchange'],
+                    raw_trade_type=tick.get('trade_type', 2)  # ✅ NOVO: trade_type real da tabela
                 )
                 agent_trades[tick['buy_agent']].append(buy_tick)
             
@@ -211,7 +262,8 @@ class TWAPDetector:
                     timestamp=self._to_utc(tick['timestamp']),
                     trade_type=TradeType.SELL,
                     agent_id=tick['sell_agent'],
-                    exchange=tick['exchange']
+                    exchange=tick['exchange'],
+                    raw_trade_type=tick.get('trade_type', 3)  # ✅ NOVO: trade_type real da tabela
                 )
                 agent_trades[tick['sell_agent']].append(sell_tick)
         
@@ -546,13 +598,46 @@ class TWAPDetector:
             # Busca símbolos únicos das últimas 24h
             symbols = await self._get_active_symbols()
             
-            all_patterns = {}
-            
-            for symbol in symbols:
-                patterns = await self.analyze_symbol(symbol)
+            all_patterns: Dict[str, List[TWAPPattern]] = {}
+
+            # Limita concorrência para evitar sobrecarga no banco
+            max_concurrency = 5
+            semaphore = asyncio.Semaphore(max_concurrency)
+
+            async def process_symbol(symbol: str) -> Tuple[str, List[TWAPPattern]]:
+                async with semaphore:
+                    try:
+                        # Evita que um símbolo muito pesado trave a rodada inteira
+                        patterns = await asyncio.wait_for(self.analyze_symbol(symbol), timeout=90)
+                        return symbol, patterns
+                    except asyncio.TimeoutError:
+                        logger.warning(f"⏱️ Tempo esgotado analisando {symbol}, pulando.")
+                        return symbol, []
+                    except Exception as e:
+                        logger.error(f"Erro ao analisar símbolo {symbol}: {e}")
+                        return symbol, []
+
+            # Intercala a ordem dos símbolos para não privilegiar apenas os primeiros
+            # move parte do meio e final para o início de forma balanceada
+            reordered: List[str] = []
+            if symbols:
+                third = max(1, len(symbols)//3)
+                chunks = [symbols[:third], symbols[third:2*third], symbols[2*third:]]
+                # round-robin
+                max_len = max(len(c) for c in chunks)
+                for i in range(max_len):
+                    for c in chunks:
+                        if i < len(c):
+                            reordered.append(c[i])
+            else:
+                reordered = symbols
+
+            tasks = [asyncio.create_task(process_symbol(symbol)) for symbol in reordered]
+            for task in asyncio.as_completed(tasks):
+                symbol, patterns = await task
                 if patterns:
                     all_patterns[symbol] = patterns
-            
+
             return all_patterns
             
         except Exception as e:
