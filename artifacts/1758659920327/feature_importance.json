@@ -1,0 +1,226 @@
+[
+  {
+    "feature": "ret",
+    "importance": 6813.382607460022
+  },
+  {
+    "feature": "logret",
+    "importance": 4112.481509208679
+  },
+  {
+    "feature": "vol20",
+    "importance": 8416.925611495972
+  },
+  {
+    "feature": "buy_ratio",
+    "importance": 3722.044689178467
+  },
+  {
+    "feature": "sell_ratio",
+    "importance": 2927.187307357788
+  },
+  {
+    "feature": "ofi_norm",
+    "importance": 1374.7581033706665
+  },
+  {
+    "feature": "interarrival_mean_s",
+    "importance": 2498.2444019317627
+  },
+  {
+    "feature": "hod_sin",
+    "importance": 5576.188810348511
+  },
+  {
+    "feature": "hod_cos",
+    "importance": 3384.2203969955444
+  },
+  {
+    "feature": "open",
+    "importance": 1826.1487970352173
+  },
+  {
+    "feature": "high",
+    "importance": 520.9390993118286
+  },
+  {
+    "feature": "low",
+    "importance": 0.0
+  },
+  {
+    "feature": "close",
+    "importance": 578.8362998962402
+  },
+  {
+    "feature": "volume",
+    "importance": 397.3474006652832
+  },
+  {
+    "feature": "trades",
+    "importance": 0.0
+  },
+  {
+    "feature": "dollar",
+    "importance": 2667.6829986572266
+  },
+  {
+    "feature": "buy_volume",
+    "importance": 1543.8212051391602
+  },
+  {
+    "feature": "sell_volume",
+    "importance": 1412.5148038864136
+  },
+  {
+    "feature": "signed_volume",
+    "importance": 1049.7468996047974
+  },
+  {
+    "feature": "ma_9",
+    "importance": 1124.5303993225098
+  },
+  {
+    "feature": "ma_20",
+    "importance": 331.90820121765137
+  },
+  {
+    "feature": "ma_50",
+    "importance": 1705.4423990249634
+  },
+  {
+    "feature": "price_ma9_ratio",
+    "importance": 71238.09947013855
+  },
+  {
+    "feature": "price_ma20_ratio",
+    "importance": 5598.518403053284
+  },
+  {
+    "feature": "price_ma50_ratio",
+    "importance": 8059.788877487183
+  },
+  {
+    "feature": "ma9_ma20_cross",
+    "importance": 3468.680299758911
+  },
+  {
+    "feature": "ma20_ma50_cross",
+    "importance": 4258.729496002197
+  },
+  {
+    "feature": "ma9_ma50_cross",
+    "importance": 4799.551906585693
+  },
+  {
+    "feature": "bb20_middle",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_upper_1std",
+    "importance": 1023.3455095291138
+  },
+  {
+    "feature": "bb20_upper_2std",
+    "importance": 2008.2479009628296
+  },
+  {
+    "feature": "bb20_upper_3std",
+    "importance": 3032.442705154419
+  },
+  {
+    "feature": "bb20_lower_1std",
+    "importance": 1681.545892715454
+  },
+  {
+    "feature": "bb20_lower_2std",
+    "importance": 576.7531967163086
+  },
+  {
+    "feature": "bb20_lower_3std",
+    "importance": 2846.7953939437866
+  },
+  {
+    "feature": "bb20_position",
+    "importance": 12246.55153465271
+  },
+  {
+    "feature": "bb20_touch_upper_1std",
+    "importance": 8111.791199684143
+  },
+  {
+    "feature": "bb20_touch_upper_2std",
+    "importance": 3396.8864889144897
+  },
+  {
+    "feature": "bb20_touch_upper_3std",
+    "importance": 2215.3282041549683
+  },
+  {
+    "feature": "bb20_touch_lower_1std",
+    "importance": 5494.033990859985
+  },
+  {
+    "feature": "bb20_touch_lower_2std",
+    "importance": 3597.905019760132
+  },
+  {
+    "feature": "bb20_touch_lower_3std",
+    "importance": 1222.877697944641
+  },
+  {
+    "feature": "bb50_middle",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_upper_1std",
+    "importance": 1743.1054105758667
+  },
+  {
+    "feature": "bb50_upper_2std",
+    "importance": 3707.7369060516357
+  },
+  {
+    "feature": "bb50_upper_3std",
+    "importance": 5727.001301765442
+  },
+  {
+    "feature": "bb50_lower_1std",
+    "importance": 1439.0406980514526
+  },
+  {
+    "feature": "bb50_lower_2std",
+    "importance": 2771.617609024048
+  },
+  {
+    "feature": "bb50_lower_3std",
+    "importance": 1884.5455980300903
+  },
+  {
+    "feature": "bb50_position",
+    "importance": 3057.3008003234863
+  },
+  {
+    "feature": "bb50_touch_upper_1std",
+    "importance": 7628.453227043152
+  },
+  {
+    "feature": "bb50_touch_upper_2std",
+    "importance": 2288.3461904525757
+  },
+  {
+    "feature": "bb50_touch_upper_3std",
+    "importance": 821.7939014434814
+  },
+  {
+    "feature": "bb50_touch_lower_1std",
+    "importance": 11473.900097846985
+  },
+  {
+    "feature": "bb50_touch_lower_2std",
+    "importance": 1672.2312002182007
+  },
+  {
+    "feature": "bb50_touch_lower_3std",
+    "importance": 689.1158084869385
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "symbols": [
+    "ABEV3",
+    "PETR4",
+    "VALE3",
+    "MRFG3",
+    "MGLU3",
+    "BBAS3",
+    "PETZ3"
+  ],
+  "dt_seconds": 30,
+  "bar_type": "trades",
+  "bar_size": 100,
+  "cost_bps": 3,
+  "label_type": "future_return_sign",
+  "label_horizon": 8,
+  "hours_back": 150000,
+  "features": [
+    "ret",
+    "logret",
+    "vol20",
+    "buy_ratio",
+    "sell_ratio",
+    "ofi_norm",
+    "interarrival_mean_s",
+    "hod_sin",
+    "hod_cos",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "trades",
+    "dollar",
+    "buy_volume",
+    "sell_volume",
+    "signed_volume"
+  ]
+}

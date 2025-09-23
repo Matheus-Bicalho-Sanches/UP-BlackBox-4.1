@@ -1,0 +1,78 @@
+[
+  {
+    "feature": "ret",
+    "importance": 0.0
+  },
+  {
+    "feature": "logret",
+    "importance": 0.0
+  },
+  {
+    "feature": "vol20",
+    "importance": 80.77399921417236
+  },
+  {
+    "feature": "buy_ratio",
+    "importance": 0.0
+  },
+  {
+    "feature": "sell_ratio",
+    "importance": 0.0
+  },
+  {
+    "feature": "ofi_norm",
+    "importance": 0.0
+  },
+  {
+    "feature": "interarrival_mean_s",
+    "importance": 34.156599044799805
+  },
+  {
+    "feature": "hod_sin",
+    "importance": 168.28370189666748
+  },
+  {
+    "feature": "hod_cos",
+    "importance": 122.6574010848999
+  },
+  {
+    "feature": "open",
+    "importance": 64.12319850921631
+  },
+  {
+    "feature": "high",
+    "importance": 94.09189796447754
+  },
+  {
+    "feature": "low",
+    "importance": 0.0
+  },
+  {
+    "feature": "close",
+    "importance": 97.85689926147461
+  },
+  {
+    "feature": "volume",
+    "importance": 0.0
+  },
+  {
+    "feature": "trades",
+    "importance": 0.0
+  },
+  {
+    "feature": "dollar",
+    "importance": 0.0
+  },
+  {
+    "feature": "buy_volume",
+    "importance": 0.0
+  },
+  {
+    "feature": "sell_volume",
+    "importance": 21.856000900268555
+  },
+  {
+    "feature": "signed_volume",
+    "importance": 0.0
+  }
+]

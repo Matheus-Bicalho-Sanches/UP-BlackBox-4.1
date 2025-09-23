@@ -1,0 +1,226 @@
+[
+  {
+    "feature": "ret",
+    "importance": 7.105429898699844e-15
+  },
+  {
+    "feature": "logret",
+    "importance": 0.0
+  },
+  {
+    "feature": "vol20",
+    "importance": 2.1932935395134336
+  },
+  {
+    "feature": "buy_ratio",
+    "importance": 0.0
+  },
+  {
+    "feature": "sell_ratio",
+    "importance": 0.0
+  },
+  {
+    "feature": "ofi_norm",
+    "importance": 0.0
+  },
+  {
+    "feature": "interarrival_mean_s",
+    "importance": 0.0
+  },
+  {
+    "feature": "hod_sin",
+    "importance": 1.4118099898041692e-05
+  },
+  {
+    "feature": "hod_cos",
+    "importance": 6.1678900718688965
+  },
+  {
+    "feature": "open",
+    "importance": 0.0
+  },
+  {
+    "feature": "high",
+    "importance": 0.0
+  },
+  {
+    "feature": "low",
+    "importance": 108.47029876708984
+  },
+  {
+    "feature": "close",
+    "importance": 99.50146055221558
+  },
+  {
+    "feature": "volume",
+    "importance": 0.0
+  },
+  {
+    "feature": "trades",
+    "importance": 0.0
+  },
+  {
+    "feature": "dollar",
+    "importance": 1.2227699756622314
+  },
+  {
+    "feature": "buy_volume",
+    "importance": 0.0
+  },
+  {
+    "feature": "sell_volume",
+    "importance": 0.19665800034999847
+  },
+  {
+    "feature": "signed_volume",
+    "importance": 0.0
+  },
+  {
+    "feature": "ma_9",
+    "importance": 0.0
+  },
+  {
+    "feature": "ma_20",
+    "importance": 11.808099746704102
+  },
+  {
+    "feature": "ma_50",
+    "importance": 0.0
+  },
+  {
+    "feature": "price_ma9_ratio",
+    "importance": 0.0
+  },
+  {
+    "feature": "price_ma20_ratio",
+    "importance": 0.0
+  },
+  {
+    "feature": "price_ma50_ratio",
+    "importance": 42.70039939880371
+  },
+  {
+    "feature": "ma9_ma20_cross",
+    "importance": 0.0
+  },
+  {
+    "feature": "ma20_ma50_cross",
+    "importance": 0.0
+  },
+  {
+    "feature": "ma9_ma50_cross",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_middle",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_upper_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_upper_2std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_upper_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_lower_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_lower_2std",
+    "importance": 9.943380355834961
+  },
+  {
+    "feature": "bb20_lower_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_position",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_touch_upper_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_touch_upper_2std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_touch_upper_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_touch_lower_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_touch_lower_2std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_touch_lower_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_middle",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_upper_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_upper_2std",
+    "importance": 11.667200088500977
+  },
+  {
+    "feature": "bb50_upper_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_lower_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_lower_2std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_lower_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_position",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_touch_upper_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_touch_upper_2std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_touch_upper_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_touch_lower_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_touch_lower_2std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_touch_lower_3std",
+    "importance": 0.0
+  }
+]

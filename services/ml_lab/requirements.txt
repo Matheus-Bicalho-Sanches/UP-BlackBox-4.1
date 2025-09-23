@@ -1,0 +1,7 @@
+fastapi==0.111.0
+uvicorn==0.30.1
+psycopg[binary,pool]==3.2.10
+# Numpy/Pandas com suporte a Python 3.13
+numpy>=2.2.0,<2.3.0
+pandas>=2.2.3,<2.3.0
+lightgbm==4.5.0

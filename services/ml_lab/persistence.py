@@ -1,15 +1,43 @@
 import os
+import asyncio
 from datetime import datetime, timezone
 from typing import List, Dict, Optional, Any
 
 import psycopg
+from psycopg.types.json import Json
+from psycopg_pool import AsyncConnectionPool
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'postgres://postgres:postgres@localhost:5432/market_data')
+
+# Pool global de conexões
+_connection_pool: Optional[AsyncConnectionPool] = None
+
+async def get_connection_pool() -> AsyncConnectionPool:
+    """Retorna o pool de conexões, criando se necessário."""
+    global _connection_pool
+    if _connection_pool is None:
+        _connection_pool = AsyncConnectionPool(
+            DATABASE_URL,
+            min_size=2,  # Mínimo de 2 conexões
+            max_size=10,  # Máximo de 10 conexões
+            max_idle=300,  # 5 minutos de idle
+            max_lifetime=3600,  # 1 hora de vida máxima
+            check=AsyncConnectionPool.check_connection,
+        )
+    return _connection_pool
+
+async def close_connection_pool():
+    """Fecha o pool de conexões."""
+    global _connection_pool
+    if _connection_pool is not None:
+        await _connection_pool.close()
+        _connection_pool = None
 
 
 async def init_db() -> None:
     """Cria as tabelas necessárias para o AI Lab se não existirem."""
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_connection_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -50,7 +78,8 @@ async def init_db() -> None:
 
 # Experiments
 async def insert_experiment(exp: Dict[str, Any]) -> None:
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_connection_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -58,20 +87,24 @@ async def insert_experiment(exp: Dict[str, Any]) -> None:
                     id, status, model, symbol_list, dt_seconds, event_bar_type, event_bar_size,
                     cost_bps, created_at, updated_at
                 ) VALUES (
-                    %(id)s, %(status)s, %(model)s, %(symbol_list)s::jsonb, %(dt_seconds)s, %(event_bar_type)s, %(event_bar_size)s,
+                    %(id)s, %(status)s, %(model)s, %(symbol_list)s, %(dt_seconds)s, %(event_bar_type)s, %(event_bar_size)s,
                     %(cost_bps)s, %(created_at)s, NOW()
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     status = EXCLUDED.status,
                     updated_at = NOW()
                 """,
-                exp,
+                {
+                    **exp,
+                    'symbol_list': Json(exp['symbol_list']),
+                },
             )
             await conn.commit()
 
 
 async def update_experiment_status(exp_id: str, status: str) -> None:
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_connection_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -86,7 +119,8 @@ async def update_experiment_status(exp_id: str, status: str) -> None:
 
 
 async def get_experiments(limit: int = 100) -> List[Dict[str, Any]]:
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_connection_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -118,7 +152,8 @@ async def get_experiments(limit: int = 100) -> List[Dict[str, Any]]:
 
 
 async def get_experiment_by_id(exp_id: str) -> Optional[Dict[str, Any]]:
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_connection_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -149,7 +184,8 @@ async def get_experiment_by_id(exp_id: str) -> Optional[Dict[str, Any]]:
 async def insert_metric_points(exp_id: str, points: List[Dict[str, Any]]) -> None:
     if not points:
         return
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_connection_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.executemany(
                 """
@@ -171,7 +207,8 @@ async def insert_metric_points(exp_id: str, points: List[Dict[str, Any]]) -> Non
 
 
 async def get_metrics(exp_id: str, limit: int = 1000, after_step: Optional[int] = None) -> List[Dict[str, Any]]:
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_connection_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             if after_step is None:
                 await cur.execute(
@@ -211,7 +248,8 @@ async def get_metrics(exp_id: str, limit: int = 1000, after_step: Optional[int] 
 async def insert_feature_importance(exp_id: str, items: List[Dict[str, Any]]) -> None:
     if not items:
         return
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_connection_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.executemany(
                 """
@@ -224,7 +262,8 @@ async def insert_feature_importance(exp_id: str, items: List[Dict[str, Any]]) ->
 
 
 async def get_feature_importance(exp_id: str, limit: int = 100) -> List[Dict[str, Any]]:
-    async with await psycopg.AsyncConnection.connect(DATABASE_URL) as conn:
+    pool = await get_connection_pool()
+    async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -241,5 +280,9 @@ async def get_feature_importance(exp_id: str, limit: int = 100) -> List[Dict[str
                 {'feature': r[0], 'importance': float(r[1])}
                 for r in rows
             ]
+
+
+async def get_feature_importance_endpoint(exp_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+    return await get_feature_importance(exp_id, limit=limit)
 
 
