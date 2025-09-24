@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, time
 from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
 import statistics
@@ -65,7 +65,7 @@ class RobotStatusTracker:
         # ✅ NOVO: Notifica via WebSocket se callback estiver disponível
         if self.websocket_callback:
             try:
-                asyncio.create_task(self.websocket_callback(change))
+                asyncio.create_task(self.websocket_callback('status_change', change))
             except Exception as e:
                 logger.error(f"Erro ao notificar via WebSocket: {e}")
     
@@ -83,10 +83,7 @@ class RobotStatusTracker:
         # ✅ NOVO: Notifica via WebSocket se callback estiver disponível
         if self.websocket_callback:
             try:
-                asyncio.create_task(self.websocket_callback({
-                    'type': 'type_change',
-                    'data': type_change
-                }))
+                asyncio.create_task(self.websocket_callback('type_change', type_change))
             except Exception as e:
                 logger.error(f"Erro ao notificar mudança de tipo via WebSocket: {e}")
 
@@ -173,16 +170,19 @@ class TWAPDetector:
         try:
             logger.info(f"Analisando {symbol} para padrões TWAP...")
             
+            # Janela do dia: considera apenas dados desde o início do pregão
+            now_utc = datetime.now(timezone.utc)
+            start_of_day = datetime.combine(now_utc.date(), time.min, tzinfo=timezone.utc)
+
             # FASE 1: janela curta para atualização rápida (< 1 min sem atualização)
-            ticks_data = await self.persistence.get_recent_ticks_minutes(symbol, 60)
+            if start_of_day is None:
+                ticks_data = await self.persistence.get_recent_ticks_minutes(symbol, 60)
+            else:
+                ticks_data = await self.persistence.get_ticks_since(symbol, start_of_day)
             
             if not ticks_data:
-                # FASE 2: fallback para janela completa
-                logger.info(f"Nenhum tick recente (60m) para {symbol}, tentando 24h...")
-                ticks_data = await self.persistence.get_recent_ticks(symbol, 24)
-                if not ticks_data:
-                    logger.info(f"Nenhum tick encontrado para {symbol}")
-                    return []
+                logger.info(f"Nenhum tick encontrado hoje para {symbol}")
+                return []
             
             # Agrupa por agente (buy_agent ou sell_agent)
             agent_trades = self._group_trades_by_agent(ticks_data)
@@ -210,9 +210,7 @@ class TWAPDetector:
                     continue
                 
                 # Detecta padrões TWAP à Mercado para este agente específico
-                # Tenta primeiro com subset dos últimos 60 minutos para latência baixa
-                recent_agent_trades = [t for t in agent_trades if (datetime.now(timezone.utc) - t.timestamp).total_seconds() <= 60*60]
-                candidate_trades = recent_agent_trades if len(recent_agent_trades) >= self.market_twap_detector.config.min_volume_repetitions else agent_trades
+                candidate_trades = agent_trades
                 market_twap_patterns = await self.market_twap_detector.detect_market_twap_patterns(candidate_trades)
                 
                 for pattern in market_twap_patterns:
@@ -596,7 +594,10 @@ class TWAPDetector:
         """Analisa todos os símbolos disponíveis"""
         try:
             # Busca símbolos únicos das últimas 24h
-            symbols = await self._get_active_symbols()
+            # Foco no pregão corrente: considera símbolos com movimentação desde o início do dia
+            now_utc = datetime.now(timezone.utc)
+            start_of_day = datetime.combine(now_utc.date(), time.min, tzinfo=timezone.utc)
+            symbols = await self._get_active_symbols(start_of_day)
             
             all_patterns: Dict[str, List[TWAPPattern]] = {}
 
@@ -644,10 +645,10 @@ class TWAPDetector:
             logger.error(f"Erro ao analisar todos os símbolos: {e}")
             return {}
     
-    async def _get_active_symbols(self) -> List[str]:
-        """Busca símbolos que tiveram atividade nas últimas 24h"""
+    async def _get_active_symbols(self, since: Optional[datetime] = None) -> List[str]:
+        """Busca símbolos que tiveram atividade desde o instante informado."""
         try:
-            return await self.persistence.get_active_symbols()
+            return await self.persistence.get_active_symbols(since)
         except Exception as e:
             logger.error(f"Erro ao buscar símbolos ativos: {e}")
             return []

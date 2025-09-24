@@ -200,15 +200,19 @@ class WebSocketManager:
             logger.info(f"WebSocket desconectado. Total de conexões: {len(self.active_connections)}")
     
     async def broadcast_status_change(self, status_change: dict):
-        """Envia mudança de status para todos os clientes conectados"""
-        if not self.active_connections:
-            return
-        
-        message = json.dumps({
+        """Compatibilidade: envia mudança de status usando o formato antigo"""
+        await self.broadcast_json({
             "type": "status_change",
             "data": status_change,
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
+
+    async def broadcast_json(self, payload: dict):
+        """Envia um payload JSON para todos os clientes conectados"""
+        if not self.active_connections:
+            return
+        
+        message = json.dumps(payload)
         
         # Envia para todas as conexões ativas
         disconnected = []
@@ -222,6 +226,19 @@ class WebSocketManager:
         # Remove conexões com erro
         for connection in disconnected:
             self.disconnect(connection)
+
+    async def send_replay(self, websocket: WebSocket, changes: List[Dict]):
+        """Envia um replay inicial com mudanças recentes para um cliente"""
+        if not changes:
+            return
+        try:
+            await websocket.send_text(json.dumps({
+                "type": "replay",
+                "data": changes,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }))
+        except Exception as e:
+            logger.error(f"Erro ao enviar replay para WebSocket: {e}")
 
 # Instância global do gerenciador WebSocket
 websocket_manager = WebSocketManager()
@@ -332,24 +349,43 @@ async def startup_event():
     logger.info(f"   - twap_detector.persistence: {twap_detector.persistence is not None}")
     
     # ✅ NOVO: Configura o callback WebSocket para notificações em tempo real
-    async def notify_websocket_clients(status_change: dict):
-        """Callback para notificar clientes WebSocket sobre mudanças de status"""
-        logger.info(f"🔔 WebSocket: Notificando mudança de status: {status_change['symbol']} - {status_change['agent_id']} ({status_change['old_status']} -> {status_change['new_status']})")
-        await websocket_manager.broadcast_status_change(status_change)
+    async def notify_websocket_clients(change_type: str, payload: dict):
+        """Callback para notificar clientes WebSocket sobre mudanças de status/tipo"""
+        if change_type == 'status_change':
+            logger.info(
+                f"🔔 WebSocket: Mudança de status {payload['symbol']} - {payload['agent_id']} "
+                f"({payload['old_status']} -> {payload['new_status']})"
+            )
+            message = {
+                "type": "status_change",
+                "data": payload,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            logger.info(
+                f"🔄 WebSocket: Mudança de tipo {payload['symbol']} - {payload['agent_id']} "
+                f"({payload['old_type']} -> {payload['new_type']})"
+            )
+            message = {
+                "type": "type_change",
+                "data": payload,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        await websocket_manager.broadcast_json(message)
     
     # Atualiza o status tracker com o callback WebSocket
     twap_detector.status_tracker.websocket_callback = notify_websocket_clients
     
-    asyncio.create_task(start_twap_detection())
-    asyncio.create_task(start_inactivity_monitoring())
-    asyncio.create_task(start_volume_percentage_monitoring())  # ✅ NOVA TASK
-    
-    # PASSO 4: Inicializa sistemas de alta frequência
+    # PASSO 4: Inicializa sistemas de alta frequência antes de agendar as tasks
     try:
         init_high_frequency_systems()
     except Exception as e:
         logger.error(f"Falha crítica ao inicializar sistemas de alta frequência: {e}")
         return
+
+    asyncio.create_task(start_twap_detection())
+    asyncio.create_task(start_inactivity_monitoring())
+    asyncio.create_task(start_volume_percentage_monitoring())  # ✅ NOVA TASK
 
     # PASSO 5: Auto-subscribe de tickers do Firestore
     try:
@@ -381,11 +417,12 @@ async def shutdown_event():
 async def start_twap_detection():
     """Inicia a detecção contínua de robôs TWAP"""
     global system_initialized
-    
-    if not system_initialized:
-        logger.error("Sistema não inicializado. Aguarde...")
-        return
-    
+
+    # Aguarda até que o sistema esteja inicializado (startup garante que isso ocorrerá)
+    while not system_initialized:
+        logger.warning("Sistema ainda não inicializado para detecção TWAP. Aguardando...")
+        await asyncio.sleep(1)
+
     logger.info("🚀 Iniciando detecção contínua de robôs TWAP...")
     
     while system_initialized:
@@ -419,10 +456,10 @@ async def start_inactivity_monitoring():
     """Inicia o monitoramento de inatividade dos robôs (a cada 5 segundos)"""
     global system_initialized
     
-    if not system_initialized:
-        logger.error("Sistema não inicializado. Aguarde...")
-        return
-    
+    while not system_initialized:
+        logger.warning("Sistema ainda não inicializado para monitorar inatividade. Aguardando...")
+        await asyncio.sleep(1)
+
     logger.info("🚀 Iniciando monitoramento de inatividade dos robôs...")
     
     while system_initialized:
@@ -469,10 +506,10 @@ async def start_volume_percentage_monitoring():
     """Monitora e atualiza volume % dos robôs ativos a cada 1 minuto"""
     global system_initialized
     
-    if not system_initialized:
-        logger.error("Sistema não inicializado. Aguarde...")
-        return
-    
+    while not system_initialized:
+        logger.warning("Sistema ainda não inicializado para monitorar volume %. Aguardando...")
+        await asyncio.sleep(1)
+
     logger.info("📊 Iniciando monitoramento de volume % dos robôs...")
     
     while system_initialized:
@@ -773,6 +810,13 @@ async def websocket_endpoint(websocket: WebSocket):
     """Endpoint WebSocket para notificações em tempo real de mudanças de status dos robôs"""
     await websocket_manager.connect(websocket)
     try:
+        # Envia replay inicial das últimas mudanças (status + tipo)
+        try:
+            recent_changes = twap_detector.status_tracker.get_all_changes(hours=1)[:50] if twap_detector else []
+            await websocket_manager.send_replay(websocket, recent_changes)
+        except Exception as e:
+            logger.error(f"Erro ao enviar replay inicial via WebSocket: {e}")
+
         # Mantém a conexão ativa e aguarda mensagens
         while True:
             # Aguarda mensagem do cliente (ping/pong para manter conexão)

@@ -297,6 +297,37 @@ class RobotPersistence:
             logger.error(f"Erro ao buscar ticks recentes para {symbol}: {e}")
             return []
 
+    async def get_ticks_since(self, symbol: str, start_time: datetime) -> List[dict]:
+        """Busca ticks de um símbolo a partir de um instante específico (ordem ASC)."""
+        try:
+            async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        SELECT symbol, price, volume, timestamp, buy_agent, sell_agent, exchange, trade_type
+                          FROM ticks_raw
+                         WHERE symbol = %s AND timestamp >= %s
+                         ORDER BY timestamp ASC
+                    """, (symbol, start_time))
+
+                    rows = await cur.fetchall()
+                    return [
+                        {
+                            'symbol': row[0],
+                            'price': row[1],
+                            'volume': row[2],
+                            'timestamp': row[3],
+                            'buy_agent': row[4],
+                            'sell_agent': row[5],
+                            'exchange': row[6],
+                            'trade_type': row[7]
+                        }
+                        for row in rows
+                    ]
+
+        except Exception as e:
+            logger.error(f"Erro ao buscar ticks do dia para {symbol}: {e}")
+            return []
+
     async def get_recent_ticks_minutes(self, symbol: str, minutes: int) -> List[dict]:
         """Busca ticks recentes de um símbolo usando janela em minutos (ordem ASC)."""
         try:
@@ -359,19 +390,27 @@ class RobotPersistence:
             logger.error(f"Erro ao buscar trades recentes para agente {agent_id} em {symbol}: {e}")
             return []
     
-    async def get_active_symbols(self) -> List[str]:
-        """Busca símbolos que tiveram atividade nas últimas 24h"""
+    async def get_active_symbols(self, since: Optional[datetime] = None) -> List[str]:
+        """Busca símbolos que tiveram atividade desde uma data específica (default: 24h)."""
         try:
             logger.info("🔍 Buscando símbolos ativos nas últimas 24h...")
             
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute("""
-                        SELECT DISTINCT symbol 
-                        FROM ticks_raw 
-                        WHERE timestamp >= NOW() - INTERVAL '24 hours'
-                        ORDER BY symbol
-                    """)
+                    if since:
+                        await cur.execute("""
+                            SELECT DISTINCT symbol
+                              FROM ticks_raw
+                             WHERE timestamp >= %s
+                             ORDER BY symbol
+                        """, (since,))
+                    else:
+                        await cur.execute("""
+                            SELECT DISTINCT symbol 
+                              FROM ticks_raw 
+                             WHERE timestamp >= NOW() - INTERVAL '24 hours'
+                             ORDER BY symbol
+                        """)
                     
                     rows = await cur.fetchall()
                     symbols = [row[0] for row in rows]
@@ -458,48 +497,48 @@ class RobotPersistence:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     if pattern_type:
-                        # Junta com robot_patterns para filtrar pelo tipo solicitado
+                        # Identifica o padrão mais recente desse tipo para o robô
                         if pattern_type == 'MARKET_TWAP':
-                            # Compatibilidade retroativa: aceita padrões antigos salvos com robot_type 'TWAP à Mercado'
                             await cur.execute("""
-                                SELECT 
-                                    t.id,
-                                    t.symbol,
-                                    t.agent_id,
-                                    t.timestamp,
-                                    t.price,
-                                    t.volume,
-                                    t.side,
-                                    t.robot_pattern_id,
-                                    t.created_at
-                                FROM robot_trades t
-                                JOIN robot_patterns p ON p.id = t.robot_pattern_id
-                                WHERE t.symbol = %s AND t.agent_id = %s
-                                  AND t.timestamp >= NOW() - (%s || ' hours')::interval
-                                  AND (p.pattern_type = %s OR p.robot_type = 'TWAP à Mercado')
-                                ORDER BY t.timestamp DESC
-                                LIMIT %s
-                            """, (symbol.upper(), agent_id, str(hours), pattern_type, limit))
+                                SELECT id, first_seen, last_seen
+                                  FROM robot_patterns
+                                 WHERE symbol = %s AND agent_id = %s
+                                   AND (pattern_type = %s OR robot_type = 'TWAP à Mercado')
+                                 ORDER BY last_seen DESC
+                                 LIMIT 1
+                            """, (symbol.upper(), agent_id, pattern_type))
                         else:
                             await cur.execute("""
-                                SELECT 
-                                    t.id,
-                                    t.symbol,
-                                    t.agent_id,
-                                    t.timestamp,
-                                    t.price,
-                                    t.volume,
-                                    t.side,
-                                    t.robot_pattern_id,
-                                    t.created_at
-                                FROM robot_trades t
-                                JOIN robot_patterns p ON p.id = t.robot_pattern_id
-                                WHERE t.symbol = %s AND t.agent_id = %s
-                                  AND t.timestamp >= NOW() - (%s || ' hours')::interval
-                                  AND p.pattern_type = %s
-                                ORDER BY t.timestamp DESC
-                                LIMIT %s
-                            """, (symbol.upper(), agent_id, str(hours), pattern_type, limit))
+                                SELECT id, first_seen, last_seen
+                                  FROM robot_patterns
+                                 WHERE symbol = %s AND agent_id = %s
+                                   AND pattern_type = %s
+                                 ORDER BY last_seen DESC
+                                 LIMIT 1
+                            """, (symbol.upper(), agent_id, pattern_type))
+
+                        pattern_row = await cur.fetchone()
+                        if not pattern_row:
+                            logger.info(f"⚠️ Nenhum padrão {pattern_type} encontrado para {symbol}-{agent_id}")
+                            return []
+
+                        pattern_id = pattern_row[0]
+
+                        await cur.execute("""
+                            SELECT 
+                                id,
+                                symbol,
+                                agent_id,
+                                timestamp,
+                                price,
+                                volume,
+                                side,
+                                robot_pattern_id,
+                                created_at
+                            FROM robot_trades 
+                            WHERE robot_pattern_id = %s
+                            ORDER BY timestamp DESC
+                        """, (pattern_id,))
                     else:
                         await cur.execute("""
                             SELECT 
