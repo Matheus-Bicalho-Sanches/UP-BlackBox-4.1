@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from enum import Enum
 
 class PatternType(str, Enum):
@@ -55,6 +55,10 @@ class TWAPPattern:
     confidence_score: float = 0.0
     status: RobotStatus = RobotStatus.INACTIVE
     market_volume_percentage: float = 0.0  # ✅ NOVO: Volume em % do mercado
+    signature_volume: Optional[int] = None
+    signature_direction: Optional[str] = None
+    signature_interval_seconds: Optional[float] = None
+    pattern_id: Optional[int] = None
     
     def __post_init__(self):
         """Validação pós-inicialização"""

@@ -67,20 +67,20 @@ async def initialize_db(conn_pool: AsyncConnectionPool):
                 
                 # Cria a tabela com os tipos de dados corretos (BIGINT para volume e trade_id)
                 await cur.execute("""
-                                CREATE TABLE IF NOT EXISTS ticks_raw (
-                symbol VARCHAR(20) NOT NULL,
-                exchange VARCHAR(10) NOT NULL,
-                price DOUBLE PRECISION NOT NULL,
-                volume BIGINT NOT NULL,
-                timestamp TIMESTAMPTZ NOT NULL,
-                trade_id BIGINT,
-                -- Campos para dados detalhados de trade
-                buy_agent INTEGER,
-                sell_agent INTEGER,
-                trade_type SMALLINT,
-                volume_financial DOUBLE PRECISION,
-                is_edit BOOLEAN DEFAULT FALSE
-            );
+                    CREATE TABLE IF NOT EXISTS ticks_raw (
+                        symbol VARCHAR(20) NOT NULL,
+                        exchange VARCHAR(10) NOT NULL,
+                        price DOUBLE PRECISION NOT NULL,
+                        volume BIGINT NOT NULL,
+                        timestamp TIMESTAMPTZ NOT NULL,
+                        trade_id BIGINT,
+                        -- Campos para dados detalhados de trade
+                        buy_agent INTEGER,
+                        sell_agent INTEGER,
+                        trade_type SMALLINT,
+                        volume_financial DOUBLE PRECISION,
+                        is_edit BOOLEAN DEFAULT FALSE
+                    );
                 """)
 
                 # Bloco PL/pgSQL para alterar as colunas apenas se necessário, de forma segura.
@@ -143,6 +143,56 @@ async def initialize_db(conn_pool: AsyncConnectionPool):
                 """)
                 
                 await cur.execute("SELECT create_hypertable('ticks_raw', 'timestamp', if_not_exists => TRUE);")
+
+                # Cria/ajusta tabela robot_patterns (assinado)
+                await cur.execute("""
+                    CREATE TABLE IF NOT EXISTS robot_patterns (
+                        id SERIAL PRIMARY KEY,
+                        symbol VARCHAR(20) NOT NULL,
+                        exchange VARCHAR(10) NOT NULL,
+                        pattern_type VARCHAR(50) NOT NULL,
+                        robot_type VARCHAR(50) NOT NULL,
+                        confidence_score DOUBLE PRECISION NOT NULL,
+                        agent_id INTEGER NOT NULL,
+                        first_seen TIMESTAMPTZ NOT NULL,
+                        last_seen TIMESTAMPTZ NOT NULL,
+                        total_volume DOUBLE PRECISION NOT NULL,
+                        total_trades INTEGER NOT NULL,
+                        avg_trade_size DOUBLE PRECISION NOT NULL,
+                        frequency_minutes DOUBLE PRECISION NOT NULL,
+                        price_aggression DOUBLE PRECISION NOT NULL,
+                        status VARCHAR(20) NOT NULL,
+                        market_volume_percentage DOUBLE PRECISION,
+                        inactivity_notified BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMPTZ NOT NULL,
+                        signature_volume INTEGER,
+                        signature_direction VARCHAR(10),
+                        signature_interval_seconds DOUBLE PRECISION,
+                        UNIQUE(symbol, agent_id, pattern_type, signature_volume, signature_direction, signature_interval_seconds, first_seen)
+                    );
+                """)
+
+                # Adiciona colunas de assinatura se não existirem
+                await cur.execute("""
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='robot_patterns' AND column_name='signature_volume') THEN
+                            ALTER TABLE robot_patterns ADD COLUMN signature_volume INTEGER;
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='robot_patterns' AND column_name='signature_direction') THEN
+                            ALTER TABLE robot_patterns ADD COLUMN signature_direction VARCHAR(10);
+                        END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='robot_patterns' AND column_name='signature_interval_seconds') THEN
+                            ALTER TABLE robot_patterns ADD COLUMN signature_interval_seconds DOUBLE PRECISION;
+                        END IF;
+                    END $$;
+                """)
+
+                # Índices auxiliares
+                await cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_robot_patterns_signature
+                      ON robot_patterns(symbol, agent_id, pattern_type, signature_volume, signature_direction, signature_interval_seconds);
+                """)
 
                 await conn.commit()
                 logger.info("Esquema do banco de dados verificado e atualizado com sucesso.")

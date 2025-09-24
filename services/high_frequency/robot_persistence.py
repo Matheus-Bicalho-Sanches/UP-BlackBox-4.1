@@ -31,15 +31,17 @@ class RobotPersistence:
                             symbol, exchange, pattern_type, robot_type, confidence_score, agent_id,
                             first_seen, last_seen, total_volume, total_trades,
                             avg_trade_size, frequency_minutes, price_aggression, status, 
-                            market_volume_percentage, created_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            market_volume_percentage, created_at,
+                            signature_volume, signature_direction, signature_interval_seconds
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                     """, (
                         pattern.symbol, pattern.exchange, pattern.pattern_type, pattern.robot_type, pattern.confidence_score,
                         pattern.agent_id, pattern.first_seen, pattern.last_seen,
                         pattern.total_volume, pattern.total_trades, pattern.avg_trade_size,
                         pattern.frequency_minutes, pattern.price_aggression, pattern.status.value,
-                        pattern.market_volume_percentage, datetime.now(timezone.utc)
+                        pattern.market_volume_percentage, datetime.now(timezone.utc),
+                        pattern.signature_volume, pattern.signature_direction, pattern.signature_interval_seconds
                     ))
                     
                     result = await cur.fetchone()
@@ -128,12 +130,43 @@ class RobotPersistence:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     # 1) Busca padrão existente (símbolo+agente) para decidir entre UPDATE/INSERT
-                    await cur.execute("""
+                    conditions = [
+                        "symbol = %s",
+                        "agent_id = %s",
+                        "pattern_type = %s"
+                    ]
+                    params = [
+                        pattern.symbol,
+                        pattern.agent_id,
+                        pattern.pattern_type,
+                    ]
+
+                    if pattern.signature_volume is not None:
+                        conditions.append("signature_volume = %s")
+                        params.append(pattern.signature_volume)
+                    else:
+                        conditions.append("signature_volume IS NULL")
+
+                    if pattern.signature_direction is not None:
+                        conditions.append("signature_direction = %s")
+                        params.append(pattern.signature_direction)
+                    else:
+                        conditions.append("signature_direction IS NULL")
+
+                    if pattern.signature_interval_seconds is not None:
+                        conditions.append("signature_interval_seconds = %s")
+                        params.append(pattern.signature_interval_seconds)
+                    else:
+                        conditions.append("signature_interval_seconds IS NULL")
+
+                    where_clause = " AND ".join(conditions)
+
+                    await cur.execute(f"""
                         SELECT id FROM robot_patterns
-                         WHERE symbol = %s AND agent_id = %s AND pattern_type IN ('TWAP','MARKET_TWAP')
+                         WHERE {where_clause}
                          ORDER BY last_seen DESC
                          LIMIT 1
-                    """, (pattern.symbol, pattern.agent_id))
+                    """, tuple(params))
                     row = await cur.fetchone()
                     if row:
                         pattern_id = row[0]
@@ -150,6 +183,9 @@ class RobotPersistence:
                                 confidence_score = %s,
                                 status = %s,
                                 market_volume_percentage = %s,
+                                signature_volume = %s,
+                                signature_direction = %s,
+                                signature_interval_seconds = %s,
                                 inactivity_notified = CASE WHEN %s = 'active' THEN FALSE ELSE inactivity_notified END
                              WHERE id = %s
                         """, (
@@ -157,6 +193,7 @@ class RobotPersistence:
                             pattern.avg_trade_size, pattern.frequency_minutes,
                             pattern.price_aggression, pattern.confidence_score,
                             pattern.status.value, pattern.market_volume_percentage,
+                            pattern.signature_volume, pattern.signature_direction, pattern.signature_interval_seconds,
                             pattern.status.value, pattern_id
                         ))
                     else:
@@ -166,15 +203,23 @@ class RobotPersistence:
                                 symbol, exchange, pattern_type, robot_type, confidence_score, agent_id,
                                 first_seen, last_seen, total_volume, total_trades,
                                 avg_trade_size, frequency_minutes, price_aggression, status, 
-                                market_volume_percentage, created_at
-                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                market_volume_percentage, created_at,
+                                signature_volume, signature_direction, signature_interval_seconds
+                            ) VALUES (
+                                %s, %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s,
+                                %s, %s, %s, %s,
+                                %s, %s,
+                                %s, %s, %s
+                            )
                             RETURNING id
                         """, (
                             pattern.symbol, pattern.exchange, pattern.pattern_type, pattern.robot_type, pattern.confidence_score,
                             pattern.agent_id, pattern.first_seen, pattern.last_seen,
                             pattern.total_volume, pattern.total_trades, pattern.avg_trade_size,
                             pattern.frequency_minutes, pattern.price_aggression, pattern.status.value,
-                            pattern.market_volume_percentage, datetime.now(timezone.utc)
+                            pattern.market_volume_percentage, datetime.now(timezone.utc),
+                            pattern.signature_volume, pattern.signature_direction, pattern.signature_interval_seconds
                         ))
                         row2 = await cur.fetchone()
                         if not row2:
@@ -246,18 +291,34 @@ class RobotPersistence:
             logger.error(f"💥 Erro em save_pattern_and_trades: {e}")
             return None
     
-    async def get_existing_pattern(self, symbol: str, agent_id: int) -> Optional[tuple]:
-        """Busca um padrão existente para o símbolo e agente"""
+    async def get_existing_pattern(
+        self,
+        symbol: str,
+        agent_id: int,
+        pattern_type: str,
+        signature_volume: Optional[int],
+        signature_direction: Optional[str],
+        signature_interval_seconds: Optional[float]
+    ) -> Optional[tuple]:
+        """Busca um padrão existente para o símbolo, agente e assinatura informados"""
         try:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
                         SELECT id, status, robot_type, first_seen, total_volume, total_trades, avg_trade_size, inactivity_notified
                         FROM robot_patterns
-                        WHERE symbol = %s AND agent_id = %s AND pattern_type IN ('TWAP','MARKET_TWAP')
+                        WHERE symbol = %s AND agent_id = %s AND pattern_type = %s
+                          AND (signature_volume = %s OR (%s IS NULL AND signature_volume IS NULL))
+                          AND (signature_direction = %s OR (%s IS NULL AND signature_direction IS NULL))
+                          AND (signature_interval_seconds = %s OR (%s IS NULL AND signature_interval_seconds IS NULL))
                         ORDER BY last_seen DESC
                         LIMIT 1
-                    """, (symbol, agent_id))
+                    """, (
+                        symbol, agent_id, pattern_type,
+                        signature_volume, signature_volume,
+                        signature_direction, signature_direction,
+                        signature_interval_seconds, signature_interval_seconds,
+                    ))
                     
                     result = await cur.fetchone()
                     return result

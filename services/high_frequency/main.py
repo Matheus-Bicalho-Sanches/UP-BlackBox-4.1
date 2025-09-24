@@ -640,7 +640,7 @@ async def unsubscribe_symbol(request: UnsubscribeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/patterns")
-async def get_robot_patterns():
+async def get_robot_patterns(symbol: Optional[str] = None, agent_id: Optional[int] = None, signature: Optional[str] = None):
     """Retorna padrões de robôs detectados"""
     try:
         logger.info("🔍 Endpoint /robots/patterns chamado")
@@ -659,28 +659,40 @@ async def get_robot_patterns():
         
         # Converte para lista plana
         all_patterns = []
-        for symbol, agents in patterns.items():
-            logger.info(f"🎯 Processando símbolo {symbol} com {len(agents)} agentes")
-            for agent_id, pattern in agents.items():
-                logger.info(f"🤖 Agente {agent_id} ({get_agent_name(agent_id)}) em {symbol}")
-                all_patterns.append({
-                    'id': f"{symbol}_{agent_id}",
-                    'symbol': pattern.symbol,
-                    'exchange': pattern.exchange,
-                    'pattern_type': pattern.pattern_type,
-                    'robot_type': pattern.robot_type,  # ✅ NOVO CAMPO
-                    'confidence_score': pattern.confidence_score,
-                    'agent_id': pattern.agent_id,
-                    'first_seen': pattern.first_seen.isoformat(),
-                    'last_seen': pattern.last_seen.isoformat(),
-                    'total_volume': pattern.total_volume,
-                    'total_trades': pattern.total_trades,
-                    'avg_trade_size': pattern.avg_trade_size,
-                    'frequency_minutes': pattern.frequency_minutes,
-                    'price_aggression': pattern.price_aggression,
-                    'status': pattern.status.value,
-                    'market_volume_percentage': pattern.market_volume_percentage
-                })
+        for sym, agents in patterns.items():
+            if symbol and sym.upper() != symbol.upper():
+                continue
+            logger.info(f"🎯 Processando símbolo {sym} com {len(agents)} agentes")
+            for agent, patterns_by_signature in agents.items():
+                if agent_id is not None and agent != agent_id:
+                    continue
+                for signature_key, pattern in patterns_by_signature.items():
+                    if signature and signature_key != signature:
+                        continue
+                    logger.info(f"🤖 Agente {agent} ({get_agent_name(agent)}) em {sym} assinatura {signature_key}")
+                    all_patterns.append({
+                        'id': f"{sym}_{agent}_{signature_key}",
+                        'symbol': pattern.symbol,
+                        'exchange': pattern.exchange,
+                        'pattern_type': pattern.pattern_type,
+                        'robot_type': pattern.robot_type,
+                        'confidence_score': pattern.confidence_score,
+                        'agent_id': pattern.agent_id,
+                        'signature_key': signature_key,
+                        'signature_volume': pattern.signature_volume,
+                        'signature_direction': pattern.signature_direction,
+                        'signature_interval_seconds': pattern.signature_interval_seconds,
+                        'pattern_id': pattern.pattern_id,
+                        'first_seen': pattern.first_seen.isoformat(),
+                        'last_seen': pattern.last_seen.isoformat(),
+                        'total_volume': pattern.total_volume,
+                        'total_trades': pattern.total_trades,
+                        'avg_trade_size': pattern.avg_trade_size,
+                        'frequency_minutes': pattern.frequency_minutes,
+                        'price_aggression': pattern.price_aggression,
+                        'status': pattern.status.value,
+                        'market_volume_percentage': pattern.market_volume_percentage
+                    })
         
         logger.info(f"🎉 Convertidos {len(all_patterns)} padrões para formato JSON")
         return all_patterns
@@ -745,14 +757,17 @@ async def get_robot_activity(symbol: Optional[str] = None, hours: int = 24):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/status-changes")
-async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24):
+async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24, signature: Optional[str] = None, agent_id: Optional[int] = None):
     """Retorna mudanças de status dos robôs (start/stop) - limitado aos 50 mais recentes"""
     try:
         if not twap_detector:
             raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
         
         # Busca mudanças de status do detector
-        status_changes = twap_detector.get_status_changes(symbol, hours)
+        status_changes = twap_detector.get_status_changes(symbol, hours, signature)
+
+        if agent_id is not None:
+            status_changes = [change for change in status_changes if change.get('agent_id') == agent_id]
         
         # ✅ Limita aos 50 mais recentes
         limited = status_changes[:50]
@@ -765,14 +780,17 @@ async def get_robot_status_changes(symbol: Optional[str] = None, hours: int = 24
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/robots/all-changes")
-async def get_all_robot_changes(symbol: Optional[str] = None, hours: int = 24):
+async def get_all_robot_changes(symbol: Optional[str] = None, hours: int = 24, signature: Optional[str] = None, agent_id: Optional[int] = None):
     """Retorna todas as mudanças (status + tipo) dos robôs"""
     try:
         if not twap_detector:
             raise HTTPException(status_code=503, detail="TWAP Detector não inicializado")
         
         # Busca todas as mudanças (status + tipo)
-        all_changes = twap_detector.get_all_changes(symbol, hours)
+        all_changes = twap_detector.get_all_changes(symbol, hours, signature)
+
+        if agent_id is not None:
+            all_changes = [change for change in all_changes if change.get('agent_id') == agent_id]
         
         logger.info(f"Retornando {len(all_changes)} mudanças totais (status + tipo)")
         return all_changes

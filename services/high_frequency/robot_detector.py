@@ -1,9 +1,10 @@
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta, time
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, DefaultDict
 from collections import defaultdict
 import statistics
+import math
 
 # Corrige imports para funcionar como módulo standalone
 try:
@@ -34,8 +35,15 @@ class RobotStatusTracker:
         self.max_history_size = 1000  # Mantém histórico das últimas 1000 mudanças
         self.websocket_callback = websocket_callback  # ✅ NOVO: Callback para WebSocket
     
-    def add_status_change(self, symbol: str, agent_id: int, old_status: str, 
-                         new_status: str, pattern: TWAPPattern):
+    def add_status_change(
+        self,
+        symbol: str,
+        agent_id: int,
+        old_status: str,
+        new_status: str,
+        pattern: TWAPPattern,
+        signature_key: str,
+    ):
         """Adiciona uma mudança de status ao histórico"""
         change = {
             'id': f"{symbol}_{agent_id}_{datetime.now(timezone.utc).timestamp()}",  # ✅ CORRIGIDO: Usa timezone UTC
@@ -50,7 +58,12 @@ class RobotStatusTracker:
             'confidence_score': pattern.confidence_score,
             'total_volume': pattern.total_volume,
             'total_trades': pattern.total_trades,
-            'market_volume_percentage': pattern.market_volume_percentage  # ✅ NOVO: Volume em % do mercado
+            'market_volume_percentage': pattern.market_volume_percentage,  # ✅ NOVO: Volume em % do mercado
+            'signature_key': signature_key,
+            'signature_volume': pattern.signature_volume,
+            'signature_direction': pattern.signature_direction,
+            'signature_interval_seconds': pattern.signature_interval_seconds,
+            'pattern_id': pattern.pattern_id,
         }
         
         # Adiciona no início da lista (mais recente primeiro)
@@ -87,44 +100,48 @@ class RobotStatusTracker:
             except Exception as e:
                 logger.error(f"Erro ao notificar mudança de tipo via WebSocket: {e}")
 
-    def get_status_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
-        """Retorna mudanças de status filtradas por símbolo e tempo"""
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)  # ✅ CORRIGIDO: Usa timezone UTC
-        
+    def get_status_changes(
+        self,
+        symbol: Optional[str] = None,
+        hours: int = 24,
+        signature_key: Optional[str] = None,
+    ) -> List[Dict]:
+        """Retorna mudanças de status filtradas por símbolo/assinatura e tempo"""
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
         filtered_changes = []
         for change in self.status_history:
             change_time = datetime.fromisoformat(change['timestamp'])
             if change_time >= cutoff_time:
-                if symbol is None or change['symbol'] == symbol:
+                signature_ok = signature_key is None or change.get('signature_key') == signature_key
+                symbol_ok = symbol is None or change['symbol'] == symbol
+                if symbol_ok and signature_ok:
                     filtered_changes.append(change)
-        
         return filtered_changes
 
-    def get_all_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
+    def get_all_changes(self, symbol: Optional[str] = None, hours: int = 24, signature_key: Optional[str] = None) -> List[Dict]:
         """Retorna todas as mudanças (status + tipo) mescladas por timestamp"""
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
-        
-        # Filtra mudanças de status
+
         status_changes = [
-            {**change, 'change_category': 'status'} 
+            {**change, 'change_category': 'status'}
             for change in self.status_history
             if datetime.fromisoformat(change['timestamp']) >= cutoff_time
             and (symbol is None or change['symbol'] == symbol)
+            and (signature_key is None or change.get('signature_key') == signature_key)
         ]
-        
-        # Filtra mudanças de tipo
+
         type_changes = [
-            {**change, 'change_category': 'type'} 
+            {**change, 'change_category': 'type'}
             for change in self.type_change_history
             if datetime.fromisoformat(change['timestamp']) >= cutoff_time
             and (symbol is None or change['symbol'] == symbol)
+            and (signature_key is None or change.get('signature_key') == signature_key)
         ]
-        
-        # Mescla e ordena por timestamp (mais recente primeiro)
+
         all_changes = status_changes + type_changes
         all_changes.sort(key=lambda x: x['timestamp'], reverse=True)
-        
-        return all_changes[:50]  # Limita aos 50 mais recentes
+
+        return all_changes[:50]
 
 class TWAPDetector:
     """Detector de padrões TWAP (Time-Weighted Average Price)"""
@@ -132,9 +149,16 @@ class TWAPDetector:
     def __init__(self, config: TWAPDetectionConfig, persistence: RobotPersistence):
         self.config = config
         self.persistence = persistence
-        self.active_patterns: Dict[str, Dict[int, TWAPPattern]] = defaultdict(dict)
+        self.active_patterns: Dict[str, Dict[int, Dict[str, TWAPPattern]]] = defaultdict(lambda: defaultdict(dict))
         self.status_tracker = RobotStatusTracker()  # Adiciona tracker de status
         
+        self.pressure_robot_types = {
+            RobotType.TYPE_0.value,
+            RobotType.TYPE_1.value,
+            RobotType.TYPE_2.value,
+            RobotType.TYPE_3.value,
+        }
+
         # ✅ NOVO: Detector de TWAP à Mercado com configuração mais permissiva
         try:
             from .market_twap_detector import MarketTWAPConfig
@@ -150,7 +174,64 @@ class TWAPDetector:
         self.market_twap_detector = MarketTWAPDetector(market_twap_config)
         
         # ✅ NOVO: Histerese de ativação para evitar flip-flop imediato
-        self.activation_times: Dict[Tuple[str, int], datetime] = {}
+        self.activation_times: Dict[Tuple[str, int, str], datetime] = {}
+
+    def _build_signature_key(
+        self,
+        signature_volume: Optional[int],
+        signature_direction: Optional[str],
+        signature_interval_seconds: Optional[float],
+    ) -> str:
+        direction = signature_direction or "unknown"
+        volume = signature_volume if signature_volume is not None else -1
+        interval = int(round(signature_interval_seconds or 0))
+        return f"{direction}|{volume}|{interval}"
+
+    def _cluster_trades(self, trades: List[TickData]) -> Dict[Tuple[int, str, float], List[TickData]]:
+        if not trades:
+            return {}
+
+        grouped: DefaultDict[Tuple[int, str], List[TickData]] = defaultdict(list)
+        for trade in trades:
+            direction = 'buy' if trade.trade_type == TradeType.BUY else 'sell'
+            grouped[(int(trade.volume), direction)].append(trade)
+
+        clusters: Dict[Tuple[int, str, float], List[TickData]] = {}
+
+        for (volume, direction), trade_list in grouped.items():
+            if len(trade_list) < self.config.min_trades:
+                continue
+
+            trade_list_sorted = sorted(trade_list, key=lambda t: t.timestamp)
+            if len(trade_list_sorted) > 1:
+                intervals = [
+                    (trade_list_sorted[i].timestamp - trade_list_sorted[i - 1].timestamp).total_seconds()
+                    for i in range(1, len(trade_list_sorted))
+                ]
+                avg_interval = statistics.mean(intervals) if intervals else 0.0
+            else:
+                avg_interval = 0.0
+
+            clusters[(volume, direction, avg_interval)] = trade_list_sorted
+
+        if not clusters:
+            trade_list_sorted = sorted(trades, key=lambda t: t.timestamp)
+            direction_counts = defaultdict(int)
+            for t in trade_list_sorted:
+                direction_counts['buy' if t.trade_type == TradeType.BUY else 'sell'] += 1
+            direction = max(direction_counts, key=direction_counts.get) if direction_counts else 'unknown'
+            avg_volume = int(round(sum(t.volume for t in trade_list_sorted) / len(trade_list_sorted))) if trade_list_sorted else 0
+            if len(trade_list_sorted) > 1:
+                intervals = [
+                    (trade_list_sorted[i].timestamp - trade_list_sorted[i - 1].timestamp).total_seconds()
+                    for i in range(1, len(trade_list_sorted))
+                ]
+                avg_interval = statistics.mean(intervals) if intervals else 0.0
+            else:
+                avg_interval = 0.0
+            clusters[(avg_volume, direction, avg_interval)] = trade_list_sorted
+
+        return clusters
         self.activation_cooldown_seconds: int = 90
     
     def _to_utc(self, dt: datetime) -> datetime:
@@ -193,13 +274,66 @@ class TWAPDetector:
             for agent_id, trades in agent_trades.items():
                 if len(trades) < self.config.min_trades:
                     continue
-                
-                pattern = await self._analyze_agent_trades(symbol, agent_id, trades)
-                if pattern and pattern.confidence_score >= self.config.min_confidence:
-                    detected_patterns.append(pattern)
-                    
-                    # Salva ou atualiza o padrão
-                    await self._persist_pattern(pattern)
+
+                clusters = self._cluster_trades(trades)
+
+                # Primeiro: padrão agregado de pressão (volume líquido da corretora)
+                aggregated_pattern = await self._analyze_agent_trades(
+                    symbol,
+                    agent_id,
+                    trades,
+                    signature_volume=None,
+                    signature_direction=None,
+                    signature_interval_seconds=None,
+                )
+                if aggregated_pattern and aggregated_pattern.confidence_score >= self.config.min_confidence:
+                    signature = self._build_signature_key(
+                        aggregated_pattern.signature_volume,
+                        aggregated_pattern.signature_direction,
+                        aggregated_pattern.signature_interval_seconds,
+                    )
+
+                    if aggregated_pattern.robot_type in self.pressure_robot_types:
+                        direction = aggregated_pattern.signature_direction or 'neutral'
+                        pressure_signature = f"pressure:{symbol}:{direction}"
+                        aggregated_pattern.signature_volume = aggregated_pattern.total_volume
+                        aggregated_pattern.signature_interval_seconds = None
+                        signature = pressure_signature
+
+                    detected_patterns.append(aggregated_pattern)
+                    await self._persist_pattern(aggregated_pattern, signature)
+
+                for signature, cluster_trades in clusters.items():
+                    signature_volume, signature_direction, signature_interval = signature
+
+                    pattern = await self._analyze_agent_trades(
+                        symbol,
+                        agent_id,
+                        cluster_trades,
+                        signature_volume=signature_volume,
+                        signature_direction=signature_direction,
+                        signature_interval_seconds=signature_interval,
+                    )
+
+                    if pattern and pattern.confidence_score >= self.config.min_confidence:
+                        if pattern.robot_type in self.pressure_robot_types:
+                            continue
+
+                        signature_key = self._build_signature_key(
+                            pattern.signature_volume,
+                            pattern.signature_direction,
+                            pattern.signature_interval_seconds,
+                        )
+
+                        if signature_key == "unknown|-1|0" and pattern.robot_type in self.pressure_robot_types:
+                            direction = pattern.signature_direction or 'net'
+                            pressure_signature = f"pressure:{pattern.symbol}:{direction}"
+                            pattern.signature_key = pressure_signature
+                            signature_key = pressure_signature
+
+                        detected_patterns.append(pattern)
+
+                        await self._persist_pattern(pattern, signature_key)
             
             # ✅ NOVO: Detecta padrões TWAP à Mercado (janela curta primeiro)
             logger.info(f"Analisando {symbol} para padrões TWAP à Mercado...")
@@ -208,20 +342,29 @@ class TWAPDetector:
             for agent_id, agent_trades in agent_trades.items():
                 if len(agent_trades) < self.market_twap_detector.config.min_volume_repetitions:
                     continue
-                
-                # Detecta padrões TWAP à Mercado para este agente específico
-                candidate_trades = agent_trades
-                market_twap_patterns = await self.market_twap_detector.detect_market_twap_patterns(candidate_trades)
-                
-                for pattern in market_twap_patterns:
-                    if pattern and pattern.confidence_score >= self.market_twap_detector.config.min_confidence:
-                        detected_patterns.append(pattern)
-                        
-                        # Salva o padrão e seus trades
-                        await self.market_twap_detector.save_pattern_and_trades(pattern, agent_trades)
-                        
-                        # ✅ NOVO: Armazena no active_patterns para exibição
-                        await self._persist_pattern(pattern)
+
+                clusters = self.market_twap_detector.cluster_trades(agent_trades)
+                for signature, cluster_trades in clusters.items():
+                    market_twap_patterns = await self.market_twap_detector.detect_market_twap_patterns(cluster_trades)
+
+                    for pattern in market_twap_patterns:
+                        if pattern and pattern.confidence_score >= self.market_twap_detector.config.min_confidence:
+                            signature_key = self._build_signature_key(
+                                pattern.signature_volume,
+                                pattern.signature_direction,
+                                pattern.signature_interval_seconds,
+                            )
+                            detected_patterns.append(pattern)
+
+                            pattern.signature_volume = signature['signature_volume']
+                            pattern.signature_direction = signature['signature_direction']
+                            pattern.signature_interval_seconds = signature['signature_interval_seconds']
+
+                            # Salva o padrão e seus trades
+                            await self.market_twap_detector.save_pattern_and_trades(pattern, cluster_trades)
+
+                            # ✅ NOVO: Armazena no active_patterns para exibição
+                            await self._persist_pattern(pattern, signature_key)
             
             # Conta padrões TWAP à Mercado
             market_twap_count = sum(1 for p in detected_patterns if p.robot_type == RobotType.MARKET_TWAP.value)
@@ -267,13 +410,26 @@ class TWAPDetector:
         
         return agent_trades
     
-    async def _analyze_agent_trades(self, symbol: str, agent_id: int, trades: List[TickData]) -> Optional[TWAPPattern]:
+    async def _analyze_agent_trades(
+        self,
+        symbol: str,
+        agent_id: int,
+        trades: List[TickData],
+        signature_volume: Optional[int] = None,
+        signature_direction: Optional[str] = None,
+        signature_interval_seconds: Optional[float] = None,
+    ) -> Optional[TWAPPattern]:
         try:
             # Ordena por tempo crescente
             trades = sorted(trades, key=lambda t: t.timestamp)
             total_trades = len(trades)
-            total_volume = sum(t.volume for t in trades)
-            avg_trade_size = total_volume / total_trades if total_trades > 0 else 0
+            gross_volume = sum(t.volume for t in trades)
+            avg_trade_size = gross_volume / total_trades if total_trades > 0 else 0
+
+            buy_volume_total = sum(t.volume for t in trades if t.trade_type == TradeType.BUY)
+            sell_volume_total = sum(t.volume for t in trades if t.trade_type == TradeType.SELL)
+            net_volume = buy_volume_total - sell_volume_total
+            net_volume_abs = abs(net_volume)
             
             # Calcula frequência média entre trades (minutos)
             if total_trades > 1:
@@ -305,6 +461,16 @@ class TWAPDetector:
             if recency_minutes > self.config.active_recency_minutes:
                 status = RobotStatus.INACTIVE
             
+            if signature_direction is not None:
+                signature_direction_value = signature_direction
+            else:
+                if net_volume > 0:
+                    signature_direction_value = 'buy'
+                elif net_volume < 0:
+                    signature_direction_value = 'sell'
+                else:
+                    signature_direction_value = 'neutral'
+
             # ✅ NOVO: Cria o padrão TWAP
             pattern = TWAPPattern(
                 symbol=symbol,
@@ -315,13 +481,18 @@ class TWAPDetector:
                 agent_id=agent_id,
                 first_seen=trades[0].timestamp if trades else datetime.now(timezone.utc),
                 last_seen=trades[-1].timestamp if trades else datetime.now(timezone.utc),
-                total_volume=total_volume,
+                total_volume=gross_volume,
                 total_trades=total_trades,
                 avg_trade_size=avg_trade_size,
                 frequency_minutes=avg_frequency,
                 price_aggression=price_aggression,
                 status=status,
-                market_volume_percentage=0.0  # Será calculado após salvar o padrão
+                market_volume_percentage=0.0,  # Será calculado após salvar o padrão
+                signature_volume=signature_volume or int(round(avg_trade_size)) if trades else None,
+                signature_direction=signature_direction_value,
+                signature_interval_seconds=signature_interval_seconds or (
+                    avg_frequency * 60.0 if avg_frequency else None
+                )
             )
             
             # ✅ NOVO: Salva padrão e trades de forma atômica para evitar FK inválida
@@ -519,11 +690,17 @@ class TWAPDetector:
         else:
             return RobotType.TYPE_0.value  # "Robô Tipo 0" - 0% a 1%
     
-    async def _persist_pattern(self, pattern: TWAPPattern) -> bool:
+    async def _persist_pattern(self, pattern: TWAPPattern, signature_key: str) -> bool:
         """Persiste um padrão detectado"""
         try:
-            # Verifica se já existe um padrão para este símbolo/agente
-            existing = await self.persistence.get_existing_pattern(pattern.symbol, pattern.agent_id)
+            existing = await self.persistence.get_existing_pattern(
+                pattern.symbol,
+                pattern.agent_id,
+                pattern.pattern_type,
+                pattern.signature_volume,
+                pattern.signature_direction,
+                pattern.signature_interval_seconds,
+            )
             
             if existing:
                 # Atualiza padrão existente
@@ -535,41 +712,55 @@ class TWAPDetector:
                 
                 success = await self.persistence.update_twap_pattern(pattern_id, pattern)
                 if success:
-                    # Atualiza no cache local
-                    self.active_patterns[pattern.symbol][pattern.agent_id] = pattern
-                    
-                    # ✅ CORRIGIDO: Compara enums, não string vs enum
+                    self.active_patterns[pattern.symbol][pattern.agent_id][signature_key] = pattern
+
                     if old_status_enum != pattern.status:
-                        logger.info(f"🔄 Mudança real de status: {pattern.symbol} - {pattern.agent_id} ({old_status_enum.value} -> {pattern.status.value})")
+                        logger.info(
+                            f"🔄 Mudança real de status: {pattern.symbol} - {pattern.agent_id} ({old_status_enum.value} -> {pattern.status.value})"
+                        )
+                        pattern.pattern_id = pattern_id
                         self.status_tracker.add_status_change(
-                            pattern.symbol, pattern.agent_id, old_status_enum.value, pattern.status.value, pattern
+                            pattern.symbol,
+                            pattern.agent_id,
+                            old_status_enum.value,
+                            pattern.status.value,
+                            pattern,
+                            signature_key,
                         )
                         
-                        # ✅ NOVO: registra hora de ativação
                         if pattern.status == RobotStatus.ACTIVE:
-                            self.activation_times[(pattern.symbol, pattern.agent_id)] = datetime.now(timezone.utc)
+                            self.activation_times[(pattern.symbol, pattern.agent_id, signature_key)] = datetime.now(timezone.utc)
                     else:
-                        logger.debug(f"📊 Status inalterado: {pattern.symbol} - {pattern.agent_id} ({pattern.status.value})")
-                    
+                        logger.debug(
+                            f"📊 Status inalterado: {pattern.symbol} - {pattern.agent_id} signature {signature_key} ({pattern.status.value})"
+                        )
+
                     return success
             else:
                 # Cria novo padrão
                 pattern_id = await self.persistence.save_twap_pattern(pattern)
                 if pattern_id:
-                    # Adiciona ao cache local
-                    self.active_patterns[pattern.symbol][pattern.agent_id] = pattern
-                    
-                    # ✅ Só emitir início se realmente estiver ativo agora
+                    self.active_patterns[pattern.symbol][pattern.agent_id][signature_key] = pattern
+
                     if pattern.status == RobotStatus.ACTIVE:
-                        logger.info(f"🆕 Novo robô detectado: {pattern.symbol} - {pattern.agent_id} ({pattern.status.value})")
-                        self.status_tracker.add_status_change(
-                            pattern.symbol, pattern.agent_id, 'inactive', pattern.status.value, pattern
+                        logger.info(
+                            f"🆕 Novo robô detectado: {pattern.symbol} - {pattern.agent_id} signature {signature_key} ({pattern.status.value})"
                         )
-                        # registra hora de ativação
-                        self.activation_times[(pattern.symbol, pattern.agent_id)] = datetime.now(timezone.utc)
+                        pattern.pattern_id = pattern_id
+                        self.status_tracker.add_status_change(
+                            pattern.symbol,
+                            pattern.agent_id,
+                            'inactive',
+                            pattern.status.value,
+                            pattern,
+                            signature_key,
+                        )
+                        self.activation_times[(pattern.symbol, pattern.agent_id, signature_key)] = datetime.now(timezone.utc)
                     else:
-                        logger.debug(f"Novo padrão criado mas não ativo (recency gate): {pattern.symbol}-{pattern.agent_id}")
-                    
+                        logger.debug(
+                            f"Novo padrão criado mas não ativo (recency gate): {pattern.symbol}-{pattern.agent_id} signature {signature_key}"
+                        )
+
                     return True
                 return False
                 
@@ -661,17 +852,27 @@ class TWAPDetector:
         except Exception as e:
             logger.error(f"Erro na limpeza: {e}")
     
-    def get_active_patterns(self) -> Dict[str, Dict[int, TWAPPattern]]:
+    def get_active_patterns(self) -> Dict[str, Dict[int, Dict[str, TWAPPattern]]]:
         """Retorna padrões ativos em cache"""
         return self.active_patterns.copy()
     
-    def get_status_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
+    def get_status_changes(
+        self,
+        symbol: Optional[str] = None,
+        hours: int = 24,
+        signature_key: Optional[str] = None,
+    ) -> List[Dict]:
         """Retorna mudanças de status dos robôs"""
-        return self.status_tracker.get_status_changes(symbol, hours)
+        return self.status_tracker.get_status_changes(symbol, hours, signature_key)
 
-    def get_all_changes(self, symbol: Optional[str] = None, hours: int = 24) -> List[Dict]:
+    def get_all_changes(
+        self,
+        symbol: Optional[str] = None,
+        hours: int = 24,
+        signature_key: Optional[str] = None,
+    ) -> List[Dict]:
         """Retorna todas as mudanças (status + tipo) dos robôs"""
-        return self.status_tracker.get_all_changes(symbol, hours)
+        return self.status_tracker.get_all_changes(symbol, hours, signature_key)
 
     async def recalculate_market_volume_percentage(self, symbol: str, agent_id: int, pattern: TWAPPattern) -> Tuple[float, str]:
         """
@@ -730,61 +931,76 @@ class TWAPDetector:
         
         try:
             for symbol, agents in list(self.active_patterns.items()):
-                for agent_id, pattern in list(agents.items()):
-                    if pattern.status == RobotStatus.ACTIVE:
-                        # Recalcula volume % atual
-                        new_volume_pct, new_robot_type = await self.recalculate_market_volume_percentage(
-                            symbol, agent_id, pattern
-                        )
-                        
-                        # Verifica se houve mudança de tipo
-                        if new_robot_type != pattern.robot_type:
-                            # Registra mudança de tipo
-                            type_change = {
-                                'id': f"{symbol}_{agent_id}_type_change_{datetime.now(timezone.utc).timestamp()}",
-                                'symbol': symbol,
-                                'agent_id': agent_id,
-                                'agent_name': get_agent_name(agent_id),
-                                'old_type': pattern.robot_type,
-                                'new_type': new_robot_type,
-                                'old_volume_percentage': pattern.market_volume_percentage,
-                                'new_volume_percentage': new_volume_pct,
-                                'timestamp': datetime.now(timezone.utc).isoformat(),
-                                'confidence_score': pattern.confidence_score,
-                                'total_volume': pattern.total_volume,
-                                'total_trades': pattern.total_trades,
-                                'change_type': 'type_update',  # Novo tipo de mudança
-                                'pattern_type': pattern.pattern_type
-                            }
-                            
-                            type_changes.append(type_change)
-                            
-                            # Atualiza o padrão em memória
-                            pattern.robot_type = new_robot_type
-                            pattern.market_volume_percentage = new_volume_pct
-                            
-                            # Busca pattern_id e salva no banco
-                            existing = await self.persistence.get_existing_pattern(symbol, agent_id)
-                            if existing:
-                                pattern_id = existing[0]
-                                await self.persistence.update_twap_pattern(pattern_id, pattern)
-                            
-                            # Adiciona ao histórico de mudanças
-                            self.status_tracker.add_type_change(type_change)
-                            
-                            logger.info(f"🔄 Mudança de tipo: {symbol} - {get_agent_name(agent_id)} ({agent_id}) ({type_change['old_type']} -> {new_robot_type}) - Volume: {pattern.market_volume_percentage:.2f}% -> {new_volume_pct:.2f}%")
-                        
-                        elif abs(new_volume_pct - pattern.market_volume_percentage) > 0.5:
-                            # Atualiza volume % mesmo sem mudança de tipo (se diferença > 0.5%)
-                            pattern.market_volume_percentage = new_volume_pct
-                            
-                            # Busca pattern_id e atualiza no banco
-                            existing = await self.persistence.get_existing_pattern(symbol, agent_id)
-                            if existing:
-                                pattern_id = existing[0]
-                                await self.persistence.update_market_volume_percentage(pattern_id, new_volume_pct)
-                            
-                            logger.debug(f"📊 Volume % atualizado: {symbol} - {get_agent_name(agent_id)} ({agent_id}): {new_volume_pct:.2f}%")
+                for agent_id, patterns_by_signature in list(agents.items()):
+                    for signature_key, pattern in list(patterns_by_signature.items()):
+                        if pattern.status == RobotStatus.ACTIVE:
+                            new_volume_pct, new_robot_type = await self.recalculate_market_volume_percentage(
+                                symbol, agent_id, pattern
+                            )
+
+                            if new_robot_type != pattern.robot_type:
+                                type_change = {
+                                    'id': f"{symbol}_{agent_id}_{signature_key}_type_change_{datetime.now(timezone.utc).timestamp()}",
+                                    'symbol': symbol,
+                                    'agent_id': agent_id,
+                                    'signature_key': signature_key,
+                                    'agent_name': get_agent_name(agent_id),
+                                    'old_type': pattern.robot_type,
+                                    'new_type': new_robot_type,
+                                    'old_volume_percentage': pattern.market_volume_percentage,
+                                    'new_volume_percentage': new_volume_pct,
+                                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                                    'confidence_score': pattern.confidence_score,
+                                    'total_volume': pattern.total_volume,
+                                    'total_trades': pattern.total_trades,
+                                    'change_type': 'type_update',
+                                    'pattern_type': pattern.pattern_type,
+                                    'signature_volume': pattern.signature_volume,
+                                    'signature_direction': pattern.signature_direction,
+                                    'signature_interval_seconds': pattern.signature_interval_seconds,
+                                }
+
+                                type_changes.append(type_change)
+
+                                pattern.robot_type = new_robot_type
+                                pattern.market_volume_percentage = new_volume_pct
+
+                                existing = await self.persistence.get_existing_pattern(
+                                    symbol,
+                                    agent_id,
+                                    pattern.pattern_type,
+                                    pattern.signature_volume,
+                                    pattern.signature_direction,
+                                    pattern.signature_interval_seconds,
+                                )
+                                if existing:
+                                    pattern_id = existing[0]
+                                    await self.persistence.update_twap_pattern(pattern_id, pattern)
+
+                                self.status_tracker.add_type_change(type_change)
+
+                                logger.info(
+                                    f"🔄 Mudança de tipo: {symbol} - {get_agent_name(agent_id)} ({agent_id}) signature {signature_key} ({type_change['old_type']} -> {new_robot_type}) - Volume: {pattern.market_volume_percentage:.2f}% -> {new_volume_pct:.2f}%"
+                                )
+
+                            elif abs(new_volume_pct - pattern.market_volume_percentage) > 0.5:
+                                pattern.market_volume_percentage = new_volume_pct
+
+                                existing = await self.persistence.get_existing_pattern(
+                                    symbol,
+                                    agent_id,
+                                    pattern.pattern_type,
+                                    pattern.signature_volume,
+                                    pattern.signature_direction,
+                                    pattern.signature_interval_seconds,
+                                )
+                                if existing:
+                                    pattern_id = existing[0]
+                                    await self.persistence.update_market_volume_percentage(pattern_id, new_volume_pct)
+
+                                logger.debug(
+                                    f"📊 Volume % atualizado: {symbol} - {get_agent_name(agent_id)} ({agent_id}) signature {signature_key}: {new_volume_pct:.2f}%"
+                                )
             
             return type_changes
             
@@ -796,41 +1012,54 @@ class TWAPDetector:
         """Detecta robôs que pararam de operar nas últimas X minutos"""
         try:
             stopped_robots = []
-            current_time = datetime.now(timezone.utc)  # ✅ CORRIGIDO: Usa timezone UTC
+            current_time = datetime.now(timezone.utc)
             cutoff_time = current_time - timedelta(minutes=inactivity_threshold_minutes)
-            
-            # Verifica cada padrão ativo
+
             for symbol, agents in self.active_patterns.items():
-                for agent_id, pattern in agents.items():
-                    # Se o robô não operou nas últimas X minutos
-                    if pattern.last_seen < cutoff_time:
-                        # Marca como inativo
-                        old_status = pattern.status
-                        pattern.status = RobotStatus.INACTIVE
-                        
-                        # Atualiza no banco
-                        existing_pattern = await self.persistence.get_existing_pattern(symbol, agent_id)
-                        if existing_pattern:
-                            pattern_id = existing_pattern[0]
-                            await self.persistence.update_twap_pattern(pattern_id, pattern)
-                        
-                        # Rastreia a mudança de status
-                        self.status_tracker.add_status_change(
-                            symbol, agent_id, old_status.value, 'inactive', pattern
-                        )
-                        
-                        # Calcula inatividade em minutos
-                        inactivity_minutes = (current_time - pattern.last_seen).total_seconds() / 60
-                        
-                        stopped_robots.append({
-                            'symbol': symbol,
-                            'agent_id': agent_id,
-                            'agent_name': get_agent_name(agent_id),  # ✅ NOVO: Nome da corretora
-                            'stopped_at': pattern.last_seen.isoformat(),
-                            'inactivity_minutes': inactivity_minutes
-                        })
-                        
-                        logger.info(f"Robô {get_agent_name(agent_id)} ({agent_id}) em {symbol} marcado como inativo (parou há {inactivity_minutes:.1f} minutos)")
+                for agent_id, patterns_by_signature in agents.items():
+                    for signature_key, pattern in patterns_by_signature.items():
+                        if pattern.last_seen < cutoff_time:
+                            old_status = pattern.status
+                            pattern.status = RobotStatus.INACTIVE
+
+                            existing_pattern = await self.persistence.get_existing_pattern(
+                                symbol,
+                                agent_id,
+                                pattern.pattern_type,
+                                pattern.signature_volume,
+                                pattern.signature_direction,
+                                pattern.signature_interval_seconds,
+                            )
+                            if existing_pattern:
+                                pattern_id = existing_pattern[0]
+                                await self.persistence.update_twap_pattern(pattern_id, pattern)
+
+                            self.status_tracker.add_status_change(
+                                symbol,
+                                agent_id,
+                                old_status.value,
+                                'inactive',
+                                pattern,
+                                signature_key,
+                            )
+
+                            inactivity_minutes = (current_time - pattern.last_seen).total_seconds() / 60
+
+                            stopped_robots.append({
+                                'symbol': symbol,
+                                'agent_id': agent_id,
+                                'signature_key': signature_key,
+                                'agent_name': get_agent_name(agent_id),
+                                'stopped_at': pattern.last_seen.isoformat(),
+                                'inactivity_minutes': inactivity_minutes,
+                                'signature_volume': pattern.signature_volume,
+                                'signature_direction': pattern.signature_direction,
+                                'signature_interval_seconds': pattern.signature_interval_seconds,
+                            })
+
+                            logger.info(
+                                f"Robô {get_agent_name(agent_id)} ({agent_id}) em {symbol} signature {signature_key} marcado como inativo (parou há {inactivity_minutes:.1f} minutos)"
+                            )
             
             return stopped_robots
             
@@ -909,7 +1138,14 @@ class TWAPDetector:
                         pattern.status = RobotStatus.INACTIVE
                         
                         # Atualiza no banco
-                        existing = await self.persistence.get_existing_pattern(symbol, agent_id)
+                        existing = await self.persistence.get_existing_pattern(
+                            symbol,
+                            agent_id,
+                            pattern.pattern_type,
+                            pattern.signature_volume,
+                            pattern.signature_direction,
+                            pattern.signature_interval_seconds,
+                        )
                         if existing:
                             pattern_id = existing[0]
                             

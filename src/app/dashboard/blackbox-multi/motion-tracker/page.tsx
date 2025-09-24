@@ -9,13 +9,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // Tipos para os dados da API real
 interface RobotPattern {
-  id?: number;
+  id: string;
   symbol: string;
   exchange: string;
   pattern_type: string;
   robot_type: string;  // ✅ NOVO: Tipo do robô
   confidence_score: number;
   agent_id: number;
+  signature_key?: string;
+  signature_volume?: number;
+  signature_direction?: string;
+  signature_interval_seconds?: number;
+  pattern_id?: number;
   first_seen: string;
   last_seen: string;
   total_volume: number;
@@ -41,6 +46,11 @@ interface RobotStatusChange {
   total_volume: number;
   total_trades: number;
   market_volume_percentage?: number;  // ✅ NOVO: Volume em % do mercado
+  signature_key?: string;
+  signature_volume?: number;
+  signature_direction?: string;
+  signature_interval_seconds?: number;
+  pattern_id?: number;
 }
 
 // ✅ NOVO: Interface para mudanças de tipo de robô
@@ -74,6 +84,11 @@ interface RobotChange {
   total_trades: number;
   pattern_type: string;
   change_category: 'status' | 'type';
+  signature_key?: string;
+  signature_volume?: number;
+  signature_direction?: string;
+  signature_interval_seconds?: number;
+  pattern_id?: number;
   
   // Campos específicos para mudanças de status
   old_status?: string;
@@ -99,6 +114,7 @@ interface RobotTrade {
   side: string;
   pattern_id: number;
   created_at: string;
+  signature_key?: string;
 }
 
 // Configuração da API
@@ -292,14 +308,15 @@ export default function MotionTrackerPage() {
   const prevActiveKeysRef = useRef<Set<string>>(new Set());
 
   // Atualiza padrões e detecta ativações para exibir notificação (fallback caso WS não envie)
-  const setPatternsWithStartDetection = (patterns: any[]) => {
+  const setPatternsWithStartDetection = (patterns: RobotPattern[]) => {
     setRobotPatterns(patterns);
     try {
       // Monta conjunto de robôs ativos (chave: SYMBOL_AGENT)
       const newActive = new Set<string>();
       for (const p of patterns) {
         if (p && p.status === 'active' && p.symbol && typeof p.agent_id !== 'undefined') {
-          newActive.add(`${p.symbol}_${p.agent_id}`);
+          const key = `${p.symbol}_${p.agent_id}_${p.signature_key || ''}`;
+          newActive.add(key);
         }
       }
       // Na primeira carga, apenas sincroniza sem notificar
@@ -316,9 +333,11 @@ export default function MotionTrackerPage() {
         // Exibe no máximo 3 notificações individuais para evitar spam
         const maxNotifs = 3;
         for (let i = 0; i < Math.min(started.length, maxNotifs); i++) {
-          const [sym, agentStr] = started[i].split('_');
-          const agentId = Number(agentStr);
-          showNotification(`🟢 Robô ${getAgentName(agentId)} iniciou em ${sym}`);
+          const parts = started[i].split('_');
+          const sym = parts[0];
+          const agentId = Number(parts[1]);
+          const signatureKey = parts.slice(2).join('_');
+          showNotification(`🟢 Robô ${getAgentName(agentId)} (${signatureKey || 'assinatura desconhecida'}) iniciou em ${sym}`);
         }
         // Se houver mais, mostra um resumo
         if (started.length > maxNotifs) {
@@ -330,9 +349,11 @@ export default function MotionTrackerPage() {
           const nowIso = new Date().toISOString();
           const newItems = [] as any[];
           for (const key of started) {
-            const [sym, agentStr] = key.split('_');
-            const agentId = Number(agentStr);
-            const pat = patterns.find((p: any) => p.symbol === sym && p.agent_id === agentId);
+          const parts = key.split('_');
+          const sym = parts[0];
+          const agentId = Number(parts[1]);
+          const signatureKey = parts.slice(2).join('_');
+          const pat = patterns.find((p: RobotPattern) => p.symbol === sym && p.agent_id === agentId && (p.signature_key || '') === signatureKey);
             if (!pat) continue;
             const itemId = `${sym}_${agentId}_${Date.now()}`;
             const exists = prev.some(ch => ch.id === itemId);
@@ -350,6 +371,10 @@ export default function MotionTrackerPage() {
                 total_volume: pat.total_volume || 0,
                 total_trades: pat.total_trades || 0,
                 market_volume_percentage: pat.market_volume_percentage,
+              signature_key: signatureKey,
+              signature_volume: pat.signature_volume,
+              signature_direction: pat.signature_direction,
+              signature_interval_seconds: pat.signature_interval_seconds,
               });
             }
           }
@@ -369,7 +394,11 @@ export default function MotionTrackerPage() {
   const fetchRobotPatterns = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/robots/patterns`);
+      const params = new URLSearchParams();
+      if (selectedSymbol && selectedSymbol !== 'TODOS') {
+        params.set('symbol', selectedSymbol.toUpperCase());
+      }
+      const response = await fetch(`${API_BASE_URL}/robots/patterns${params.toString() ? `?${params.toString()}` : ''}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -404,7 +433,11 @@ export default function MotionTrackerPage() {
   // Versão silenciosa: atualiza os padrões sem mudar o estado global de loading
   const refreshRobotPatterns = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/robots/patterns`);
+      const params = new URLSearchParams();
+      if (selectedSymbol && selectedSymbol !== 'TODOS') {
+        params.set('symbol', selectedSymbol.toUpperCase());
+      }
+      const response = await fetch(`${API_BASE_URL}/robots/patterns${params.toString() ? `?${params.toString()}` : ''}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -428,9 +461,13 @@ export default function MotionTrackerPage() {
       setLoading(true);
       setError(null);
       
-      const url = symbol && symbol !== 'TODOS' 
-        ? `${API_BASE_URL}/robots/all-changes?symbol=${symbol}&hours=24`
-        : `${API_BASE_URL}/robots/all-changes?hours=24`;
+      const params = new URLSearchParams();
+      params.set('hours', '24');
+      if (symbol && symbol !== 'TODOS') {
+        params.set('symbol', symbol.toUpperCase());
+      }
+
+      const url = `${API_BASE_URL}/robots/all-changes?${params.toString()}`;
       
       const response = await fetch(url);
       if (!response.ok) {
@@ -467,10 +504,13 @@ export default function MotionTrackerPage() {
       setLoading(true);
       setError(null);
       
-      const url = symbol && symbol !== 'TODOS' 
-        ? `${API_BASE_URL}/robots/status-changes?symbol=${symbol}&hours=24`
-        : `${API_BASE_URL}/robots/status-changes?hours=24`;
+      const params = new URLSearchParams();
+      params.set('hours', '24');
+      if (symbol && symbol !== 'TODOS') {
+        params.set('symbol', symbol.toUpperCase());
+      }
       
+      const url = `${API_BASE_URL}/robots/status-changes?${params.toString()}`;
       console.log(`🔍 Buscando mudanças de status: ${url}`);
       
       const response = await fetch(url);
@@ -560,7 +600,15 @@ export default function MotionTrackerPage() {
             
             // Adiciona a nova mudança no topo da lista unificada
             setAllRobotChanges(prevChanges => {
-              const changeWithCategory = { ...newChange, change_category: 'status' as const };
+              const changeWithCategory = {
+                ...newChange,
+                change_category: 'status' as const,
+                signature_key: newChange.signature_key,
+                signature_volume: newChange.signature_volume,
+                signature_direction: newChange.signature_direction,
+                signature_interval_seconds: newChange.signature_interval_seconds,
+                pattern_id: newChange.pattern_id,
+              };
               const exists = prevChanges.find(change => change.id === newChange.id);
               if (!exists) {
                 const updated = [changeWithCategory, ...prevChanges];
@@ -584,7 +632,15 @@ export default function MotionTrackerPage() {
             
             // Adiciona a mudança de tipo na lista unificada
             setAllRobotChanges(prevChanges => {
-              const changeWithCategory = { ...typeChange, change_category: 'type' as const };
+              const changeWithCategory = {
+                ...typeChange,
+                change_category: 'type' as const,
+                signature_key: typeChange.signature_key,
+                signature_volume: typeChange.signature_volume,
+                signature_direction: typeChange.signature_direction,
+                signature_interval_seconds: typeChange.signature_interval_seconds,
+                pattern_id: typeChange.pattern_id,
+              };
               const exists = prevChanges.find(change => change.id === typeChange.id);
               if (!exists) {
                 const updated = [changeWithCategory, ...prevChanges];
