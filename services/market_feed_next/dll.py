@@ -2,13 +2,14 @@ import os
 import time
 import threading
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, Optional, Dict
 import ctypes
 import logging
 import asyncio
 import struct
 import httpx
 import requests
+from services.high_frequency.config import ORDER_BOOK_SNAPSHOT_INTERVAL_MS
 
 logger = logging.getLogger("market_feed_next")
 
@@ -24,12 +25,22 @@ class TConnectorAssetIdentifier(ctypes.Structure):
     ]
 
 
-TAssetID = TConnectorAssetIdentifier
+class TPriceBookAsset(ctypes.Structure):
+    _fields_ = [
+        ("ticker", ctypes.c_wchar_p),
+        ("bolsa", ctypes.c_wchar_p),
+        ("feed", ctypes.c_int),
+    ]
+
+
+# Alias específicos para cada callback
+TTradeAsset = TConnectorAssetIdentifier
+TBookAsset = TPriceBookAsset
 
 StateCallbackType = ctypes.WINFUNCTYPE(None, ctypes.c_int, ctypes.c_int)
 TradeCallbackType = ctypes.WINFUNCTYPE(
     None,
-    ctypes.POINTER(TAssetID),
+    ctypes.POINTER(TTradeAsset),
     ctypes.c_wchar_p,
     ctypes.c_uint,
     ctypes.c_double,
@@ -42,7 +53,7 @@ TradeCallbackType = ctypes.WINFUNCTYPE(
 )
 HistoryTradeCallbackType = ctypes.WINFUNCTYPE(
     None,
-    ctypes.POINTER(TAssetID),
+    ctypes.POINTER(TTradeAsset),
     ctypes.c_wchar_p,
     ctypes.c_uint,
     ctypes.c_double,
@@ -82,7 +93,7 @@ class TConnectorTrade(ctypes.Structure):
 
 
 TradeCallbackV2Type = ctypes.WINFUNCTYPE(None, TConnectorAssetIdentifier, ctypes.c_size_t, ctypes.c_uint)
-PriceBookCallbackV2Type = ctypes.WINFUNCTYPE(None, TAssetID, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_longlong, ctypes.c_longlong, ctypes.c_double, ctypes.c_void_p, ctypes.c_void_p)
+PriceBookCallbackV2Type = ctypes.WINFUNCTYPE(None, TBookAsset, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_longlong, ctypes.c_longlong, ctypes.c_double, ctypes.c_void_p, ctypes.c_void_p)
 
 
 def _try_load_envfile(env_path: Path) -> None:
@@ -112,6 +123,8 @@ class ProfitDLL:
         self._unsubscribe_ticker = None
         self._subscribe_book = None
         self._unsubscribe_book = None
+        self._last_snapshot_ts: Dict[str, float] = {}
+        self._book_cache: Dict[str, Dict[str, list[dict]]] = {}
 
         @StateCallbackType
         def _state_cb(state_type: int, result: int) -> None:
@@ -150,10 +163,10 @@ class ProfitDLL:
         self._state_cb_fn = _state_cb
 
         @TradeCallbackType
-        def _trade_cb(asset_ptr: ctypes.POINTER(TAssetID), date: str, trade_number: int, price: float, vol: float, qtd: int, *_args) -> None:
+        def _trade_cb(asset_ptr: ctypes.POINTER(TTradeAsset), date: str, trade_number: int, price: float, vol: float, qtd: int, *_args) -> None:
             try:
                 asset = asset_ptr.contents
-                symbol = asset.ticker if asset and asset.ticker else "UNKNOWN"
+                symbol = _safe_wstring(getattr(asset, "ticker", None)).upper() or "UNKNOWN"
                 quantity = int(qtd or 0)
                 if self._on_trade:
                     self._on_trade(symbol, float(price), quantity, time.time())
@@ -164,15 +177,16 @@ class ProfitDLL:
         self._trade_cb_fn = _trade_cb
 
         @HistoryTradeCallbackType
-        def _history_cb(_asset_ptr: ctypes.POINTER(TAssetID), _date: str, *_args) -> None:
+        def _history_cb(_asset_ptr: ctypes.POINTER(TTradeAsset), _date: str, *_args) -> None:
             return
 
         self._history_cb_fn = _history_cb
 
         @PriceBookCallbackV2Type
-        def _price_book_cb_v2(asset: TAssetID, n_action: int, n_position: int, side: int, n_qtd: int, n_count: int, price: float, p_array_sell: ctypes.c_void_p, p_array_buy: ctypes.c_void_p) -> None:
+        def _price_book_cb_v2(asset: TBookAsset, n_action: int, n_position: int, side: int, n_qtd: int, n_count: int, price: float, p_array_sell: ctypes.c_void_p, p_array_buy: ctypes.c_void_p) -> None:
             try:
-                symbol = asset.Ticker if hasattr(asset, "Ticker") and asset.Ticker else "UNKNOWN"
+                symbol_raw = getattr(asset, "ticker", None)
+                symbol = _safe_wstring(symbol_raw).upper() or "UNKNOWN"
                 payload = {
                     "symbol": symbol,
                     "action": int(n_action),
@@ -187,15 +201,39 @@ class ProfitDLL:
                 if self._on_price_book:
                     self._on_price_book(symbol, payload)
 
-                try:
-                    if n_action == 4:
-                        snapshot_payload = self._build_snapshot_payload(symbol, p_array_buy, p_array_sell)
-                        if snapshot_payload:
-                            self._forward_snapshot(snapshot_payload)
-                    else:
-                        self._forward_event(symbol, n_action, side, n_position, price, n_qtd, n_count)
-                except Exception as forward_exc:
-                    logger.warning("Erro ao agendar envio do book para HF: %s", forward_exc)
+                now = time.time()
+
+                if symbol not in self._book_cache:
+                    self._book_cache[symbol] = {"bids": [], "asks": []}
+
+                if n_action == 4:
+                    snapshot_payload = self._build_snapshot_payload(symbol, p_array_buy, p_array_sell)
+                    if snapshot_payload:
+                        self._book_cache[symbol]["bids"] = snapshot_payload["bids"].copy()
+                        self._book_cache[symbol]["asks"] = snapshot_payload["asks"].copy()
+                        self._last_snapshot_ts[symbol] = now
+                        self._forward_snapshot(snapshot_payload)
+                    return
+
+                # Atualiza cache incremental
+                cache = self._book_cache[symbol]
+                if side == 1:
+                    self._update_side_cache(cache, "asks", n_action, n_position, price, n_qtd, n_count)
+                else:
+                    self._update_side_cache(cache, "bids", n_action, n_position, price, n_qtd, n_count)
+
+                last_ts = self._last_snapshot_ts.get(symbol, 0)
+                if now - last_ts >= ORDER_BOOK_SNAPSHOT_INTERVAL_MS / 1000.0:
+                    snapshot_payload = {
+                        "symbol": symbol,
+                        "bids": [dict(level) for level in cache["bids"]],
+                        "asks": [dict(level) for level in cache["asks"]],
+                    }
+                    self._last_snapshot_ts[symbol] = now
+                    self._forward_snapshot(snapshot_payload)
+
+                # Envia evento incremental
+                self._forward_event(symbol, n_action, side, n_position, price, n_qtd, n_count)
 
             except Exception as exc:
                 logger.warning("PriceBook callback error: %s", exc)
@@ -329,6 +367,39 @@ class ProfitDLL:
         except Exception as exc:
             logger.warning("Falha ao decodificar array de book: %s", exc)
             return None
+
+    def _update_side_cache(self, cache: Dict[str, list], side_key: str, action: int, position: int, price: float, qty: int, count: int) -> None:
+        side = cache.get(side_key)
+        if side is None:
+            side = []
+            cache[side_key] = side
+
+        def clamp_index(idx: int) -> int:
+            if idx < 0:
+                return 0
+            if idx > len(side):
+                return len(side)
+            return idx
+
+        if action == 1:  # add
+            idx = clamp_index(len(side) - position)
+            entry = {"price": price, "quantity": qty, "offer_count": count}
+            side.insert(idx, entry)
+        elif action == 2:  # edit
+            idx = len(side) - position - 1
+            if 0 <= idx < len(side):
+                level = side[idx]
+                level["quantity"] = qty
+                level["offer_count"] = count
+                level["price"] = price or level["price"]
+        elif action == 3:  # delete
+            idx = len(side) - position - 1
+            if 0 <= idx < len(side):
+                side.pop(idx)
+        elif action == 5:  # delete_from
+            idx = len(side) - position - 1
+            if 0 <= idx < len(side):
+                del side[idx:]
 
     def set_trade_callback(self, callback: Callable[[str, float, int, float], None]) -> None:
         self._on_trade = callback
@@ -526,3 +597,15 @@ class ProfitDLL:
                 logger.info("UnsubscribePriceBook(%s,B) -> %s", symbol, ret_book)
             except Exception as exc:
                 logger.warning("UnsubscribePriceBook error %s: %s", symbol, exc)
+
+
+def _safe_wstring(value) -> str:
+    """Converte ponteiros/strings WideChar para str segura."""
+    try:
+        if not value:
+            return ""
+        if isinstance(value, str):
+            return value
+        return ctypes.wstring_at(value)
+    except Exception:
+        return ""
