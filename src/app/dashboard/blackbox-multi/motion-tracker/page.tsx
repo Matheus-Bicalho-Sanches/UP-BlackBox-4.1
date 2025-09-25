@@ -245,6 +245,12 @@ export default function MotionTrackerPage() {
   const [selectedRobot, setSelectedRobot] = useState<Partial<RobotPattern> | null>(null);
   const [robotTrades, setRobotTrades] = useState<RobotTrade[]>([]);
   const [tradesLoading, setTradesLoading] = useState(false);
+  const [tradesMeta, setTradesMeta] = useState<{
+    count: number;
+    firstTimestamp: string | null;
+    lastTimestamp: string | null;
+    patternId: number | null;
+  } | null>(null);
 
   // 🔎 Filtro de status para a aba Padrões Detectados
 const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
@@ -684,8 +690,8 @@ const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>(
     try {
       setTradesLoading(true);
       setError(null);
-      
-      const params = new URLSearchParams({ hours: '24', limit: '200' });
+
+      const params = new URLSearchParams({ limit: '500' });
       if (opts?.marketTwapOnly) {
         params.set('pattern_type', 'MARKET_TWAP');
       }
@@ -693,21 +699,35 @@ const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>(
       if (!response.ok) {
         throw new Error(`Erro na API: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      console.log(`Trades recebidos para robô ${agentId} em ${symbol}:`, data);
-      
-      if (Array.isArray(data)) {
+      if (data && Array.isArray(data.trades)) {
+        setRobotTrades(data.trades);
+        setTradesMeta({
+          count: typeof data.count === 'number' ? data.count : data.trades.length,
+          firstTimestamp: data.first_seen ?? data.trades[data.trades.length - 1]?.timestamp ?? null,
+          lastTimestamp: data.last_seen ?? data.trades[0]?.timestamp ?? null,
+          patternId: typeof data.pattern_id === 'number' ? data.pattern_id : null,
+        });
+      } else if (Array.isArray(data)) {
         setRobotTrades(data);
+        setTradesMeta({
+          count: data.length,
+          firstTimestamp: data[data.length - 1]?.timestamp ?? null,
+          lastTimestamp: data[0]?.timestamp ?? null,
+          patternId: null,
+        });
       } else {
         console.warn('Formato inesperado dos dados de trades:', data);
         setRobotTrades([]);
+        setTradesMeta(null);
       }
-      
+
     } catch (err) {
       console.error('Erro ao buscar trades do robô:', err);
       setError(err instanceof Error ? err.message : 'Erro desconhecido');
       setRobotTrades([]);
+      setTradesMeta(null);
     } finally {
       setTradesLoading(false);
     }
@@ -718,16 +738,32 @@ const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>(
     setSelectedRobot(robot);
     setTradesModalOpen(true);
     const marketTwapOnly = robot.robot_type === 'TWAP à Mercado';
+    // calcula período do dia atual para exibir no modal
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    setTradesMeta({
+      count: 0,
+      firstTimestamp: start.toISOString(),
+      lastTimestamp: end.toISOString(),
+      patternId: robot.pattern_id ?? null,
+    });
     await fetchRobotTrades(robot.symbol, robot.agent_id, { marketTwapOnly });
   };
 
   // ✅ NOVO: Abrir modal de trades a partir do item de Start/Stop
   const openTradesModalFromChange = async (change: RobotChange) => {
-    // Usa apenas os campos necessários (symbol e agent_id)
     setSelectedRobot({ symbol: change.symbol, agent_id: change.agent_id } as unknown as RobotPattern);
     setTradesModalOpen(true);
-    // fallback: sem o tipo no objeto change, buscar padrão ativo para decidir
-    // por simplicidade, prioriza mostrar TWAP à Mercado quando houver
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    setTradesMeta({
+      count: 0,
+      firstTimestamp: start.toISOString(),
+      lastTimestamp: end.toISOString(),
+      patternId: change.pattern_id ?? null,
+    });
     await fetchRobotTrades(change.symbol, change.agent_id, { marketTwapOnly: true });
   };
   
@@ -892,8 +928,11 @@ const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>(
     });
   };
 
-  const formatDate = (timestamp: string) => {
-    return new Date(timestamp).toLocaleDateString('pt-BR', {
+  const formatDate = (timestamp?: string | null) => {
+    if (!timestamp) return '—';
+    const dateValue = new Date(timestamp);
+    if (Number.isNaN(dateValue.getTime())) return '—';
+    return dateValue.toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -1683,7 +1722,19 @@ const getFilteredPatterns = () => {
             </div>
             
             <div className="mb-4 text-sm text-gray-400">
-              <p>Últimas 24 horas • {robotTrades.length} operações encontradas</p>
+              <p>
+                {tradesMeta ? (
+                  <>
+                    Total de operações: {tradesMeta.count}
+                    {tradesMeta.patternId && (
+                      <> • Pattern ID: {tradesMeta.patternId}</>
+                    )}
+                    <> • Período: {formatDate(tradesMeta.firstTimestamp)} → {formatDate(tradesMeta.lastTimestamp)}</>
+                  </>
+                ) : (
+                  <>Operações carregadas: {robotTrades.length}</>
+                )}
+              </p>
             </div>
             
             {tradesLoading ? (

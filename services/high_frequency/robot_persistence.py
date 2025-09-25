@@ -568,7 +568,17 @@ class RobotPersistence:
             logger.error(f"❌ Erro ao resetar flag de notificação para padrão {pattern_id}: {e}")
             return False
 
-    async def get_robot_trades(self, symbol: str, agent_id: int, hours: int = 24, limit: int = 200, pattern_type: Optional[str] = None) -> List[Dict]:
+    async def get_robot_trades(
+        self,
+        symbol: str,
+        agent_id: int,
+        hours: int = 24,
+        limit: int = 200,
+        pattern_type: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        pattern_id: Optional[int] = None,
+    ) -> List[Dict]:
         """Busca operações de um robô específico.
         Se pattern_type (ex.: 'MARKET_TWAP') for informado, filtra apenas
         trades associados a padrões com esse tipo.
@@ -578,7 +588,45 @@ class RobotPersistence:
             
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
-                    if pattern_type:
+                    if pattern_id is not None:
+                        logger.info(f"🎯 Buscando trades usando pattern_id={pattern_id}")
+                        params: Tuple[Any, ...]
+                        if start_time and end_time:
+                            await cur.execute("""
+                                SELECT 
+                                    id,
+                                    symbol,
+                                    agent_id,
+                                    timestamp,
+                                    price,
+                                    volume,
+                                    side,
+                                    robot_pattern_id,
+                                    created_at
+                                FROM robot_trades 
+                                WHERE robot_pattern_id = %s
+                                  AND timestamp BETWEEN %s AND %s
+                                ORDER BY timestamp DESC
+                                LIMIT %s
+                            """, (pattern_id, start_time, end_time, limit))
+                        else:
+                            await cur.execute("""
+                                SELECT 
+                                    id,
+                                    symbol,
+                                    agent_id,
+                                    timestamp,
+                                    price,
+                                    volume,
+                                    side,
+                                    robot_pattern_id,
+                                    created_at
+                                FROM robot_trades 
+                                WHERE robot_pattern_id = %s
+                                ORDER BY timestamp DESC
+                                LIMIT %s
+                            """, (pattern_id, limit))
+                    elif pattern_type:
                         # Identifica o padrão mais recente desse tipo para o robô
                         if pattern_type == 'MARKET_TWAP':
                             await cur.execute("""
@@ -606,55 +654,93 @@ class RobotPersistence:
 
                         pattern_id = pattern_row[0]
 
-                        await cur.execute("""
-                            SELECT 
-                                id,
-                                symbol,
-                                agent_id,
-                                timestamp,
-                                price,
-                                volume,
-                                side,
-                                robot_pattern_id,
-                                created_at
-                            FROM robot_trades 
-                            WHERE robot_pattern_id = %s
-                            ORDER BY timestamp DESC
-                        """, (pattern_id,))
+                        # Caso período customizado seja informado, aplica filtro
+                        if start_time and end_time:
+                            await cur.execute("""
+                                SELECT 
+                                    id,
+                                    symbol,
+                                    agent_id,
+                                    timestamp,
+                                    price,
+                                    volume,
+                                    side,
+                                    robot_pattern_id,
+                                    created_at
+                                FROM robot_trades 
+                                WHERE robot_pattern_id = %s
+                                  AND timestamp BETWEEN %s AND %s
+                                ORDER BY timestamp DESC
+                            """, (pattern_id, start_time, end_time))
+                        else:
+                            await cur.execute("""
+                                SELECT 
+                                    id,
+                                    symbol,
+                                    agent_id,
+                                    timestamp,
+                                    price,
+                                    volume,
+                                    side,
+                                    robot_pattern_id,
+                                    created_at
+                                FROM robot_trades 
+                                WHERE robot_pattern_id = %s
+                                ORDER BY timestamp DESC
+                            """, (pattern_id,))
                     else:
-                        await cur.execute("""
-                            SELECT 
-                                id,
-                                symbol,
-                                agent_id,
-                                timestamp,
-                                price,
-                                volume,
-                                side,
-                                robot_pattern_id,
-                                created_at
-                            FROM robot_trades 
-                            WHERE symbol = %s AND agent_id = %s 
-                              AND timestamp >= NOW() - (%s || ' hours')::interval
-                            ORDER BY timestamp DESC
-                            LIMIT %s
-                        """, (symbol.upper(), agent_id, str(hours), limit))
+                        if start_time and end_time:
+                            await cur.execute("""
+                                SELECT 
+                                    id,
+                                    symbol,
+                                    agent_id,
+                                    timestamp,
+                                    price,
+                                    volume,
+                                    side,
+                                    robot_pattern_id,
+                                    created_at
+                                FROM robot_trades 
+                                WHERE symbol = %s AND agent_id = %s 
+                                  AND timestamp BETWEEN %s AND %s
+                                ORDER BY timestamp DESC
+                                LIMIT %s
+                            """, (symbol.upper(), agent_id, start_time, end_time, limit))
+                        else:
+                            await cur.execute("""
+                                SELECT 
+                                    id,
+                                    symbol,
+                                    agent_id,
+                                    timestamp,
+                                    price,
+                                    volume,
+                                    side,
+                                    robot_pattern_id,
+                                    created_at
+                                FROM robot_trades 
+                                WHERE symbol = %s AND agent_id = %s 
+                                  AND timestamp >= NOW() - (%s || ' hours')::interval
+                                ORDER BY timestamp DESC
+                                LIMIT %s
+                            """, (symbol.upper(), agent_id, str(hours), limit))
                     
                     rows = await cur.fetchall()
-                    trades = [
-                        {
+                    trades = []
+                    for row in rows:
+                        ts = row[3]
+                        trades.append({
                             'id': row[0],
                             'symbol': row[1],
                             'agent_id': row[2],
-                            'timestamp': row[3].isoformat() if row[3] else None,
+                            'timestamp': ts.isoformat() if isinstance(ts, datetime) else ts,
                             'price': float(row[4]) if row[4] else 0.0,
                             'volume': int(row[5]) if row[5] else 0,
                             'side': row[6],
                             'pattern_id': row[7],
-                            'created_at': row[8].isoformat() if row[8] else None
-                        }
-                        for row in rows
-                    ]
+                            'created_at': row[8].isoformat() if isinstance(row[8], datetime) else row[8]
+                        })
                     
                     logger.info(f"📊 Encontrados {len(trades)} trades para robô {agent_id} em {symbol}")
                     return trades
