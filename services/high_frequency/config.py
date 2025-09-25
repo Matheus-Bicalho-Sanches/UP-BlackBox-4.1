@@ -16,3 +16,7 @@ HF_BATCH_MAX = int(os.getenv("HF_BATCH_MAX", "1000"))
 
 # Configurações de ingestão
 HF_INGEST_URL = os.getenv("HF_INGEST_URL", "http://127.0.0.1:8002/ingest/batch")
+
+# Configurações de Order Book
+ORDER_BOOK_TOP_LEVELS = int(os.getenv("ORDER_BOOK_TOP_LEVELS", "10"))
+ORDER_BOOK_SNAPSHOT_INTERVAL_MS = int(os.getenv("ORDER_BOOK_SNAPSHOT_INTERVAL_MS", "5000"))

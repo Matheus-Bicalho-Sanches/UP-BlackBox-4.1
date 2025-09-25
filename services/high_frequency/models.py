@@ -2,7 +2,7 @@
 Modelos de dados para o High Frequency Backend
 """
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -65,3 +65,36 @@ class TickerMetrics:
     last_tick_time: float
     last_price: float
     gaps_detected: int
+
+
+@dataclass
+class OrderBookLevel:
+    price: float
+    quantity: int
+    offer_count: int
+    agent_id: Optional[int] = None
+
+
+@dataclass
+class OrderBookSnapshot:
+    symbol: str
+    timestamp: datetime
+    bids: List[OrderBookLevel]
+    asks: List[OrderBookLevel]
+    sequence: Optional[int] = None
+    source_event: Optional[dict] = None
+
+
+@dataclass
+class OrderBookEvent:
+    symbol: str
+    timestamp: datetime
+    action: int
+    side: int
+    position: Optional[int]
+    price: Optional[float]
+    quantity: Optional[int]
+    offer_count: Optional[int] = None
+    agent_id: Optional[int] = None
+    sequence: Optional[int] = None
+    raw_payload: Optional[dict] = None

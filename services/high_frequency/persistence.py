@@ -4,7 +4,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 from psycopg_pool import AsyncConnectionPool
 from psycopg import AsyncConnection
-from services.high_frequency.models import Tick
+from psycopg.types.json import Json
+from services.high_frequency.models import Tick, OrderBookEvent, OrderBookSnapshot, OrderBookLevel
 import os
 import time
 
@@ -144,6 +145,80 @@ async def initialize_db(conn_pool: AsyncConnectionPool):
                 
                 await cur.execute("SELECT create_hypertable('ticks_raw', 'timestamp', if_not_exists => TRUE);")
 
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS order_book_events (
+                        id BIGINT GENERATED ALWAYS AS IDENTITY,
+                        symbol VARCHAR(20) NOT NULL,
+                        event_time TIMESTAMPTZ NOT NULL,
+                        action SMALLINT NOT NULL,
+                        side SMALLINT NOT NULL,
+                        position INTEGER,
+                        price DOUBLE PRECISION,
+                        quantity BIGINT,
+                        offer_count INTEGER,
+                        agent_id INTEGER,
+                        sequence BIGINT,
+                        raw_payload JSONB
+                    );
+                    """
+                )
+
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS order_book_snapshots (
+                        id BIGINT GENERATED ALWAYS AS IDENTITY,
+                        symbol VARCHAR(20) NOT NULL,
+                        event_time TIMESTAMPTZ NOT NULL,
+                        bids JSONB NOT NULL,
+                        asks JSONB NOT NULL,
+                        best_bid_price DOUBLE PRECISION,
+                        best_bid_quantity BIGINT,
+                        best_ask_price DOUBLE PRECISION,
+                        best_ask_quantity BIGINT,
+                        levels INTEGER,
+                        sequence BIGINT,
+                        raw_event JSONB
+                    );
+                    """
+                )
+
+                await cur.execute(
+                    "SELECT create_hypertable('order_book_events', 'event_time', if_not_exists => TRUE);"
+                )
+
+                await cur.execute(
+                    "SELECT create_hypertable('order_book_snapshots', 'event_time', if_not_exists => TRUE);"
+                )
+
+                await cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_order_book_events_event_time_id
+                    ON order_book_events(event_time, id);
+                    """
+                )
+
+                await cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_order_book_events_symbol_time
+                    ON order_book_events(symbol, event_time DESC);
+                    """
+                )
+
+                await cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_order_book_snapshots_event_time_id
+                    ON order_book_snapshots(event_time, id);
+                    """
+                )
+
+                await cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_order_book_snapshots_symbol_time
+                    ON order_book_snapshots(symbol, event_time DESC);
+                    """
+                )
+
                 # Cria/ajusta tabela robot_patterns (assinado)
                 await cur.execute("""
                     CREATE TABLE IF NOT EXISTS robot_patterns (
@@ -268,3 +343,138 @@ async def get_ticks_from_db(symbol: str, timeframe: str, limit: int, conn_pool: 
             rows = await cur.fetchall()
             columns = [desc[0] for desc in cur.description]
             return [dict(zip(columns, row)) for row in rows]
+
+async def persist_order_book_event(event: OrderBookEvent, db_pool: AsyncConnectionPool):
+    """Persiste um evento incremental do livro de ofertas."""
+    sql = """
+        INSERT INTO order_book_events (
+            symbol,
+            event_time,
+            action,
+            side,
+            position,
+            price,
+            quantity,
+            offer_count,
+            agent_id,
+            sequence,
+            raw_payload
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+
+    params = (
+        event.symbol,
+        event.timestamp,
+        event.action,
+        event.side,
+        event.position,
+        event.price,
+        event.quantity,
+        event.offer_count,
+        event.agent_id,
+        event.sequence,
+        Json(event.raw_payload or {}),
+    )
+
+    for attempt in range(1, 6):
+        try:
+            async with db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(sql, params)
+                    await conn.commit()
+            logger.debug(
+                "Persisted order book event %s action=%s side=%s position=%s",
+                event.symbol,
+                event.action,
+                event.side,
+                event.position,
+            )
+            return
+        except Exception as exc:
+            logger.warning(
+                "Tentativa %s falhou ao persistir evento de book (%s - action %s): %s",
+                attempt,
+                event.symbol,
+                event.action,
+                exc,
+            )
+            if attempt < 5:
+                await asyncio.sleep(0.1 * attempt)
+            else:
+                logger.error("Falha definitiva ao persistir evento de book para %s", event.symbol)
+
+
+def _levels_to_json(levels: List[OrderBookLevel]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "price": level.price,
+            "quantity": level.quantity,
+            "offer_count": level.offer_count,
+            "agent_id": level.agent_id,
+        }
+        for level in levels
+    ]
+
+
+async def persist_order_book_snapshot(snapshot: OrderBookSnapshot, db_pool: AsyncConnectionPool):
+    """Persiste um snapshot completo do livro de ofertas."""
+    bids_json = _levels_to_json(snapshot.bids)
+    asks_json = _levels_to_json(snapshot.asks)
+
+    best_bid = bids_json[0] if bids_json else None
+    best_ask = asks_json[0] if asks_json else None
+
+    sql = """
+        INSERT INTO order_book_snapshots (
+            symbol,
+            event_time,
+            bids,
+            asks,
+            best_bid_price,
+            best_bid_quantity,
+            best_ask_price,
+            best_ask_quantity,
+            levels,
+            sequence,
+            raw_event
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+
+    params = (
+        snapshot.symbol,
+        snapshot.timestamp,
+        Json(bids_json),
+        Json(asks_json),
+        best_bid["price"] if best_bid else None,
+        best_bid["quantity"] if best_bid else None,
+        best_ask["price"] if best_ask else None,
+        best_ask["quantity"] if best_ask else None,
+        max(len(bids_json), len(asks_json)),
+        snapshot.sequence,
+        Json(snapshot.source_event or {}),
+    )
+
+    for attempt in range(1, 6):
+        try:
+            async with db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(sql, params)
+                    await conn.commit()
+            logger.debug(
+                "Persisted order book snapshot %s bids=%s asks=%s",
+                snapshot.symbol,
+                len(bids_json),
+                len(asks_json),
+            )
+            return
+        except Exception as exc:
+            logger.warning(
+                "Tentativa %s falhou ao persistir snapshot de %s: %s",
+                attempt,
+                snapshot.symbol,
+                exc,
+            )
+            if attempt < 5:
+                await asyncio.sleep(0.1 * attempt)
+            else:
+                logger.error("Falha definitiva ao persistir snapshot de %s", snapshot.symbol)

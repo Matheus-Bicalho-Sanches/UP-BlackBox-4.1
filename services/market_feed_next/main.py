@@ -1,63 +1,53 @@
 import logging
+import os
+import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from services.market_feed_next.dll import ProfitDLL
 
 logging.basicConfig(level="INFO")
 logger = logging.getLogger("market_feed_next_api")
 
 app = FastAPI(title="Market Feed Next API", version="1.0.0")
 
-# A DLL agora é gerenciada pelo launcher.py. 
-# Esta instância aqui serve apenas para interagir com a DLL já carregada.
-# Nota: Assumimos que o launcher.py já inicializou a DLL no mesmo processo
-# ou que estamos lidando com um singleton gerenciado pelo ctypes no Windows.
-try:
-    dll = ProfitDLL()
-    # A inicialização e callbacks são tratados pelo launcher.
-    # Apenas garantimos que a instância seja criada para chamarmos subscribe/unsubscribe.
-except Exception as e:
-    logger.error(f"Erro ao instanciar a classe da DLL na API: {e}. A API não poderá se comunicar com a DLL.")
-    dll = None
+HF_BACKEND_URL = os.getenv("HF_BACKEND_URL", "http://127.0.0.1:8002")
 
 class SubscribeReq(BaseModel):
-	symbol: str
-	exchange: str = "B"
+    symbol: str
+    exchange: str = "B"
 
 class UnsubscribeReq(BaseModel):
-	symbol: str
+    symbol: str
 
 @app.on_event("startup")
 def startup_event():
-    logger.info("API do Market Feed Next iniciada. Esta API apenas envia comandos para o processo da DLL.")
-    if not dll:
-        logger.warning("A instância da DLL não está disponível. Os endpoints de subscribe/unsubscribe não funcionarão.")
+    logger.info("API do Market Feed Next iniciada. Ela encaminha solicitações ao backend de alta frequência.")
 
 @app.post("/subscribe")
 def subscribe(req: SubscribeReq):
-	if not dll:
-		raise HTTPException(status_code=503, detail="Serviço da DLL indisponível.")
-	try:
-		logger.info(f"API recebendo pedido de subscribe: {req.symbol}")
-		# Chama o método subscribe na instância compartilhada/já carregada
-		dll.subscribe(req.symbol, req.exchange)
-		return {"ok": True, "message": f"Comando de subscribe para {req.symbol} enviado."}
-	except Exception as e:
-		logger.error(f"Erro no endpoint /subscribe: {e}")
-		raise HTTPException(status_code=500, detail=str(e))
+    try:
+        payload = {"symbol": req.symbol.upper(), "exchange": req.exchange.upper()}
+        response = requests.post(f"{HF_BACKEND_URL}/subscribe", json=payload, timeout=5.0)
+        if response.status_code != 200:
+            logger.error("Falha ao repassar subscribe para HF: %s - %s", response.status_code, response.text)
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+        return response.json()
+    except requests.RequestException as exc:
+        logger.error("Erro HTTP ao repassar subscribe: %s", exc)
+        raise HTTPException(status_code=503, detail="hf_unreachable")
 
 @app.post("/unsubscribe")
 def unsubscribe(req: UnsubscribeReq):
-	if not dll:
-		raise HTTPException(status_code=503, detail="Serviço da DLL indisponível.")
-	try:
-		logger.info(f"API recebendo pedido de unsubscribe: {req.symbol}")
-		dll.unsubscribe(req.symbol)
-		return {"ok": True, "message": f"Comando de unsubscribe para {req.symbol} enviado."}
-	except Exception as e:
-		logger.error(f"Erro no endpoint /unsubscribe: {e}")
-		raise HTTPException(status_code=500, detail=str(e))
+    try:
+        payload = {"symbol": req.symbol.upper()}
+        response = requests.post(f"{HF_BACKEND_URL}/unsubscribe", json=payload, timeout=5.0)
+        if response.status_code != 200:
+            logger.error("Falha ao repassar unsubscribe para HF: %s - %s", response.status_code, response.text)
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+        return response.json()
+    except requests.RequestException as exc:
+        logger.error("Erro HTTP ao repassar unsubscribe: %s", exc)
+        raise HTTPException(status_code=503, detail="hf_unreachable")
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "dll_available": dll is not None}
+    return {"status": "ok", "hf_backend": HF_BACKEND_URL}

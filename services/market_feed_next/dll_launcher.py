@@ -12,6 +12,7 @@ import logging
 import time
 import requests
 from services.market_feed_next.dll import ProfitDLL
+from services.shared import DEFAULT_MARKET_FEED_SYMBOLS
 
 # Configuração de logging - DEBUG para ver todos os detalhes
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
@@ -20,6 +21,7 @@ logger = logging.getLogger("dll_launcher")
 # Váriavel global para manter a DLL viva
 dll_instance = None
 hf_ingest_url_tick = os.getenv("HF_INGEST_URL", "http://127.0.0.1:8002/ingest/batch").replace("/batch", "/tick")
+hf_subscribe_url = "http://127.0.0.1:8002/subscribe"
 http_session = requests.Session()
 
 def on_trade(symbol: str, price: float, qty: int, ts: float, extra_data: dict = None):
@@ -81,6 +83,17 @@ def wait_for_hf_backend():
     logger.warning("HF Backend não respondeu em 30 segundos, prosseguindo mesmo assim...")
     return False
 
+def wait_for_dll_connection(timeout: float = 10.0, poll_interval: float = 0.2) -> bool:
+    """Espera até que a DLL reporte estado conectado/autenticado."""
+    if not hasattr(dll_instance, "_connected"):
+        return True
+    start = time.time()
+    while time.time() - start < timeout:
+        if getattr(dll_instance, "_connected", False):
+            return True
+        time.sleep(poll_interval)
+    return False
+
 def main():
     global dll_instance
     logger.info(f"DLL Launcher iniciado. Enviando ticks para: {hf_ingest_url_tick}")
@@ -95,58 +108,21 @@ def main():
         logger.info("Configurando callback de trade...")
         dll_instance.set_trade_callback(on_trade)
         logger.info("Callback de trade configurado com sucesso!")
-        
-        # A inscrição virá da API, mas pré-inscrevemos para teste
-        dll_instance.subscribe("PORD11")
-        dll_instance.subscribe("BINC11")
-        dll_instance.subscribe("CACR11")
-        dll_instance.subscribe("HGLG11")
-        dll_instance.subscribe("KDIF11")
-        dll_instance.subscribe("HGRE11")
-        dll_instance.subscribe("AFHI11")
-        dll_instance.subscribe("MGLU3")
-        dll_instance.subscribe("BPAC11")
-        dll_instance.subscribe("SIMH3")
-        dll_instance.subscribe("B3SA3")
-        dll_instance.subscribe("ABEV3")
-        dll_instance.subscribe("BBDC4")
-        dll_instance.subscribe("BBAS3")
-        dll_instance.subscribe("BBSE3")
-        dll_instance.subscribe("ITUB4")
-        dll_instance.subscribe("RADL3")
-        dll_instance.subscribe("YDUQ3")
-        dll_instance.subscribe("PETR4")
-        dll_instance.subscribe("VALE3")
-        dll_instance.subscribe("PSSA3")
-        dll_instance.subscribe("RAIZ4")
-        dll_instance.subscribe("RURA11")
-        dll_instance.subscribe("FGAA11")
-        dll_instance.subscribe("VGIR11")
-        dll_instance.subscribe("VGIA11")
-        dll_instance.subscribe("LVBI11")
-        dll_instance.subscribe("BODB11")
-        dll_instance.subscribe("CDII11")
-        dll_instance.subscribe("CSUD3")
-        dll_instance.subscribe("RENT3")
-        dll_instance.subscribe("MRFG3")
-        dll_instance.subscribe("BRBI11")
-        dll_instance.subscribe("WEGE3")
-        dll_instance.subscribe("RDOR3")
-        dll_instance.subscribe("BRFS3")
-        dll_instance.subscribe("SLCE3")
-        dll_instance.subscribe("PGMN3")
-        dll_instance.subscribe("CAML3")
-        dll_instance.subscribe("PETZ3")
-        dll_instance.subscribe("PFRM3")
-        dll_instance.subscribe("SAPR4")
-        dll_instance.subscribe("SOJA3")
-        dll_instance.subscribe("TIMS3")
-        dll_instance.subscribe("VIVT3")
-        dll_instance.subscribe("XPML11")
-        dll_instance.subscribe("URPR11")
+        logger.info("Configurando callback de book...")
+        dll_instance.set_price_book_callback(lambda symbol, payload: None)
 
         dll_instance.initialize()
-        
+
+        if not wait_for_dll_connection():
+            logger.warning("DLL não confirmou autenticação após espera. Prosseguindo mesmo assim." )
+
+        for symbol in DEFAULT_MARKET_FEED_SYMBOLS:
+            try:
+                dll_instance.subscribe(symbol)
+                logger.info("Auto-subscribed %s via DLL", symbol)
+            except Exception as exc:
+                logger.warning("Falha ao enviar subscribe via DLL para %s: %s", symbol, exc)
+
         logger.info("DLL inicializada pelo launcher. O processo ficará ativo para manter a conexão.")
         
         # Loop infinito para manter o processo vivo

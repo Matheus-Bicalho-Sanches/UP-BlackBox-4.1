@@ -126,11 +126,71 @@ Importante: `SubscribePriceBook` deve ser chamado após `DLLInitializeMarketLogi
 - `Dll_Profit/Exemplo Delphi/Wrapper/callbackWrapperU.pas`: funções `PriceBookCallback`/`PriceBookCallbackV2` com `DecryptPriceArray`/`DecryptPriceArrayV2`.
 - `Dll_Profit/Exemplo Python/profitTypes.py`: classes `TPriceBookCallback`, `TPriceArrayItem`, etc., úteis para `ctypes`.
 
-## Próximos passos suportados por essas informações
-- Implementar wrappers `SetPriceBookCallback(V2)` e `SubscribePriceBook` no módulo Python que carrega a DLL.
-- Definir a estrutura `PriceArrayItem` em Python (`ctypes.Structure`) conforme o layout desejado.
-- Converter os ponteiros de arrays na função de callback para listas de níveis.
-- Planejar armazenamento (snapshots/eventos) usando os campos identificados.
+## Etapa 2 – Modelagem proposta (snapshots + eventos)
 
-> **Observação**: callbacks de book são entregues com alta frequência; considerar backpressure/queues ao integrar com o pipeline atual.
+### Objetivos
+- Reconstituir rapidamente o estado do book atual e histórico recente.
+- Permitir auditoria detalhada (cada atualização recebida da DLL).
+- Garantir armazenamento de longo prazo para treinamento, usando particionamento/compressão para manter performance.
+
+### Tabelas sugeridas
+
+**`order_book_snapshots`**
+- `id bigint identity`
+- `event_time timestamptz`
+- `symbol varchar(20)`
+- `sequence bigint` (quando disponível)
+- `bids jsonb` (lista ordenada de níveis com `price`, `quantity`, `offer_count`, `agent_id`)
+- `asks jsonb` (mesmo formato)
+- `best_bid_price`, `best_bid_qty`, `best_ask_price`, `best_ask_qty`
+- `levels integer` (quantidade de níveis armazenados em cada lado)
+- `raw_event jsonb` (opcional para depuração)
+- Índice sugerido: `(symbol, event_time DESC)`
+
+**`order_book_events`**
+- `id bigint identity`
+- `event_time timestamptz`
+- `symbol varchar(20)`
+- `action smallint` (0 snapshot DLL, 1 update ask, 2 update bid, etc.)
+- `side smallint` (0 buy, 1 sell)
+- `position integer`
+- `price numeric`
+- `quantity numeric`
+- `offer_count integer`
+- `agent_id integer`
+- `sequence bigint`
+- `raw_payload jsonb`
+- Índice sugerido: `(symbol, event_time DESC)`
+
+- **Snapshots**: capturar a cada 5 segundos **ou** sempre que o melhor bid/ask mudar. Mantém estado disponível para dashboards e reduz necessidade de replay.
+- **Eventos**: registrar todos os callbacks (`PriceBookCallbackV2`) sem descarte automático. Os dados servirão de base para treinamento; precisamos de compressão/particionamento (Timescale hypertables) e monitoramento de espaço.
+- **Top N níveis**: armazenar até 10 níveis por lado (configurável). JSONB mantém todos os níveis de um snapshot em linha única, evitando multiplicação de tuples.
+
+### Estruturas Python
+```python
+@dataclass
+class OrderBookLevel:
+    price: float
+    quantity: int
+    offer_count: int
+    agent_id: Optional[int] = None
+
+
+@dataclass
+class OrderBookSnapshot:
+    symbol: str
+    timestamp: datetime
+    bids: list[OrderBookLevel]
+    asks: list[OrderBookLevel]
+    sequence: Optional[int]
+    source_event: dict | None = None
+```
+
+### Próximos passos
+- Implementar wrappers `SetPriceBookCallbackV2` / `SubscribePriceBook` na camada que já inicializa a DLL.
+- Montar fila/queue para isolar o callback (alta frequência) da persistência.
+- Definir migrations SQL para criar as tabelas propostas, convertendo-as em hypertables se usarmos TimescaleDB.
+- Configurar compressão e monitoramento de espaço (sem purga automática), garantindo retenção indefinida.
+
+> **Observação**: Usar `PriceBookCallbackV2` garante acesso a `offer_count`, `agent_id`, e `update_id`. Caso o feed não entregue algum campo, preencher com `NULL`.
 

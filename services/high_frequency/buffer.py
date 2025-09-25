@@ -5,14 +5,16 @@ import asyncio
 import logging
 import time
 from collections import deque, defaultdict
-from typing import Dict, List, Optional
-from services.high_frequency.models import Tick
+from typing import Dict, Deque
+from services.high_frequency.models import Tick, OrderBookEvent, OrderBookSnapshot
 from services.high_frequency.persistence import persist_ticks
 
 logger = logging.getLogger(__name__)
 
 # Estado global do buffer
 buffer_queue: Dict[str, deque] = defaultdict(deque)
+order_book_event_queue: Deque[OrderBookEvent] = deque()
+order_book_snapshot_queue: Deque[OrderBookSnapshot] = deque()
 subscriptions: Dict[str, dict] = {}
 tick_counters: Dict[str, int] = defaultdict(int)
 
@@ -64,3 +66,39 @@ def get_buffer_status():
         'total_queued': sum(len(queue) for queue in buffer_queue.values()),
         'tick_counters': dict(tick_counters)
     }
+
+
+def enqueue_order_book_event(event: OrderBookEvent):
+    order_book_event_queue.append(event)
+
+
+def enqueue_order_book_snapshot(snapshot: OrderBookSnapshot):
+    order_book_snapshot_queue.append(snapshot)
+
+
+async def start_order_book_event_processor(process_event):
+    """Processa eventos incrementais do livro de ofertas."""
+    logger.info("Iniciando processador de eventos de order book...")
+    while True:
+        if order_book_event_queue:
+            event = order_book_event_queue.popleft()
+            try:
+                await process_event(event)
+            except Exception as exc:
+                logger.error(f"Erro ao processar evento de order book: {exc}")
+        else:
+            await asyncio.sleep(0.01)
+
+
+async def start_order_book_snapshot_processor(process_snapshot):
+    """Processa snapshots agregados do livro de ofertas."""
+    logger.info("Iniciando processador de snapshots de order book...")
+    while True:
+        if order_book_snapshot_queue:
+            snapshot = order_book_snapshot_queue.popleft()
+            try:
+                await process_snapshot(snapshot)
+            except Exception as exc:
+                logger.error(f"Erro ao processar snapshot de order book: {exc}")
+        else:
+            await asyncio.sleep(0.05)

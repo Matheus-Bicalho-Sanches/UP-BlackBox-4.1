@@ -49,13 +49,33 @@ import random
 # Event Loop policy já deve ter sido configurada pelo start_uvicorn.py
 
 # Alterado para imports absolutos para evitar problemas de PYTHONPATH
-from services.high_frequency.models import Tick, Subscription, SystemStatus, TickerMetrics
+from services.high_frequency.models import (
+    Tick,
+    Subscription,
+    SystemStatus,
+    TickerMetrics,
+    OrderBookEvent,
+    OrderBookSnapshot,
+    OrderBookLevel,
+)
 from services.high_frequency.config import (
-    HF_DISABLE_SIM, PROFIT_FEED_URL, LOG_LEVEL, DATABASE_URL,
-    FIREBASE_SERVICE_ACCOUNT_PATH
+    HF_DISABLE_SIM, LOG_LEVEL, DATABASE_URL,
+    FIREBASE_SERVICE_ACCOUNT_PATH,
 )
 from services.high_frequency.persistence import initialize_db, get_db_pool, persist_ticks, get_ticks_from_db
-from services.high_frequency.buffer import buffer_queue, subscriptions, tick_counters, start_buffer_processor, add_tick_to_buffer
+# Buffer e processamento
+from services.high_frequency.buffer import (
+    buffer_queue,
+    subscriptions,
+    tick_counters,
+    start_buffer_processor,
+    add_tick_to_buffer,
+    start_order_book_event_processor,
+    start_order_book_snapshot_processor,
+)
+# Persistência
+from services.high_frequency.persistence import persist_order_book_event, persist_order_book_snapshot
+
 from services.high_frequency.candle_aggregator import candle_aggregator
 from services.high_frequency.firestore_utils import init_firebase, load_subscriptions_from_firestore
 from services.high_frequency.simulation import simulate_ticks
@@ -63,6 +83,8 @@ from services.high_frequency.robot_detector import TWAPDetector
 from services.high_frequency.robot_persistence import RobotPersistence
 from services.high_frequency.agent_mapping import get_agent_name
 from services.high_frequency.logging_config import LOGGING_CONFIG
+
+ENABLE_ORDER_BOOK_CAPTURE = os.getenv("HF_ENABLE_ORDER_BOOK_CAPTURE", "1").lower() in ("1", "true", "yes")
 
 # Configuração de logging
 logging.basicConfig(
@@ -161,13 +183,43 @@ class IngestTick(BaseModel):
     volume_financial: Optional[float] = None
     is_edit: bool = False
 
+
+class OrderBookEventIn(BaseModel):
+    symbol: str
+    timestamp: float
+    action: int
+    side: int
+    position: Optional[int] = None
+    price: Optional[float] = None
+    quantity: Optional[int] = None
+    offer_count: Optional[int] = None
+    agent_id: Optional[int] = None
+    sequence: Optional[int] = None
+    raw_payload: Optional[Dict[str, Any]] = None
+
+
+class OrderBookLevelIn(BaseModel):
+    price: float
+    quantity: int
+    offer_count: Optional[int] = None
+    agent_id: Optional[int] = None
+
+
+class OrderBookSnapshotIn(BaseModel):
+    symbol: str
+    timestamp: float
+    bids: List[OrderBookLevelIn]
+    asks: List[OrderBookLevelIn]
+    sequence: Optional[int] = None
+    raw_event: Optional[Dict[str, Any]] = None
+
+
 class IngestBatch(BaseModel):
     ticks: List[IngestTick]
 
 # Configuração global
 DATABASE_URL = os.getenv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/market_data")
 FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-credentials.json")
-PROFIT_FEED_URL = os.getenv("PROFIT_FEED_URL", "http://localhost:8001")
 HF_DISABLE_SIM = os.getenv("HF_DISABLE_SIM", "0").lower() in ("1", "true", "yes")
 
 # Estado do sistema
@@ -269,6 +321,7 @@ def init_high_frequency_systems():
     except Exception as e:
         logger.error(f"Failed to initialize high frequency systems: {e}")
         raise
+
 
 # Callbacks simplificados do sistema
 def update_tick_stats(tick: Tick):
@@ -383,6 +436,16 @@ async def startup_event():
         logger.error(f"Falha crítica ao inicializar sistemas de alta frequência: {e}")
         return
 
+    if ENABLE_ORDER_BOOK_CAPTURE:
+        async def process_order_book_event_task(event):
+            await persist_order_book_event(event, db_pool)
+
+        async def process_order_book_snapshot_task(snapshot):
+            await persist_order_book_snapshot(snapshot, db_pool)
+
+        asyncio.create_task(start_order_book_event_processor(process_order_book_event_task))
+        asyncio.create_task(start_order_book_snapshot_processor(process_order_book_snapshot_task))
+
     asyncio.create_task(start_twap_detection())
     asyncio.create_task(start_inactivity_monitoring())
     asyncio.create_task(start_volume_percentage_monitoring())  # ✅ NOVA TASK
@@ -405,7 +468,7 @@ async def shutdown_event():
     try:
         global system_initialized
         system_initialized = False
-        
+
         # Para o agrupador de candles
         candle_aggregator.stop()
         
@@ -540,23 +603,20 @@ async def subscribe_symbol(request: SubscribeRequest):
     try:
         symbol = request.symbol.upper()
         exchange = request.exchange.upper()
-        
-        # Encaminha subscribe para o serviço da DLL (Profit Feed), se configurado
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                await client.post(f"{PROFIT_FEED_URL}/subscribe", json={"ticker": symbol, "exch": exchange})
-        except Exception as e:
-            logger.warning(f"Failed to forward subscribe to PROFIT_FEED_URL: {e}")
-        
-        # Adiciona à lista de assinaturas ativas
+
+        if ENABLE_ORDER_BOOK_CAPTURE:
+            try:
+                pass # No DLL integration
+            except Exception as exc:
+                logger.warning(f"Profit subscribe erro {symbol}: {exc}")
+
         active_subscriptions[symbol] = {
             'symbol': symbol,
             'exchange': exchange,
             'subscribed_at': time.time(),
             'status': 'active'
         }
-        
-        # Inicializa estatísticas
+
         subscription_stats[symbol] = {
             'total_ticks': 0,
             'last_tick_time': 0,
@@ -565,8 +625,7 @@ async def subscribe_symbol(request: SubscribeRequest):
             'gaps_detected': 0,
             'start_time': time.time()
         }
-        
-        # Salva no Firestore
+
         try:
             db = firestore.client()
             db.collection('activeSubscriptions').document(symbol).set({
@@ -578,42 +637,39 @@ async def subscribe_symbol(request: SubscribeRequest):
             })
         except Exception as e:
             logger.warning(f"Failed to save to Firestore: {e}")
-        
+
         logger.info(f"Subscribed to {symbol} on {exchange}")
-        
+
         return {
             "success": True,
             "message": f"Subscribed to {symbol}",
             "symbol": symbol,
             "exchange": exchange
         }
-        
+
     except Exception as e:
         logger.error(f"Error subscribing to {request.symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/unsubscribe")
 async def unsubscribe_symbol(request: UnsubscribeRequest):
     """Cancela inscrição em um símbolo."""
     try:
         symbol = request.symbol.upper()
-        
+
         if symbol in active_subscriptions:
-            # Remove da lista ativa
+            exchange = active_subscriptions[symbol]['exchange']
             del active_subscriptions[symbol]
-            
-            # Remove estatísticas
             if symbol in subscription_stats:
                 del subscription_stats[symbol]
-            
-            # Encaminha unsubscribe para o serviço da DLL
-            try:
-                async with httpx.AsyncClient(timeout=3.0) as client:
-                    await client.post(f"{PROFIT_FEED_URL}/unsubscribe", json={"ticker": symbol})
-            except Exception as e:
-                logger.warning(f"Failed to forward unsubscribe to PROFIT_FEED_URL: {e}")
-            
-            # Atualiza Firestore
+
+            if ENABLE_ORDER_BOOK_CAPTURE:
+                try:
+                    pass # No DLL integration
+                except Exception as exc:
+                    logger.warning(f"Profit unsubscribe erro {symbol}: {exc}")
+
             try:
                 db = firestore.client()
                 db.collection('activeSubscriptions').document(symbol).update({
@@ -622,9 +678,9 @@ async def unsubscribe_symbol(request: UnsubscribeRequest):
                 })
             except Exception as e:
                 logger.warning(f"Failed to update Firestore: {e}")
-            
+
             logger.info(f"Unsubscribed from {symbol}")
-            
+
             return {
                 "success": True,
                 "message": f"Unsubscribed from {symbol}",
@@ -632,12 +688,80 @@ async def unsubscribe_symbol(request: UnsubscribeRequest):
             }
         else:
             raise HTTPException(status_code=404, detail=f"Symbol {symbol} not found in active subscriptions")
-            
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error unsubscribing from {request.symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/ingest/order-book-event")
+async def ingest_order_book_event(event_in: OrderBookEventIn):
+    if not ENABLE_ORDER_BOOK_CAPTURE:
+        raise HTTPException(status_code=503, detail="order_book_capture_disabled")
+
+    db_pool = await get_db_pool()
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="database_unavailable")
+
+    event = OrderBookEvent(
+        symbol=event_in.symbol.upper(),
+        timestamp=datetime.fromtimestamp(event_in.timestamp, tz=timezone.utc),
+        action=event_in.action,
+        side=event_in.side,
+        position=event_in.position,
+        price=event_in.price,
+        quantity=event_in.quantity,
+        offer_count=event_in.offer_count,
+        agent_id=event_in.agent_id,
+        sequence=event_in.sequence,
+        raw_payload=event_in.raw_payload,
+    )
+
+    await persist_order_book_event(event, db_pool)
+    return {"success": True}
+
+
+@app.post("/ingest/order-book-snapshot")
+async def ingest_order_book_snapshot(snapshot_in: OrderBookSnapshotIn):
+    if not ENABLE_ORDER_BOOK_CAPTURE:
+        raise HTTPException(status_code=503, detail="order_book_capture_disabled")
+
+    db_pool = await get_db_pool()
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="database_unavailable")
+
+    bids = [
+        OrderBookLevel(
+            price=level.price,
+            quantity=level.quantity,
+            offer_count=level.offer_count or 0,
+            agent_id=level.agent_id,
+        )
+        for level in snapshot_in.bids
+    ]
+    asks = [
+        OrderBookLevel(
+            price=level.price,
+            quantity=level.quantity,
+            offer_count=level.offer_count or 0,
+            agent_id=level.agent_id,
+        )
+        for level in snapshot_in.asks
+    ]
+
+    snapshot = OrderBookSnapshot(
+        symbol=snapshot_in.symbol.upper(),
+        timestamp=datetime.fromtimestamp(snapshot_in.timestamp, tz=timezone.utc),
+        bids=bids,
+        asks=asks,
+        sequence=snapshot_in.sequence,
+        source_event=snapshot_in.raw_event,
+    )
+
+    await persist_order_book_snapshot(snapshot, db_pool)
+    return {"success": True}
 
 @app.get("/robots/patterns")
 async def get_robot_patterns(symbol: Optional[str] = None, agent_id: Optional[int] = None, signature: Optional[str] = None):
@@ -922,6 +1046,73 @@ async def ingest_batch(batch: IngestBatch):
     except Exception as e:
         logger.error(f"Error ingest_batch: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ingest/order-book-event")
+async def ingest_order_book_event(event_in: OrderBookEventIn):
+    if not ENABLE_ORDER_BOOK_CAPTURE:
+        raise HTTPException(status_code=503, detail="order_book_capture_disabled")
+
+    db_pool = await get_db_pool()
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="database_unavailable")
+
+    event = OrderBookEvent(
+        symbol=event_in.symbol.upper(),
+        timestamp=datetime.fromtimestamp(event_in.timestamp, tz=timezone.utc),
+        action=event_in.action,
+        side=event_in.side,
+        position=event_in.position,
+        price=event_in.price,
+        quantity=event_in.quantity,
+        offer_count=event_in.offer_count,
+        agent_id=event_in.agent_id,
+        sequence=event_in.sequence,
+        raw_payload=event_in.raw_payload,
+    )
+
+    await persist_order_book_event(event, db_pool)
+    return {"success": True}
+
+
+@app.post("/ingest/order-book-snapshot")
+async def ingest_order_book_snapshot(snapshot_in: OrderBookSnapshotIn):
+    if not ENABLE_ORDER_BOOK_CAPTURE:
+        raise HTTPException(status_code=503, detail="order_book_capture_disabled")
+
+    db_pool = await get_db_pool()
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="database_unavailable")
+
+    bids = [
+        OrderBookLevel(
+            price=level.price,
+            quantity=level.quantity,
+            offer_count=level.offer_count or 0,
+            agent_id=level.agent_id,
+        )
+        for level in snapshot_in.bids
+    ]
+    asks = [
+        OrderBookLevel(
+            price=level.price,
+            quantity=level.quantity,
+            offer_count=level.offer_count or 0,
+            agent_id=level.agent_id,
+        )
+        for level in snapshot_in.asks
+    ]
+
+    snapshot = OrderBookSnapshot(
+        symbol=snapshot_in.symbol.upper(),
+        timestamp=datetime.fromtimestamp(snapshot_in.timestamp, tz=timezone.utc),
+        bids=bids,
+        asks=asks,
+        sequence=snapshot_in.sequence,
+        source_event=snapshot_in.raw_event,
+    )
+
+    await persist_order_book_snapshot(snapshot, db_pool)
+    return {"success": True}
 
 @app.get("/subscriptions")
 async def get_active_subscriptions():
