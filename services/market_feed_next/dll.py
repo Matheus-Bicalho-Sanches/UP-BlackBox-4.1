@@ -146,6 +146,7 @@ class ProfitDLL:
         self._unsubscribe_offer = None
         self._last_snapshot_ts: Dict[str, float] = {}
         self._book_cache: Dict[str, Dict[str, list[dict]]] = {}
+        self._free_pointer = None
 
         @StateCallbackType
         def _state_cb(state_type: int, result: int) -> None:
@@ -271,18 +272,32 @@ class ProfitDLL:
         def _offer_book_cb(asset: TBookAsset, n_action: int, n_position: int, side: int, n_qtd: int, n_agent: int, offer_id: int, price: float, has_price: int, has_qtd: int, has_date: int, has_offer_id: int, has_agent: int, date_str: ctypes.c_wchar_p, p_array_sell: ctypes.c_void_p, p_array_buy: ctypes.c_void_p) -> None:
             try:
                 symbol = _safe_wstring(getattr(asset, "ticker", None) or getattr(asset, "Ticker", None)).upper() or "UNKNOWN"
-                payload = {
-                    "symbol": symbol,
-                    "action": int(n_action),
-                    "position": int(n_position) if n_position >= 0 else None,
-                    "side": int(side),
-                    "quantity": int(n_qtd),
-                    "agent_id": int(n_agent) if has_agent else None,
-                    "offer_id": int(offer_id) if has_offer_id else None,
-                    "price": float(price) if has_price else None,
-                }
-
-                self._forward_offer(payload)
+                offers = self._decode_offer_arrays(side, p_array_sell, p_array_buy)
+                if offers:
+                    for idx, offer in enumerate(offers):
+                        payload = {
+                            "symbol": symbol,
+                            "action": int(n_action),
+                            "position": len(offers) - idx - 1,
+                            "side": int(side),
+                            "quantity": offer.get("quantity"),
+                            "agent_id": offer.get("agent_id"),
+                            "offer_id": offer.get("offer_id"),
+                            "price": offer.get("price"),
+                        }
+                        self._forward_offer(payload)
+                else:
+                    payload = {
+                        "symbol": symbol,
+                        "action": int(n_action),
+                        "position": int(n_position) if n_position >= 0 else None,
+                        "side": int(side),
+                        "quantity": int(n_qtd) if has_qtd else None,
+                        "agent_id": int(n_agent) if has_agent else None,
+                        "offer_id": int(offer_id) if has_offer_id else None,
+                        "price": float(price) if has_price else None,
+                    }
+                    self._forward_offer(payload)
             except Exception as exc:
                 logger.warning("OfferBook callback error: %s", exc)
 
@@ -399,7 +414,7 @@ class ProfitDLL:
 
     def _decode_price_array(self, ptr_value: ctypes.c_void_p) -> Optional[list]:
         if not ptr_value:
-            return None
+            return []
         try:
             header = (ctypes.c_ubyte * 8).from_address(ptr_value)
             count = int.from_bytes(bytes(header[:4]), "little", signed=False)
@@ -426,7 +441,73 @@ class ProfitDLL:
             return levels
         except Exception as exc:
             logger.warning("Falha ao decodificar array de book: %s", exc)
-            return None
+            return []
+
+    def _decode_offer_arrays(self, side: int, ptr_sell: ctypes.c_void_p, ptr_buy: ctypes.c_void_p) -> list[dict]:
+        bids = self._decode_offer_array(ptr_buy)
+        asks = self._decode_offer_array(ptr_sell)
+        if side == 0:
+            return bids
+        if side == 1:
+            return asks
+        # se lado desconhecido, retorna combinação para garantir que não perca dados
+        return bids or asks
+
+    def _decode_offer_array(self, ptr_value: ctypes.c_void_p) -> list[dict]:
+        if not ptr_value:
+            return []
+        if not self._free_pointer:
+            logger.debug("FreePointer não disponível para liberar array de ofertas")
+            return []
+
+        result: list[dict] = []
+        ptr_int = int(ptr_value)
+
+        try:
+            header = (ctypes.c_ubyte * 8).from_address(ptr_int)
+            count = int.from_bytes(bytes(header[:4]), "little", signed=False)
+            total_size = int.from_bytes(bytes(header[4:8]), "little", signed=False)
+
+            offset = 8
+            for _ in range(count):
+                price_bytes = (ctypes.c_ubyte * 8).from_address(ptr_int + offset)
+                price = struct.unpack("<d", bytes(price_bytes))[0]
+                offset += 8
+
+                qty_bytes = (ctypes.c_ubyte * 8).from_address(ptr_int + offset)
+                quantity = struct.unpack("<q", bytes(qty_bytes))[0]
+                offset += 8
+
+                agent_bytes = (ctypes.c_ubyte * 4).from_address(ptr_int + offset)
+                agent_id = struct.unpack("<i", bytes(agent_bytes))[0]
+                offset += 4
+
+                offer_id_bytes = (ctypes.c_ubyte * 8).from_address(ptr_int + offset)
+                offer_id = struct.unpack("<q", bytes(offer_id_bytes))[0]
+                offset += 8
+
+                length_bytes = (ctypes.c_ubyte * 2).from_address(ptr_int + offset)
+                length = struct.unpack("<H", bytes(length_bytes))[0]
+                offset += 2
+
+                if length > 0:
+                    offset += length
+
+                result.append(
+                    {
+                        "price": float(price),
+                        "quantity": int(quantity),
+                        "agent_id": int(agent_id),
+                        "offer_id": int(offer_id),
+                    }
+                )
+
+            # flags finais (ex: OB_LAST_PACKET)
+            offset += 4
+            self._free_pointer(ctypes.c_void_p(ptr_int), total_size)
+        except Exception as exc:
+            logger.warning("Falha ao decodificar array de ofertas: %s", exc)
+        return result
 
     def _update_side_cache(self, cache: Dict[str, list], side_key: str, action: int, position: int, price: float, qty: int, count: int) -> None:
         side = cache.get(side_key)
@@ -493,6 +574,11 @@ class ProfitDLL:
             dll_path = self._resolve_dll_path()
             dll = ctypes.WinDLL(str(dll_path))
             self._dll = dll
+            if hasattr(dll, "FreePointer"):
+                free_ptr = dll.FreePointer
+                free_ptr.argtypes = [ctypes.c_void_p, ctypes.c_int]
+                free_ptr.restype = ctypes.c_int
+                self._free_pointer = free_ptr
             if hasattr(dll, "SubscribeTicker"):
                 self._subscribe_ticker = dll.SubscribeTicker
                 self._subscribe_ticker.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
