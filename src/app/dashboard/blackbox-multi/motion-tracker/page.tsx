@@ -211,57 +211,7 @@ const getAgentName = (agentId: number): string => {
   return AGENT_MAPPING[agentId] || `Agente ${agentId}`;
 };
 
-// Lista completa de ativos do dll_launcher.py em ordem alfabética
-const mockSymbols = [
-  'TODOS',  // Sempre primeiro
-  'ABEV3',
-  'AFHI11',
-  'B3SA3',
-  'BBDC4',
-  'BBAS3',
-  'BBSE3',
-  'BINC11',
-  'BODB11',
-  'BPAC11',
-  'BRBI11',
-  'BRFS3',
-  'CACR11',
-  'CAML3',
-  'CDII11',
-  'CSUD3',
-  'FGAA11',
-  'HGLG11',
-  'HGRE11',
-  'ITUB4',
-  'KDIF11',
-  'LVBI11',
-  'MGLU3',
-  'MRFG3',
-  'PFRM3',
-  'PETR4',
-  'PETZ3',
-  'PGMN3',
-  'PORD11',
-  'PSSA3',
-  'RAIZ4',
-  'RADL3',
-  'RDOR3',
-  'RENT3',
-  'RURA11',
-  'SAPR4',
-  'SIMH3',
-  'SLCE3',
-  'SOJA3',
-  'TIMS3',
-  'URPR11',
-  'VALE3',
-  'VGIA11',
-  'VGIR11',
-  'VIVT3',
-  'WEGE3',
-  'XPML11',
-  'YDUQ3'
-];
+// Lista de ativos vinda da configuração compartilhada
 
 const mockExchanges = ['B3', 'BMF'];
 
@@ -306,6 +256,28 @@ export default function MotionTrackerPage() {
   const lastPatternsFetchRef = useRef<number>(0);
   const debounceMs = 3000;
   const prevActiveKeysRef = useRef<Set<string>>(new Set());
+
+  const [symbolOptions, setSymbolOptions] = useState<string[]>(["TODOS"]);
+
+  useEffect(() => {
+    const fetchDefaultSymbols = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/shared/default-symbols`);
+        if (!res.ok) {
+          throw new Error(`Erro ao carregar símbolos (HTTP ${res.status})`);
+        }
+        const data = await res.json();
+        if (data && Array.isArray(data.symbols)) {
+          setSymbolOptions(["TODOS", ...data.symbols]);
+        }
+      } catch (err) {
+        console.error('Erro ao carregar lista de símbolos padrão:', err);
+        setSymbolOptions(["TODOS"]);
+      }
+    };
+
+    fetchDefaultSymbols();
+  }, []);
 
   // Atualiza padrões e detecta ativações para exibir notificação (fallback caso WS não envie)
   const setPatternsWithStartDetection = (patterns: RobotPattern[]) => {
@@ -1007,7 +979,7 @@ export default function MotionTrackerPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-gray-800 border-gray-600">
-              {mockSymbols.map(symbol => (
+              {symbolOptions.map(symbol => (
                 <SelectItem key={symbol} value={symbol} className="text-white hover:bg-gray-700">
                   {symbol}
                 </SelectItem>

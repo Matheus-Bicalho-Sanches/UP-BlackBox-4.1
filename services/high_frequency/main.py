@@ -91,6 +91,7 @@ from services.high_frequency.robot_detector import TWAPDetector
 from services.high_frequency.robot_persistence import RobotPersistence
 from services.high_frequency.agent_mapping import get_agent_name
 from services.high_frequency.logging_config import LOGGING_CONFIG
+from services.shared import DEFAULT_MARKET_FEED_SYMBOLS
 
 ENABLE_ORDER_BOOK_CAPTURE = os.getenv("HF_ENABLE_ORDER_BOOK_CAPTURE", "1").lower() in ("1", "true", "yes")
 
@@ -1283,6 +1284,10 @@ async def test_endpoint():
     }
 
 ## AI Lab (removido) – endpoints migrados para services/ml_lab
+
+@app.get("/shared/default-symbols")
+async def api_shared_default_symbols():
+    return {"symbols": DEFAULT_MARKET_FEED_SYMBOLS}
 
 if __name__ == "__main__":
     # Configuração do servidor
