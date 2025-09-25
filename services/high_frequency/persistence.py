@@ -153,7 +153,7 @@ async def initialize_db(conn_pool: AsyncConnectionPool):
                         event_time TIMESTAMPTZ NOT NULL,
                         action SMALLINT NOT NULL,
                         side SMALLINT NOT NULL,
-                        position INTEGER,
+                        position BIGINT,
                         price DOUBLE PRECISION,
                         quantity BIGINT,
                         offer_count INTEGER,
@@ -161,6 +161,22 @@ async def initialize_db(conn_pool: AsyncConnectionPool):
                         sequence BIGINT,
                         raw_payload JSONB
                     );
+                    """
+                )
+
+                await cur.execute(
+                    """
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                             WHERE table_name = 'order_book_events'
+                               AND column_name = 'position'
+                               AND data_type <> 'bigint'
+                        ) THEN
+                            ALTER TABLE order_book_events ALTER COLUMN position TYPE BIGINT;
+                        END IF;
+                    END $$;
                     """
                 )
 
@@ -191,13 +207,29 @@ async def initialize_db(conn_pool: AsyncConnectionPool):
                         event_time TIMESTAMPTZ NOT NULL,
                         action SMALLINT NOT NULL,
                         side SMALLINT NOT NULL,
-                        position INTEGER,
+                        position BIGINT,
                         price DOUBLE PRECISION,
                         quantity BIGINT,
                         agent_id INTEGER,
                         offer_id BIGINT,
                         flags INTEGER
                     );
+                    """
+                )
+
+                await cur.execute(
+                    """
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                             WHERE table_name = 'order_book_offers'
+                               AND column_name = 'position'
+                               AND data_type <> 'bigint'
+                        ) THEN
+                            ALTER TABLE order_book_offers ALTER COLUMN position TYPE BIGINT;
+                        END IF;
+                    END $$;
                     """
                 )
 

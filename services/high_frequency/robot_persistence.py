@@ -161,12 +161,13 @@ class RobotPersistence:
 
                     where_clause = " AND ".join(conditions)
 
-                    await cur.execute(f"""
+                    query = f"""
                         SELECT id FROM robot_patterns
                          WHERE {where_clause}
                          ORDER BY last_seen DESC
                          LIMIT 1
-                    """, tuple(params))
+                    """
+                    await cur.execute(query, tuple(params))
                     row = await cur.fetchone()
                     if row:
                         pattern_id = row[0]
@@ -304,21 +305,41 @@ class RobotPersistence:
         try:
             async with await psycopg.AsyncConnection.connect(self.database_url) as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute("""
+                    conditions = [
+                        "symbol = %s",
+                        "agent_id = %s",
+                        "pattern_type = %s"
+                    ]
+                    params = [symbol, agent_id, pattern_type]
+
+                    if signature_volume is not None:
+                        conditions.append("signature_volume = %s")
+                        params.append(signature_volume)
+                    else:
+                        conditions.append("signature_volume IS NULL")
+
+                    if signature_direction is not None:
+                        conditions.append("signature_direction = %s")
+                        params.append(signature_direction)
+                    else:
+                        conditions.append("signature_direction IS NULL")
+
+                    if signature_interval_seconds is not None:
+                        conditions.append("signature_interval_seconds = %s")
+                        params.append(signature_interval_seconds)
+                    else:
+                        conditions.append("signature_interval_seconds IS NULL")
+
+                    where_clause = " AND ".join(conditions)
+
+                    query = f"""
                         SELECT id, status, robot_type, first_seen, total_volume, total_trades, avg_trade_size, inactivity_notified
-                        FROM robot_patterns
-                        WHERE symbol = %s AND agent_id = %s AND pattern_type = %s
-                          AND (signature_volume = %s OR (%s IS NULL AND signature_volume IS NULL))
-                          AND (signature_direction = %s OR (%s IS NULL AND signature_direction IS NULL))
-                          AND (signature_interval_seconds = %s OR (%s IS NULL AND signature_interval_seconds IS NULL))
-                        ORDER BY last_seen DESC
-                        LIMIT 1
-                    """, (
-                        symbol, agent_id, pattern_type,
-                        signature_volume, signature_volume,
-                        signature_direction, signature_direction,
-                        signature_interval_seconds, signature_interval_seconds,
-                    ))
+                          FROM robot_patterns
+                         WHERE {where_clause}
+                         ORDER BY last_seen DESC
+                         LIMIT 1
+                    """
+                    await cur.execute(query, tuple(params))
                     
                     result = await cur.fetchone()
                     return result
