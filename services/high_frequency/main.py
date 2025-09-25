@@ -57,6 +57,7 @@ from services.high_frequency.models import (
     OrderBookEvent,
     OrderBookSnapshot,
     OrderBookLevel,
+    OrderBookOffer,
 )
 from services.high_frequency.config import (
     HF_DISABLE_SIM, LOG_LEVEL, DATABASE_URL,
@@ -72,10 +73,17 @@ from services.high_frequency.buffer import (
     add_tick_to_buffer,
     start_order_book_event_processor,
     start_order_book_snapshot_processor,
+    enqueue_order_book_event,
+    enqueue_order_book_snapshot,
+    start_order_book_offer_processor,
+    enqueue_order_book_offer,
 )
 # Persistência
-from services.high_frequency.persistence import persist_order_book_event, persist_order_book_snapshot
-
+from services.high_frequency.persistence import (
+    persist_order_book_event,
+    persist_order_book_snapshot,
+    persist_order_book_offer,
+)
 from services.high_frequency.candle_aggregator import candle_aggregator
 from services.high_frequency.firestore_utils import init_firebase, load_subscriptions_from_firestore
 from services.high_frequency.simulation import simulate_ticks
@@ -212,6 +220,19 @@ class OrderBookSnapshotIn(BaseModel):
     asks: List[OrderBookLevelIn]
     sequence: Optional[int] = None
     raw_event: Optional[Dict[str, Any]] = None
+
+
+class OrderBookOfferIn(BaseModel):
+    symbol: str
+    timestamp: float
+    action: int
+    side: int
+    position: Optional[int] = None
+    price: Optional[float] = None
+    quantity: Optional[int] = None
+    agent_id: Optional[int] = None
+    offer_id: Optional[int] = None
+    flags: Optional[int] = None
 
 
 class IngestBatch(BaseModel):
@@ -443,8 +464,12 @@ async def startup_event():
         async def process_order_book_snapshot_task(snapshot):
             await persist_order_book_snapshot(snapshot, db_pool)
 
+        async def process_order_book_offer_task(offer):
+            await persist_order_book_offer(offer, db_pool)
+
         asyncio.create_task(start_order_book_event_processor(process_order_book_event_task))
         asyncio.create_task(start_order_book_snapshot_processor(process_order_book_snapshot_task))
+        asyncio.create_task(start_order_book_offer_processor(process_order_book_offer_task))
 
     asyncio.create_task(start_twap_detection())
     asyncio.create_task(start_inactivity_monitoring())
@@ -761,6 +786,32 @@ async def ingest_order_book_snapshot(snapshot_in: OrderBookSnapshotIn):
     )
 
     await persist_order_book_snapshot(snapshot, db_pool)
+    return {"success": True}
+
+
+@app.post("/ingest/order-book-offer")
+async def ingest_order_book_offer(offer_in: OrderBookOfferIn):
+    if not ENABLE_ORDER_BOOK_CAPTURE:
+        raise HTTPException(status_code=503, detail="order_book_capture_disabled")
+
+    db_pool = await get_db_pool()
+    if not db_pool:
+        raise HTTPException(status_code=503, detail="database_unavailable")
+
+    offer = OrderBookOffer(
+        symbol=offer_in.symbol.upper(),
+        timestamp=datetime.fromtimestamp(offer_in.timestamp, tz=timezone.utc),
+        action=offer_in.action,
+        side=offer_in.side,
+        position=offer_in.position,
+        price=offer_in.price,
+        quantity=offer_in.quantity,
+        agent_id=offer_in.agent_id,
+        offer_id=offer_in.offer_id,
+        flags=offer_in.flags,
+    )
+
+    await persist_order_book_offer(offer, db_pool)
     return {"success": True}
 
 @app.get("/robots/patterns")

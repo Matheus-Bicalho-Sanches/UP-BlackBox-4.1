@@ -6,7 +6,7 @@ import logging
 import time
 from collections import deque, defaultdict
 from typing import Dict, Deque
-from services.high_frequency.models import Tick, OrderBookEvent, OrderBookSnapshot
+from services.high_frequency.models import Tick, OrderBookEvent, OrderBookSnapshot, OrderBookOffer
 from services.high_frequency.persistence import persist_ticks
 
 logger = logging.getLogger(__name__)
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 buffer_queue: Dict[str, deque] = defaultdict(deque)
 order_book_event_queue: Deque[OrderBookEvent] = deque()
 order_book_snapshot_queue: Deque[OrderBookSnapshot] = deque()
+order_book_offer_queue: Deque[OrderBookOffer] = deque()
 subscriptions: Dict[str, dict] = {}
 tick_counters: Dict[str, int] = defaultdict(int)
 
@@ -76,6 +77,10 @@ def enqueue_order_book_snapshot(snapshot: OrderBookSnapshot):
     order_book_snapshot_queue.append(snapshot)
 
 
+def enqueue_order_book_offer(offer: OrderBookOffer):
+    order_book_offer_queue.append(offer)
+
+
 async def start_order_book_event_processor(process_event):
     """Processa eventos incrementais do livro de ofertas."""
     logger.info("Iniciando processador de eventos de order book...")
@@ -102,3 +107,17 @@ async def start_order_book_snapshot_processor(process_snapshot):
                 logger.error(f"Erro ao processar snapshot de order book: {exc}")
         else:
             await asyncio.sleep(0.05)
+
+
+async def start_order_book_offer_processor(process_offer):
+    """Processa eventos individuais de ofertas (por agente)."""
+    logger.info("Iniciando processador de ofertas de order book...")
+    while True:
+        if order_book_offer_queue:
+            offer = order_book_offer_queue.popleft()
+            try:
+                await process_offer(offer)
+            except Exception as exc:
+                logger.error(f"Erro ao processar oferta de order book: {exc}")
+        else:
+            await asyncio.sleep(0.01)

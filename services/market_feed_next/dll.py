@@ -9,7 +9,7 @@ import asyncio
 import struct
 import httpx
 import requests
-from services.high_frequency.config import ORDER_BOOK_SNAPSHOT_INTERVAL_MS
+from services.high_frequency.config import ORDER_BOOK_SNAPSHOT_INTERVAL_MS, ORDER_BOOK_TOP_LEVELS
 
 logger = logging.getLogger("market_feed_next")
 
@@ -94,6 +94,25 @@ class TConnectorTrade(ctypes.Structure):
 
 TradeCallbackV2Type = ctypes.WINFUNCTYPE(None, TConnectorAssetIdentifier, ctypes.c_size_t, ctypes.c_uint)
 PriceBookCallbackV2Type = ctypes.WINFUNCTYPE(None, TBookAsset, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_longlong, ctypes.c_longlong, ctypes.c_double, ctypes.c_void_p, ctypes.c_void_p)
+OfferBookCallbackV2Type = ctypes.WINFUNCTYPE(
+    None,
+    TBookAsset,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_longlong,
+    ctypes.c_int,
+    ctypes.c_longlong,
+    ctypes.c_double,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_wchar_p,
+    ctypes.c_void_p,
+    ctypes.c_void_p,
+)
 
 
 def _try_load_envfile(env_path: Path) -> None:
@@ -123,6 +142,8 @@ class ProfitDLL:
         self._unsubscribe_ticker = None
         self._subscribe_book = None
         self._unsubscribe_book = None
+        self._subscribe_offer = None
+        self._unsubscribe_offer = None
         self._last_snapshot_ts: Dict[str, float] = {}
         self._book_cache: Dict[str, Dict[str, list[dict]]] = {}
 
@@ -141,6 +162,12 @@ class ProfitDLL:
                             if self._subscribe_book:
                                 ret_book = self._subscribe_book(sym, "B")
                                 logger.info("SubscribePriceBook(%s,B) -> %s", sym, ret_book)
+                            if self._subscribe_offer:
+                                ret_offer = self._subscribe_offer(sym, "B")
+                                logger.info("SubscribeOfferBook(%s,B) -> %s", sym, ret_offer)
+                            if self._subscribe_offer:
+                                ret_offer = self._subscribe_offer(sym, "B")
+                                logger.info("SubscribeOfferBook(%s,B) -> %s", sym, ret_offer)
                         except Exception as exc:
                             logger.warning("SubscribeTicker error %s: %s", sym, exc)
                     try:
@@ -240,6 +267,27 @@ class ProfitDLL:
 
         self._price_book_cb_v2_fn = _price_book_cb_v2
 
+        @OfferBookCallbackV2Type
+        def _offer_book_cb(asset: TBookAsset, n_action: int, n_position: int, side: int, n_qtd: int, n_agent: int, offer_id: int, price: float, has_price: int, has_qtd: int, has_date: int, has_offer_id: int, has_agent: int, date_str: ctypes.c_wchar_p, p_array_sell: ctypes.c_void_p, p_array_buy: ctypes.c_void_p) -> None:
+            try:
+                symbol = _safe_wstring(getattr(asset, "ticker", None) or getattr(asset, "Ticker", None)).upper() or "UNKNOWN"
+                payload = {
+                    "symbol": symbol,
+                    "action": int(n_action),
+                    "position": int(n_position) if n_position >= 0 else None,
+                    "side": int(side),
+                    "quantity": int(n_qtd),
+                    "agent_id": int(n_agent) if has_agent else None,
+                    "offer_id": int(offer_id) if has_offer_id else None,
+                    "price": float(price) if has_price else None,
+                }
+
+                self._forward_offer(payload)
+            except Exception as exc:
+                logger.warning("OfferBook callback error: %s", exc)
+
+        self._offer_book_cb_fn = _offer_book_cb
+
         @TradeCallbackV2Type
         def _trade_cb_v2(asset_id: TConnectorAssetIdentifier, p_trade: ctypes.c_size_t, flags: ctypes.c_uint) -> None:
             try:
@@ -325,6 +373,18 @@ class ProfitDLL:
             )
         except Exception as exc:
             logger.warning("Falha ao enviar snapshot de book para HF: %s", exc)
+
+    def _forward_offer(self, payload: dict) -> None:
+        data = dict(payload)
+        data["timestamp"] = time.time()
+        try:
+            requests.post(
+                "http://127.0.0.1:8002/ingest/order-book-offer",
+                json=data,
+                timeout=2.0,
+            )
+        except Exception as exc:
+            logger.warning("Falha ao enviar oferta de book para HF: %s", exc)
 
     def _build_snapshot_payload(self, symbol: str, p_array_buy: ctypes.c_void_p, p_array_sell: ctypes.c_void_p) -> Optional[dict]:
         bids = self._decode_price_array(p_array_buy)
@@ -449,6 +509,14 @@ class ProfitDLL:
                 self._unsubscribe_book = dll.UnsubscribePriceBook
                 self._unsubscribe_book.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
                 self._unsubscribe_book.restype = ctypes.c_int
+            if hasattr(dll, "SubscribeOfferBook"):
+                self._subscribe_offer = dll.SubscribeOfferBook
+                self._subscribe_offer.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+                self._subscribe_offer.restype = ctypes.c_int
+            if hasattr(dll, "UnsubscribeOfferBook"):
+                self._unsubscribe_offer = dll.UnsubscribeOfferBook
+                self._unsubscribe_offer.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+                self._unsubscribe_offer.restype = ctypes.c_int
             if init_mode == "login" and hasattr(dll, "DLLInitializeLogin"):
                 login_fn = dll.DLLInitializeLogin
                 login_fn.argtypes = [
@@ -474,8 +542,8 @@ class ProfitDLL:
                     ctypes.cast(self._state_cb_fn, ctypes.c_void_p),
                     None,
                     None,
-                    None,
-                    None,
+                    ctypes.cast(self._price_book_cb_v2_fn, ctypes.c_void_p),
+                    ctypes.cast(self._offer_book_cb_fn, ctypes.c_void_p),
                     None,
                     None,
                     None,
@@ -505,10 +573,10 @@ class ProfitDLL:
                     login,
                     password,
                     ctypes.cast(self._state_cb_fn, ctypes.c_void_p),
-                    None,
+                    ctypes.cast(self._trade_cb_fn, ctypes.c_void_p),
                     None,
                     ctypes.cast(self._price_book_cb_v2_fn, ctypes.c_void_p),
-                    None,
+                    ctypes.cast(self._offer_book_cb_fn, ctypes.c_void_p),
                     None,
                     None,
                     None,
@@ -558,6 +626,15 @@ class ProfitDLL:
             except Exception as exc:
                 logger.warning("SetPriceBookCallback registration error: %s", exc)
             try:
+                if hasattr(dll, "SetOfferBookCallbackV2"):
+                    set_offer = dll.SetOfferBookCallbackV2
+                    set_offer.argtypes = [OfferBookCallbackV2Type]
+                    set_offer.restype = ctypes.c_int
+                    rc = set_offer(self._offer_book_cb_fn)
+                    logger.info("SetOfferBookCallbackV2 -> %s (%s)", rc, _name_of(rc))
+            except Exception as exc:
+                logger.warning("SetOfferBookCallback registration error: %s", exc)
+            try:
                 if hasattr(dll, "SetHistoryTradeCallback"):
                     set_hist = dll.SetHistoryTradeCallback
                     set_hist.argtypes = [HistoryTradeCallbackType]
@@ -581,6 +658,9 @@ class ProfitDLL:
         if connected and self._subscribe_book:
             ret_book = self._subscribe_book(symbol, exchange)
             logger.info("SubscribePriceBook(%s,%s) -> %s", symbol, exchange, ret_book)
+        if connected and self._subscribe_offer:
+            ret_offer = self._subscribe_offer(symbol, exchange)
+            logger.info("SubscribeOfferBook(%s,%s) -> %s", symbol, exchange, ret_offer)
 
     def unsubscribe(self, symbol: str) -> None:
         with self._lock:
@@ -597,6 +677,12 @@ class ProfitDLL:
                 logger.info("UnsubscribePriceBook(%s,B) -> %s", symbol, ret_book)
             except Exception as exc:
                 logger.warning("UnsubscribePriceBook error %s: %s", symbol, exc)
+        if self._unsubscribe_offer:
+            try:
+                ret_offer = self._unsubscribe_offer(symbol, "B")
+                logger.info("UnsubscribeOfferBook(%s,B) -> %s", symbol, ret_offer)
+            except Exception as exc:
+                logger.warning("UnsubscribeOfferBook error %s: %s", symbol, exc)
 
 
 def _safe_wstring(value) -> str:

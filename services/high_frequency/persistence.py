@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from psycopg_pool import AsyncConnectionPool
 from psycopg import AsyncConnection
 from psycopg.types.json import Json
-from services.high_frequency.models import Tick, OrderBookEvent, OrderBookSnapshot, OrderBookLevel
+from services.high_frequency.models import Tick, OrderBookEvent, OrderBookSnapshot, OrderBookLevel, OrderBookOffer
 import os
 import time
 
@@ -184,6 +184,24 @@ async def initialize_db(conn_pool: AsyncConnectionPool):
                 )
 
                 await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS order_book_offers (
+                        id BIGINT GENERATED ALWAYS AS IDENTITY,
+                        symbol VARCHAR(20) NOT NULL,
+                        event_time TIMESTAMPTZ NOT NULL,
+                        action SMALLINT NOT NULL,
+                        side SMALLINT NOT NULL,
+                        position INTEGER,
+                        price DOUBLE PRECISION,
+                        quantity BIGINT,
+                        agent_id INTEGER,
+                        offer_id BIGINT,
+                        flags INTEGER
+                    );
+                    """
+                )
+
+                await cur.execute(
                     "SELECT create_hypertable('order_book_events', 'event_time', if_not_exists => TRUE);"
                 )
 
@@ -216,6 +234,17 @@ async def initialize_db(conn_pool: AsyncConnectionPool):
                     """
                     CREATE INDEX IF NOT EXISTS idx_order_book_snapshots_symbol_time
                     ON order_book_snapshots(symbol, event_time DESC);
+                    """
+                )
+
+                await cur.execute(
+                    "SELECT create_hypertable('order_book_offers', 'event_time', if_not_exists => TRUE);"
+                )
+
+                await cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_order_book_offers_symbol_time
+                    ON order_book_offers(symbol, event_time DESC);
                     """
                 )
 
@@ -371,7 +400,7 @@ async def persist_order_book_event(event: OrderBookEvent, db_pool: AsyncConnecti
         event.price,
         event.quantity,
         event.offer_count,
-        event.agent_id,
+                None,
         event.sequence,
         Json(event.raw_payload or {}),
     )
@@ -449,7 +478,7 @@ async def persist_order_book_snapshot(snapshot: OrderBookSnapshot, db_pool: Asyn
         best_bid["quantity"] if best_bid else None,
         best_ask["price"] if best_ask else None,
         best_ask["quantity"] if best_ask else None,
-        max(len(bids_json), len(asks_json)),
+        len(bids_json) + len(asks_json),
         snapshot.sequence,
         Json(snapshot.source_event or {}),
     )
@@ -478,3 +507,61 @@ async def persist_order_book_snapshot(snapshot: OrderBookSnapshot, db_pool: Asyn
                 await asyncio.sleep(0.1 * attempt)
             else:
                 logger.error("Falha definitiva ao persistir snapshot de %s", snapshot.symbol)
+
+
+async def persist_order_book_offer(offer: OrderBookOffer, db_pool: AsyncConnectionPool):
+    """Persiste eventos individuais de ofertas do livro (por agente)."""
+    sql = """
+        INSERT INTO order_book_offers (
+            symbol,
+            event_time,
+            action,
+            side,
+            position,
+            price,
+            quantity,
+            agent_id,
+            offer_id,
+            flags
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+
+    params = (
+        offer.symbol,
+        offer.timestamp,
+        offer.action,
+        offer.side,
+        offer.position,
+        offer.price,
+        offer.quantity,
+        offer.agent_id,
+        offer.offer_id,
+        offer.flags,
+    )
+
+    for attempt in range(1, 6):
+        try:
+            async with db_pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(sql, params)
+                    await conn.commit()
+            logger.debug(
+                "Persisted order book offer %s side=%s price=%s agent=%s",
+                offer.symbol,
+                offer.side,
+                offer.price,
+                offer.agent_id,
+            )
+            return
+        except Exception as exc:
+            logger.warning(
+                "Tentativa %s falhou ao persistir oferta (%s - agent %s): %s",
+                attempt,
+                offer.symbol,
+                offer.agent_id,
+                exc,
+            )
+            if attempt < 5:
+                await asyncio.sleep(0.1 * attempt)
+            else:
+                logger.error("Falha definitiva ao persistir oferta de %s", offer.symbol)

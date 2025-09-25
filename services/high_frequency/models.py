@@ -98,3 +98,17 @@ class OrderBookEvent:
     agent_id: Optional[int] = None
     sequence: Optional[int] = None
     raw_payload: Optional[dict] = None
+
+
+@dataclass
+class OrderBookOffer:
+    symbol: str
+    timestamp: datetime
+    action: int
+    side: int
+    position: Optional[int]
+    price: Optional[float]
+    quantity: Optional[int]
+    agent_id: Optional[int]
+    offer_id: Optional[int]
+    flags: Optional[int] = None
