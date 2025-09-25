@@ -247,7 +247,7 @@ export default function MotionTrackerPage() {
   const [tradesLoading, setTradesLoading] = useState(false);
 
   // 🔎 Filtro de status para a aba Padrões Detectados
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
 
   // 🤖 NOVO: Filtro por tipos de robôs (seleção múltipla)
   const [selectedRobotTypes, setSelectedRobotTypes] = useState<string[]>(['Robô Tipo 0', 'Robô Tipo 1', 'Robô Tipo 2', 'Robô Tipo 3', 'TWAP à Mercado']);
@@ -927,33 +927,86 @@ export default function MotionTrackerPage() {
   };
 
   // Função para filtrar padrões por símbolo, status e tipo de robô
-  const getFilteredPatterns = () => {
+const isRobotCurrentlyActive = (symbol: string, agentId: number, signatureKey?: string) => {
+  return robotPatterns.some(p =>
+    p.symbol === symbol &&
+    p.agent_id === agentId &&
+    (signatureKey ? (p.signature_key || '') === signatureKey : true) &&
+    p.status === 'active'
+  );
+};
+
+const getFilteredPatterns = () => {
+  if (!Array.isArray(robotPatterns)) return [];
+  return robotPatterns.filter(p => 
+    (selectedSymbol === 'TODOS' || p.symbol === selectedSymbol) &&
+    (statusFilter === 'all' || p.status === statusFilter) &&
+    (p.robot_type ? selectedRobotTypes.includes(p.robot_type) : selectedRobotTypes.includes('Robô Tipo 1'))
+  );
+};
+
+  // Função auxiliar: apenas por símbolo (usada nos cards de resumo)
+  const getSymbolTypeFilteredPatterns = () => {
     if (!Array.isArray(robotPatterns)) return [];
-    return robotPatterns.filter(p => 
+    return robotPatterns.filter(p =>
       (selectedSymbol === 'TODOS' || p.symbol === selectedSymbol) &&
-      (statusFilter === 'all' || p.status === statusFilter) &&
       (p.robot_type ? selectedRobotTypes.includes(p.robot_type) : selectedRobotTypes.includes('Robô Tipo 1'))
     );
   };
 
-  // Função auxiliar: apenas por símbolo (usada nos cards de resumo)
   const getSymbolFilteredPatterns = () => {
     if (!Array.isArray(robotPatterns)) return [];
-    return robotPatterns.filter(p => selectedSymbol === 'TODOS' || p.symbol === selectedSymbol);
+    return robotPatterns.filter(p =>
+      (selectedSymbol === 'TODOS' || p.symbol === selectedSymbol) &&
+      (statusFilter === 'all' || p.status === statusFilter)
+    );
   };
 
   // Função para obter estatísticas filtradas
   const getFilteredStats = () => {
-    // Usa apenas filtro por símbolo para não afetar os cards com o filtro de status
-    const filteredPatterns = getSymbolFilteredPatterns();
+    const filtered = getSymbolFilteredPatterns();
     return {
-      activeCount: filteredPatterns.filter(p => p.status === 'active').length,
-      totalVolume: filteredPatterns.reduce((sum, p) => sum + p.total_volume, 0),
-      totalTrades: filteredPatterns.reduce((sum, p) => sum + p.total_trades, 0),
-      avgConfidence: filteredPatterns.length > 0 ? 
-        filteredPatterns.reduce((sum, p) => sum + p.confidence_score, 0) / filteredPatterns.length : 0
+      activeCount: filtered.filter(p => p.status === 'active').length,
+      totalVolume: filtered.reduce((sum, p) => sum + p.total_volume, 0),
+      totalTrades: filtered.reduce((sum, p) => sum + p.total_trades, 0),
+      avgConfidence: filtered.length > 0 ?
+        filtered.reduce((sum, p) => sum + p.confidence_score, 0) / filtered.length : 0
     };
   };
+
+  const handleTotalRobotsClick = () => {
+    setStatusFilter('all');
+  };
+
+  const handleActiveRobotsClick = () => {
+    setStatusFilter('active');
+  };
+
+  const filteredPatterns = getFilteredPatterns();
+  const symbolTypeFilteredPatterns = getSymbolTypeFilteredPatterns();
+  const totalRobotsCount = symbolTypeFilteredPatterns.length;
+  const activeRobotsCount = symbolTypeFilteredPatterns.filter(p => p.status === 'active').length;
+  const filteredStartStopChanges = allRobotChanges
+    .filter(change => selectedSymbol === 'TODOS' || change.symbol === selectedSymbol)
+    .filter(change => {
+      const robotType = change.robot_type || change.new_type || change.old_type;
+      let typeMatch = true;
+      if (robotType) {
+        typeMatch = selectedRobotTypes.includes(robotType);
+        if (!typeMatch && !robotTypes.includes(robotType)) {
+          typeMatch = selectedRobotTypes.includes('Robô Tipo 0');
+        }
+      } else {
+        typeMatch = selectedRobotTypes.includes('Robô Tipo 1');
+      }
+      if (!typeMatch) return false;
+
+      if (statusFilter === 'all') return true;
+      const activeNow = isRobotCurrentlyActive(change.symbol, change.agent_id, change.signature_key);
+      if (statusFilter === 'active') return activeNow;
+      if (statusFilter === 'inactive') return !activeNow;
+      return true;
+    });
 
   return (
     <div className="space-y-6">
@@ -1062,23 +1115,23 @@ export default function MotionTrackerPage() {
 
       {/* Resumo dos Robôs Detectados */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <Card className="bg-gray-800 border-gray-600">
+        <Card className={`bg-gray-800 border ${statusFilter === 'all' ? 'border-blue-500' : 'border-gray-600'} cursor-pointer transition`} onClick={handleTotalRobotsClick}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-gray-300">Total de Robôs</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-white">
-              {loading ? '...' : getSymbolFilteredPatterns().length}
+              {loading ? '...' : totalRobotsCount}
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-gray-800 border-gray-600">
+        <Card className={`bg-gray-800 border ${statusFilter === 'active' ? 'border-green-500' : 'border-gray-600'} cursor-pointer transition`} onClick={handleActiveRobotsClick}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-gray-300">Robôs Ativos</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-400">
-              {loading ? '...' : getFilteredStats().activeCount}
+              {loading ? '...' : activeRobotsCount}
             </div>
           </CardContent>
         </Card>
@@ -1185,7 +1238,7 @@ export default function MotionTrackerPage() {
                 <div className="text-center py-8">
                   <div className="text-gray-400">Carregando histórico de mudanças...</div>
                 </div>
-              ) : allRobotChanges.length === 0 ? (
+              ) : filteredStartStopChanges.length === 0 ? (
                 <div className="text-center py-8">
                   <div className="text-gray-400">Nenhuma mudança detectada</div>
                 </div>
@@ -1199,55 +1252,26 @@ export default function MotionTrackerPage() {
                   )}
                   
                   {/* 🤖 NOVO: Filtro visual para tipos de robôs */}
-                  {selectedRobotTypes.length < robotTypes.length && (
-                    <div className="bg-purple-900/20 border border-purple-500 text-purple-300 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
-                      <span>🤖 Filtrando por tipos:</span>
-                      {selectedRobotTypes.map(type => (
-                        <Badge key={type} className={`${getRobotTypeColor(type)} text-white text-xs`}>
-                          {type}
-                        </Badge>
-                      ))}
-                      <span className="text-xs text-purple-400 ml-2">
-                        ({selectedRobotTypes.length} de {robotTypes.length} tipos selecionados)
-                      </span>
-                    </div>
-                  )}
+                   {selectedRobotTypes.length < robotTypes.length && (
+                     <div className="bg-purple-900/20 border border-purple-500 text-purple-300 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
+                       <span>🤖 Filtrando por tipos:</span>
+                       {selectedRobotTypes.map(type => (
+                         <Badge key={type} className={`${getRobotTypeColor(type)} text-white text-xs`}>
+                           {type}
+                         </Badge>
+                       ))}
+                       <span className="text-xs text-purple-400 ml-2">
+                         ({selectedRobotTypes.length} de {robotTypes.length} tipos selecionados)
+                       </span>
+                     </div>
+                   )}
                   
                   {/* 📊 NOVO: Contador de resultados */}
                   <div className="text-xs text-gray-400 text-center py-2">
-                    Exibindo {allRobotChanges
-                      .filter(change => 
-                        (selectedSymbol === 'TODOS' || change.symbol === selectedSymbol) &&
-                        (change.robot_type || change.new_type || change.old_type ? 
-                          selectedRobotTypes.includes(change.robot_type || change.new_type || change.old_type || 'Robô Tipo 1') : 
-                          selectedRobotTypes.includes('Robô Tipo 1'))
-                      )
-                      .slice(0, 50).length
-                    } de {allRobotChanges.length} mudanças
+                    Exibindo {filteredStartStopChanges.slice(0, 50).length} de {filteredStartStopChanges.length} mudanças
                   </div>
                   
-                  {allRobotChanges
-                    .filter(change => {
-                      const symbolMatch = selectedSymbol === 'TODOS' || change.symbol === selectedSymbol;
-                      
-                      // Lógica de filtro por tipo mais inclusiva
-                      const robotType = change.robot_type || change.new_type || change.old_type;
-                      let typeMatch = true; // Por padrão, inclui
-                      
-                      if (robotType) {
-                        // Se tem tipo definido, verifica se está selecionado
-                        typeMatch = selectedRobotTypes.includes(robotType);
-                        
-                        // ✅ FALLBACK: Se não está na lista conhecida, assume Tipo 0 para volumes baixos
-                        if (!typeMatch && !robotTypes.includes(robotType)) {
-                          typeMatch = selectedRobotTypes.includes('Robô Tipo 0');
-                        }
-                      }
-                      
-                      return symbolMatch && typeMatch;
-                    })
-                    .slice(0, 50) // ✅ garante que apenas 50 sejam renderizados
-                    .map((change, index) => (
+                  {filteredStartStopChanges.slice(0, 50).map((change, index) => (
                     <div key={change.id || index} className="bg-gray-700 p-4 rounded-lg border border-gray-600">
                       {change.change_category === 'status' ? (
                         // ✅ Card de mudança de status (existente)
