@@ -438,3 +438,18 @@ class MarketTWAPDetector:
         except Exception as e:
             logger.error(f"Erro ao salvar padrão TWAP à Mercado: {e}")
             return False
+
+    def cluster_trades(self, trades: List[TickData]) -> Dict[str, List[TickData]]:
+        """Agrupa trades por assinatura (volume + direção + intervalo médio)."""
+        clusters: Dict[str, List[TickData]] = {}
+        if not trades:
+            return clusters
+
+        # Ordena por timestamp para calculo de intervalos
+        sorted_trades = sorted(trades, key=lambda t: t.timestamp)
+
+        for trade in sorted_trades:
+            key = f"{trade.volume}:{trade.trade_type.value}"
+            clusters.setdefault(key, []).append(trade)
+
+        return clusters

@@ -988,14 +988,33 @@ async def get_robot_trades(symbol: str, agent_id: int, hours: int = 24, limit: i
         persistence = twap_detector.persistence
 
         # Determina o pattern_id mais recente associado ao robô
-        pattern_row = await persistence.get_existing_pattern(
-            symbol.upper(),
-            agent_id,
-            twap_detector.config.pattern_type,
-            None,
-            None,
-            None,
-        )
+        active_patterns = twap_detector.get_active_patterns()
+        signature_map = active_patterns.get(symbol.upper(), {}).get(agent_id, {})
+        signature = None
+        latest_pattern = None
+        if signature_map:
+            latest_pattern = max(signature_map.values(), key=lambda p: p.last_seen)
+            signature = latest_pattern.signature_key
+
+        pattern_row = None
+        if latest_pattern:
+            pattern_row = await persistence.get_existing_pattern(
+                latest_pattern.symbol,
+                latest_pattern.agent_id,
+                latest_pattern.pattern_type,
+                latest_pattern.signature_volume,
+                latest_pattern.signature_direction,
+                latest_pattern.signature_interval_seconds,
+            )
+        if not pattern_row:
+            pattern_row = await persistence.get_existing_pattern(
+                symbol.upper(),
+                agent_id,
+                twap_detector.config.pattern_type,
+                None,
+                None,
+                None,
+            )
 
         pattern_id = None
         first_seen = None
@@ -1006,15 +1025,10 @@ async def get_robot_trades(symbol: str, agent_id: int, hours: int = 24, limit: i
             last_seen = pattern_row[4]
 
         # Caso não tenha pattern atual, procura no detector (cache em memória)
-        if not pattern_id:
-            active_patterns = twap_detector.get_active_patterns()
-            agent_patterns = active_patterns.get(symbol.upper(), {}).get(agent_id, {})
-            if agent_patterns:
-                # pega o mais recente
-                latest_pattern = max(agent_patterns.values(), key=lambda p: p.last_seen)
-                pattern_id = latest_pattern.pattern_id
-                first_seen = latest_pattern.first_seen
-                last_seen = latest_pattern.last_seen
+        if not pattern_id and latest_pattern:
+            pattern_id = latest_pattern.pattern_id
+            first_seen = latest_pattern.first_seen
+            last_seen = latest_pattern.last_seen
 
         now = datetime.now(timezone.utc)
         start_time: Optional[datetime] = None
@@ -1028,7 +1042,7 @@ async def get_robot_trades(symbol: str, agent_id: int, hours: int = 24, limit: i
             start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
             end_time = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        pt = pattern_type
+        pt = pattern_type or (latest_pattern.pattern_type if latest_pattern else None)
         trades = await persistence.get_robot_trades(
             symbol,
             agent_id,
@@ -1047,6 +1061,7 @@ async def get_robot_trades(symbol: str, agent_id: int, hours: int = 24, limit: i
             "pattern_id": pattern_id,
             "first_seen": first_seen.isoformat() if isinstance(first_seen, datetime) else first_seen,
             "last_seen": last_seen.isoformat() if isinstance(last_seen, datetime) else last_seen,
+            "signature_key": signature,
         }
 
     except Exception as e:

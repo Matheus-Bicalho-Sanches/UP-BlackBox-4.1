@@ -39,6 +39,7 @@ export default function CRMPage() {
   const [error, setError] = useState('');
   const [editingCell, setEditingCell] = useState<EditingCell>({ contactId: '', field: null });
   const [savingDate, setSavingDate] = useState(false);
+  const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   const router = useRouter();
   const db = getFirestore(app);
   const { user } = useAuth();
@@ -97,6 +98,37 @@ export default function CRMPage() {
       return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7)}`;
     }
     return phone;
+  };
+
+  // Função para copiar número de telefone para a área de transferência
+  const copyPhoneNumber = async (phone: string, contactId: string) => {
+    try {
+      // Remove caracteres não numéricos para copiar apenas os números
+      const cleanPhone = phone.replace(/\D/g, '');
+      await navigator.clipboard.writeText(cleanPhone);
+      
+      // Mostra feedback visual
+      setCopiedPhone(contactId);
+      
+      // Remove o feedback após 2 segundos
+      setTimeout(() => {
+        setCopiedPhone(null);
+      }, 2000);
+    } catch (error) {
+      console.error('Erro ao copiar número:', error);
+      // Fallback para navegadores mais antigos
+      const textArea = document.createElement('textarea');
+      textArea.value = phone.replace(/\D/g, '');
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      
+      setCopiedPhone(contactId);
+      setTimeout(() => {
+        setCopiedPhone(null);
+      }, 2000);
+    }
   };
 
   const getStatusColor = (status: Contact['status']) => {
@@ -429,15 +461,31 @@ export default function CRMPage() {
                       </span>
                     </td>
                     <td className="px-3 py-4 text-white">
-                      <a
-                        href={`https://wa.me/55${contact.phone.replace(/\D/g, '')}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-cyan-500 hover:text-cyan-400 truncate block"
-                        onClick={(e) => e.stopPropagation()} // Evita clique na linha
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation(); // Evita clique na linha
+                          copyPhoneNumber(contact.phone, contact.id);
+                        }}
+                        className={`truncate block text-left w-full transition-colors ${
+                          copiedPhone === contact.id 
+                            ? 'text-green-400' 
+                            : 'text-cyan-500 hover:text-cyan-400'
+                        }`}
+                        title={copiedPhone === contact.id ? 'Número copiado!' : 'Clique para copiar o número'}
                       >
-                        {formatPhoneNumber(contact.phone)}
-                      </a>
+                        <div className="flex items-center">
+                          <span>{formatPhoneNumber(contact.phone)}</span>
+                          {copiedPhone === contact.id ? (
+                            <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <svg className="w-4 h-4 ml-2 opacity-0 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          )}
+                        </div>
+                      </button>
                     </td>
                     <td 
                       className="px-3 py-4 text-white truncate relative"
