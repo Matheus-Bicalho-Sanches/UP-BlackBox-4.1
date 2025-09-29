@@ -795,10 +795,6 @@ async def ingest_order_book_offer(offer_in: OrderBookOfferIn):
     if not ENABLE_ORDER_BOOK_CAPTURE:
         raise HTTPException(status_code=503, detail="order_book_capture_disabled")
 
-    db_pool = await get_db_pool()
-    if not db_pool:
-        raise HTTPException(status_code=503, detail="database_unavailable")
-
     offer = OrderBookOffer(
         symbol=offer_in.symbol.upper(),
         timestamp=datetime.fromtimestamp(offer_in.timestamp, tz=timezone.utc),
@@ -812,7 +808,9 @@ async def ingest_order_book_offer(offer_in: OrderBookOfferIn):
         flags=offer_in.flags,
     )
 
-    await persist_order_book_offer(offer, db_pool)
+    # ✅ CORRIGIDO: Usa o sistema de buffer em vez de inserir diretamente
+    enqueue_order_book_offer(offer)
+    logger.debug(f"Enqueued order book offer: {offer.symbol} action={offer.action} side={offer.side} agent={offer.agent_id}")
     return {"success": True}
 
 @app.get("/robots/patterns")

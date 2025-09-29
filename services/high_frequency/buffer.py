@@ -79,6 +79,7 @@ def enqueue_order_book_snapshot(snapshot: OrderBookSnapshot):
 
 def enqueue_order_book_offer(offer: OrderBookOffer):
     order_book_offer_queue.append(offer)
+    logger.debug(f"📥 Enqueued offer: {offer.symbol} action={offer.action} side={offer.side} agent={offer.agent_id} (queue size: {len(order_book_offer_queue)})")
 
 
 async def start_order_book_event_processor(process_event):
@@ -111,13 +112,17 @@ async def start_order_book_snapshot_processor(process_snapshot):
 
 async def start_order_book_offer_processor(process_offer):
     """Processa eventos individuais de ofertas (por agente)."""
-    logger.info("Iniciando processador de ofertas de order book...")
+    logger.info("🚀 Iniciando processador de ofertas de order book...")
+    processed_count = 0
     while True:
         if order_book_offer_queue:
             offer = order_book_offer_queue.popleft()
             try:
                 await process_offer(offer)
+                processed_count += 1
+                if processed_count % 100 == 0:
+                    logger.info(f"📊 Processadas {processed_count} ofertas de order book")
             except Exception as exc:
-                logger.error(f"Erro ao processar oferta de order book: {exc}")
+                logger.error(f"❌ Erro ao processar oferta de order book: {exc}")
         else:
             await asyncio.sleep(0.01)

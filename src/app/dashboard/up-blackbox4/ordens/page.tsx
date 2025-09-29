@@ -589,20 +589,48 @@ export default function OrdensPage() {
     }
   };
 
+  // Função auxiliar para criar filtros de data para o Firestore
+  const createDateFilters = () => {
+    const filters = [];
+    
+    if (startDate) {
+      const start = new Date(startDate + 'T00:00:00');
+      filters.push(where('LastUpdate', '>=', start));
+    }
+    
+    if (endDate) {
+      const end = new Date(endDate + 'T23:59:59');
+      filters.push(where('LastUpdate', '<=', end));
+    }
+    
+    return filters;
+  };
+
   async function handleListOrders(max?: number) {
     setLoading(true);
     setLog("");
     setOrders([]);
+    // Criar filtros de data para otimizar queries
+    const dateFilters = createDateFilters();
+    const limit = max || 10000; // Limite padrão para evitar queries muito custosas
+    
     // If strategy selected, fetch by strategy_id field directly
     if (selectedAccount.startsWith('strategy:')) {
       const sid = selectedAccount.replace('strategy:', '');
       try {
-        const q = query(collection(db, 'ordensDLL'), where('strategy_id', '==', sid), orderBy('createdAt', 'desc'), limitFn(max || 500));
+        // Query otimizada com filtros de data
+        const q = query(
+          collection(db, 'ordensDLL'), 
+          where('strategy_id', '==', sid), 
+          ...dateFilters,
+          orderBy('createdAt', 'desc'), 
+          limitFn(limit)
+        );
         const snap = await getDocs(q);
         const list = snap.docs.map(d=>d.data());
         const filtered = applyFilters(list);
         setOrders(filtered);
-        setLog(`Ordens da estratégia carregadas. Total ${filtered.length}`);
+        setLog(`Ordens da estratégia carregadas (${startDate} a ${endDate}). Total: ${filtered.length}`);
       } catch(err:any) {
         setLog('Erro ao buscar ordens da estratégia: '+ (err.message||JSON.stringify(err)));
       }
@@ -612,19 +640,16 @@ export default function OrdensPage() {
     try {
       let fetchedOrders: any[] = [];
       if (selectedAccount === 'MASTER') {
-        if (max) {
-          const qMaster = query(collection(db, "ordensDLL"), orderBy("LastUpdate", "desc"), limitFn(max));
-          const qs = await getDocs(qMaster);
-          fetchedOrders = qs.docs.map(d=>d.data());
-        } else {
-          // Busca todas as ordens de todas as contas
-          const querySnapshot = await getDocs(collection(db, "ordensDLL"));
-          fetchedOrders = querySnapshot.docs.map(doc => {
-            const data = doc.data();
-            console.log("Ordem encontrada:", data);
-            return data;
-          });
-        }
+        // Query otimizada para MASTER com filtros de data
+        const qMaster = query(
+          collection(db, "ordensDLL"), 
+          ...dateFilters,
+          orderBy("LastUpdate", "desc"), 
+          limitFn(limit)
+        );
+        const qs = await getDocs(qMaster);
+        fetchedOrders = qs.docs.map(d=>d.data());
+        
         // Ordenar por LastUpdate decrescente
         fetchedOrders.sort((a, b) => {
           const da=parseDate(a);
@@ -632,7 +657,7 @@ export default function OrdensPage() {
           if(!da||!db) return 0;
           return db.getTime()-da.getTime();
         });
-        setLog(`Ordens consolidadas de todas as contas! Total: ${fetchedOrders.length}`);
+        setLog(`Ordens consolidadas de todas as contas (${startDate} a ${endDate})! Total: ${fetchedOrders.length}`);
       } else if (selectedAccount.startsWith('strategy:')) {
         const strategyId = selectedAccount.replace('strategy:','');
         // buscar alocações
@@ -640,20 +665,29 @@ export default function OrdensPage() {
         const allocData = await allocRes.json();
         const accIds:string[] = (allocData.allocations||[]).map((a:any)=>a.account_id);
         if(accIds.length===0){ setLog('Nenhuma alocação para estratégia'); setLoading(false); return; }
-        // buscar ordensDLL dessas contas
-        const q = query(collection(db,'ordensDLL'), where('account_id','in', accIds));
+        
+        // Query otimizada para estratégia com filtros de data
+        const q = query(
+          collection(db,'ordensDLL'), 
+          where('account_id','in', accIds),
+          ...dateFilters,
+          orderBy('LastUpdate', 'desc'),
+          limitFn(limit)
+        );
         const snap= await getDocs(q);
         fetchedOrders = snap.docs.map(d=>d.data());
         fetchedOrders.sort((a,b)=>{
           const da=parseDate(a); const dbt=parseDate(b); if(!da||!dbt) return 0; return dbt.getTime()-da.getTime();
         });
-        setLog(`Ordens da estratégia carregadas: ${fetchedOrders.length}`);
+        setLog(`Ordens da estratégia carregadas (${startDate} a ${endDate}): ${fetchedOrders.length}`);
       } else {
-        // Busca ordens do Firebase filtrando pela conta selecionada
+        // Query otimizada para conta individual com filtros de data
         const q = query(
           collection(db, "ordensDLL"),
           where("account_id", "==", selectedAccount),
-          orderBy("LastUpdate", "desc")
+          ...dateFilters,
+          orderBy("LastUpdate", "desc"),
+          limitFn(limit)
         );
         const querySnapshot = await getDocs(q);
         fetchedOrders = querySnapshot.docs.map(doc => {
@@ -661,7 +695,7 @@ export default function OrdensPage() {
           console.log("Ordem encontrada:", data);
           return data;
         });
-        setLog(`Ordens carregadas do Firebase! Total: ${fetchedOrders.length}`);
+        setLog(`Ordens carregadas do Firebase (${startDate} a ${endDate})! Total: ${fetchedOrders.length}`);
       }
       fetchedOrders.sort((a,b)=>{
         const da=parseDate(a);
@@ -669,6 +703,9 @@ export default function OrdensPage() {
         if(!da||!db) return 0;
         return db.getTime()-da.getTime();
       });
+      
+      // Aplicar filtros adicionais (ticker, status) no frontend
+      // Os filtros de data já foram aplicados no Firestore para otimizar custos
       const filteredOrders = applyFilters(fetchedOrders);
       setOrders(filteredOrders);
     } catch (err: any) {

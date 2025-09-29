@@ -543,6 +543,8 @@ async def persist_order_book_snapshot(snapshot: OrderBookSnapshot, db_pool: Asyn
 
 async def persist_order_book_offer(offer: OrderBookOffer, db_pool: AsyncConnectionPool):
     """Persiste eventos individuais de ofertas do livro (por agente)."""
+    logger.debug(f"🔄 Iniciando persistência de oferta: {offer.symbol} action={offer.action} side={offer.side} agent={offer.agent_id}")
+    
     sql = """
         INSERT INTO order_book_offers (
             symbol,
@@ -577,17 +579,18 @@ async def persist_order_book_offer(offer: OrderBookOffer, db_pool: AsyncConnecti
                 async with conn.cursor() as cur:
                     await cur.execute(sql, params)
                     await conn.commit()
-            logger.debug(
-                "Persisted order book offer %s side=%s price=%s agent=%s",
+            logger.info(
+                "✅ Persisted order book offer %s side=%s price=%s agent=%s action=%s",
                 offer.symbol,
                 offer.side,
                 offer.price,
                 offer.agent_id,
+                offer.action,
             )
             return
         except Exception as exc:
             logger.warning(
-                "Tentativa %s falhou ao persistir oferta (%s - agent %s): %s",
+                "❌ Tentativa %s falhou ao persistir oferta (%s - agent %s): %s",
                 attempt,
                 offer.symbol,
                 offer.agent_id,
@@ -596,4 +599,4 @@ async def persist_order_book_offer(offer: OrderBookOffer, db_pool: AsyncConnecti
             if attempt < 5:
                 await asyncio.sleep(0.1 * attempt)
             else:
-                logger.error("Falha definitiva ao persistir oferta de %s", offer.symbol)
+                logger.error("💥 Falha definitiva ao persistir oferta de %s", offer.symbol)
