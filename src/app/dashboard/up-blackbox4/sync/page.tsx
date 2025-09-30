@@ -1725,7 +1725,7 @@ ${results.map(r => formatOrderResponse(r, r.accountName)).join('\n')}
   // Função para aguardar conclusão do iceberg
   const waitForIcebergCompletion = async (accountId: string, orderId: string): Promise<boolean> => {
     const maxWaitTime = 600 * 60 * 1000; // 600 minutos máximo
-    const checkInterval = 5000; // Verificar a cada 5 segundos
+    const checkInterval = 100; // Verificar a cada 100ms (atualização quase em tempo real)
     const startTime = Date.now();
     
     console.log(`[waitForIcebergCompletion] Iniciando monitoramento do iceberg ${orderId} para conta ${accountId}`);
