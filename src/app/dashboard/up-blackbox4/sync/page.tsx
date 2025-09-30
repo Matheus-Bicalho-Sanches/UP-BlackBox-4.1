@@ -4,6 +4,9 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, getDoc, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { FiChevronDown, FiChevronRight, FiX, FiPlus, FiTrash2, FiEdit3 } from "react-icons/fi";
 import { v4 as uuidv4 } from 'uuid';
+import { trackedGetDocs, trackedFetch } from '@/lib/firebaseHelpers';
+import FirestoreMonitorWidget from '@/components/FirestoreMonitorWidget';
+import { AccountPositionsCache } from '@/lib/accountPositionsCache';
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -233,7 +236,7 @@ export default function SyncPage() {
         setLoading(true);
         
         // Buscar estratégias
-        const strategiesSnapshot = await getDocs(collection(db, "strategies"));
+        const strategiesSnapshot = await trackedGetDocs("strategies", collection(db, "strategies"), "initialLoad");
         const strategiesList: Strategy[] = [];
         strategiesSnapshot.forEach((doc) => {
           const data = doc.data();
@@ -246,7 +249,7 @@ export default function SyncPage() {
         setStrategies(strategiesList);
         
         // Buscar contas
-        const accountsSnapshot = await getDocs(collection(db, "contasDll"));
+        const accountsSnapshot = await trackedGetDocs("contasDll", collection(db, "contasDll"), "initialLoad");
         const accountsList: Account[] = [];
         accountsSnapshot.forEach((doc) => {
           const data = doc.data();
@@ -261,7 +264,7 @@ export default function SyncPage() {
         setAccounts(accountsList);
         
         // Buscar alocações de estratégias
-        const allocationsSnapshot = await getDocs(collection(db, "strategyAllocations"));
+        const allocationsSnapshot = await trackedGetDocs("strategyAllocations", collection(db, "strategyAllocations"), "initialLoad");
         const allocationsList: StrategyAllocation[] = [];
         allocationsSnapshot.forEach((doc) => {
           const data = doc.data();
@@ -288,7 +291,7 @@ export default function SyncPage() {
   const fetchReferencePositions = async (strategyId: string) => {
     try {
       setLoading(true);
-      const positionsSnapshot = await getDocs(collection(db, "CarteirasDeRefDLL"));
+      const positionsSnapshot = await trackedGetDocs("CarteirasDeRefDLL", collection(db, "CarteirasDeRefDLL"), "fetchReferencePositions");
       const positionsList: Position[] = [];
       
       positionsSnapshot.forEach((doc) => {
@@ -354,29 +357,38 @@ export default function SyncPage() {
     setFilteredAccounts(accountsWithAllocation);
   }, [selectedStrategy, accounts, strategyAllocations]);
 
-  // Recarregar posições das contas quando as posições de referência forem carregadas
-  useEffect(() => {
-    if (positions.length > 0) {
-      // Recarregar posições para todas as contas que estão expandidas
-      expandedAccounts.forEach(accountId => {
-        if (accountPositions[accountId]) {
-          console.log(`[useEffect] Recarregando posições para conta ${accountId} após carregamento das posições de referência`);
-          loadAccountPositions(accountId);
-        }
-      });
-    }
-  }, [positions]);
+  // REMOVIDO: useEffect que recarregava TODAS as posições toda vez que positions mudava
+  // Isso causava milhares de reads desnecessários (13x mais reads que o necessário!)
+  // O cache agora gerencia isso automaticamente
 
-  // Pré-carregar posições das contas exibidas quando estratégia, contas e posições de referência estiverem prontos
+  // Pré-carregar posições APENAS quando necessário (com controle para evitar múltiplos disparos)
   useEffect(() => {
     if (!selectedStrategy || positions.length === 0 || filteredAccounts.length === 0) return;
-    const missingAccounts = filteredAccounts
-      .map(acc => acc._id)
-      .filter(accId => !accountPositions[accId]);
-    if (missingAccounts.length > 0) {
-      console.log('[Sincronizador] Pré-carregando posições para contas sem cache:', missingAccounts);
-      missingAccounts.forEach(accId => loadAccountPositions(accId));
-    }
+    
+    // Debounce para evitar múltiplos disparos rápidos
+    const timeoutId = setTimeout(() => {
+      const missingAccounts = filteredAccounts
+        .map(acc => acc._id)
+        .filter(accId => {
+          // Verificar cache antes de considerar "missing"
+          return !AccountPositionsCache.has(accId) && !accountPositions[accId];
+        });
+      
+      if (missingAccounts.length > 0) {
+        console.log(`[Sincronizador] Pré-carregando posições para ${missingAccounts.length} contas sem cache:`, missingAccounts);
+        
+        // Carregar em lotes pequenos para evitar sobrecarga
+        const batchSize = 5;
+        for (let i = 0; i < missingAccounts.length; i += batchSize) {
+          const batch = missingAccounts.slice(i, i + batchSize);
+          setTimeout(() => {
+            batch.forEach(accId => loadAccountPositions(accId));
+          }, i * 100); // Espaçar lotes em 100ms
+        }
+      }
+    }, 300); // Debounce de 300ms
+    
+    return () => clearTimeout(timeoutId);
   }, [selectedStrategy, positions, filteredAccounts]);
 
   const handleNewPosition = () => {
@@ -681,9 +693,36 @@ export default function SyncPage() {
     });
   };
 
-  // Função para carregar posições reais de uma conta específica
-  const loadAccountPositions = async (accountId: string): Promise<AccountPosition[]> => {
+  // Função para carregar posições reais de uma conta específica (COM CACHE)
+  const loadAccountPositions = async (accountId: string, forceRefresh: boolean = false): Promise<AccountPosition[]> => {
     try {
+      // 1. VERIFICAR CACHE (se não for refresh forçado)
+      if (!forceRefresh && AccountPositionsCache.has(accountId)) {
+        const cachedData = AccountPositionsCache.get(accountId);
+        if (cachedData) {
+          console.log(`💾 [Cache HIT] Usando cache para conta ${accountId} (${cachedData.length} posições)`);
+          
+          // Atualizar estado com dados do cache
+          setAccountPositions(prev => ({
+            ...prev,
+            [accountId]: cachedData
+          }));
+          
+          return cachedData;
+        }
+      }
+      
+      // 2. VERIFICAR SE JÁ ESTÁ CARREGANDO (evitar chamadas duplicadas)
+      const pendingRequest = AccountPositionsCache.getPendingRequest(accountId);
+      if (pendingRequest) {
+        console.log(`⏳ [Cache WAIT] Aguardando requisição pendente para conta ${accountId}`);
+        return pendingRequest;
+      }
+      
+      // 3. MARCAR COMO CARREGANDO
+      AccountPositionsCache.setLoading(accountId);
+      console.log(`🔄 [Cache MISS] Carregando posições para conta ${accountId}...`);
+      
       setLoading(true);
       
       // Encontrar conta para obter AccountID real
@@ -696,9 +735,18 @@ export default function SyncPage() {
       const realAccountId = account.AccountID;
       console.log(`[loadAccountPositions] Usando AccountID real: ${realAccountId} (document ID: ${accountId})`);
       
-      // Buscar posições reais da API usando o AccountID real
-      const response = await fetch(`/api/client-positions/${realAccountId}`);
-      const data = await response.json();
+      // 4. CRIAR PROMISE E REGISTRAR (para evitar duplicatas)
+      const loadPromise = (async () => {
+        // Buscar posições reais da API usando o AccountID real (com tracking)
+        const response = await trackedFetch(`/api/client-positions/${realAccountId}`, 'loadAccountPositions');
+        const data = await response.json();
+        return data;
+      })();
+      
+      AccountPositionsCache.setPendingRequest(accountId, loadPromise);
+      
+      // 5. AGUARDAR RESPOSTA
+      const data = await loadPromise;
       
       if (!data.success) {
         throw new Error(data.error || 'Erro ao buscar posições');
@@ -788,6 +836,11 @@ export default function SyncPage() {
       // Combinar posições de referência com posições adicionais do cliente
       const allPositions = [...completePositions, ...additionalPositions];
       
+      // 6. SALVAR NO CACHE
+      AccountPositionsCache.set(accountId, allPositions);
+      AccountPositionsCache.clearPendingRequest(accountId);
+      console.log(`💾 [Cache SAVE] Salvo cache para conta ${accountId} (${allPositions.length} posições)`);
+      
       setAccountPositions(prev => ({
         ...prev,
         [accountId]: allPositions
@@ -798,6 +851,11 @@ export default function SyncPage() {
       return allPositions;
     } catch (error) {
       console.error(`[loadAccountPositions] Erro ao carregar posições para conta ${accountId}:`, error);
+      
+      // Limpar cache em caso de erro
+      AccountPositionsCache.clearPendingRequest(accountId);
+      AccountPositionsCache.invalidate(accountId);
+      
       setAccountPositions(prev => ({
         ...prev,
         [accountId]: []
@@ -897,8 +955,9 @@ export default function SyncPage() {
       console.log("3. Recarregando posições de referência...");
       await fetchReferencePositions(selectedStrategy!.id);
       
-      // 4. Recarregar posições de todas as contas
-      console.log("4. Recarregando posições de todas as contas...");
+      // 4. Recarregar posições de todas as contas (INVALIDANDO CACHE)
+      console.log("4. Invalidando cache e recarregando posições de todas as contas...");
+      AccountPositionsCache.invalidateAll();
       await loadAllAccountPositions();
       
       console.log("=== LIMPEZA E RECARREGAMENTO CONCLUÍDO ===");
@@ -1563,9 +1622,10 @@ ${results.map(r => formatOrderResponse(r, r.accountName)).join('\n')}
       if (successCount > 0) {
         alert(`Ordem enviada com sucesso!\n\n${resultMessage}`);
         
-        // Recarregar posições após 3 segundos
+        // Recarregar posições após 3 segundos (INVALIDANDO CACHE)
         setTimeout(async () => {
-          console.log('[sendIndividualSimpleOrder] Recarregando posições...');
+          console.log('[sendIndividualSimpleOrder] Invalidando cache e recarregando posições...');
+          AccountPositionsCache.invalidateAll();
           await loadAllAccountPositions();
         }, 3000);
       } else {
@@ -2044,9 +2104,10 @@ Deseja prosseguir?
       }
 
 
-      // Recarregar posições após 5 segundos (mais tempo para iceberg)
+      // Recarregar posições após 5 segundos (mais tempo para iceberg) - INVALIDANDO CACHE
       setTimeout(async () => {
-        console.log('[sendIndividualIcebergOrder] Recarregando posições...');
+        console.log('[sendIndividualIcebergOrder] Invalidando cache e recarregando posições...');
+        AccountPositionsCache.invalidateAll();
         await loadAllAccountPositions();
       }, 5000);
 
@@ -4155,10 +4216,12 @@ Deseja realmente enviar esta ordem?`;
                         setShowOrderTypeModal(false);
                         setSyncContext(null);
                         
-                        // Recarregar posições da conta após alguns segundos
+                        // Recarregar posições da conta após alguns segundos (INVALIDANDO CACHE)
                         setTimeout(() => {
                           if (syncContext.accountId) {
-                            loadAccountPositions(syncContext.accountId);
+                            console.log(`🗑️  Invalidando cache para conta ${syncContext.accountId} após operação`);
+                            AccountPositionsCache.invalidate(syncContext.accountId);
+                            loadAccountPositions(syncContext.accountId, true); // forceRefresh = true
                           }
                         }, 3000);
                       } else {
@@ -4359,10 +4422,12 @@ ${result.log || ''}`);
                         setShowOrderTypeModal(false);
                         setSyncContext(null);
                         
-                        // Recarregar posições da conta após alguns segundos
+                        // Recarregar posições da conta após alguns segundos (INVALIDANDO CACHE)
                         setTimeout(() => {
                           if (syncContext.accountId) {
-                            loadAccountPositions(syncContext.accountId);
+                            console.log(`🗑️  Invalidando cache para conta ${syncContext.accountId} após operação`);
+                            AccountPositionsCache.invalidate(syncContext.accountId);
+                            loadAccountPositions(syncContext.accountId, true); // forceRefresh = true
                           }
                         }, 3000);
                       } else {
@@ -5533,6 +5598,9 @@ ${result.log || ''}`);
           </div>
         </div>
       )}
+
+      {/* Widget de Monitoramento do Firestore */}
+      <FirestoreMonitorWidget />
     </div>
   );
 } 

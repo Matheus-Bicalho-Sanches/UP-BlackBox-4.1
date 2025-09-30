@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verificador de Coleções Firestore</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #4fc3f7;
+            text-align: center;
+        }
+        .log-container {
+            background: #252526;
+            border: 1px solid #3c3c3c;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .log-line {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .warning { color: #ce9178; }
+        .info { color: #569cd6; }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            display: block;
+            margin: 20px auto;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .config-section {
+            background: #252526;
+            border: 1px solid #3c3c3c;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .config-section label {
+            display: block;
+            color: #4fc3f7;
+            margin: 10px 0 5px 0;
+            font-weight: bold;
+        }
+        .config-section input {
+            width: 100%;
+            background: #3c3c3c;
+            border: 1px solid #555;
+            color: #d4d4d4;
+            padding: 8px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        pre {
+            background: #1e1e1e;
+            border: 1px solid #3c3c3c;
+            border-radius: 4px;
+            padding: 15px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Verificador de Coleções Firestore</h1>
+    
+    <div class="config-section">
+        <p style="color: #ce9178;">⚠️ <strong>Instruções:</strong></p>
+        <p>1. Abra o arquivo <code>.env.local</code> na raiz do projeto</p>
+        <p>2. Copie e cole os valores de cada variável abaixo</p>
+        <p>3. Clique em "Verificar Coleções"</p>
+        
+        <label>NEXT_PUBLIC_FIREBASE_API_KEY:</label>
+        <input type="text" id="apiKey" placeholder="AIza...">
+        
+        <label>NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:</label>
+        <input type="text" id="authDomain" placeholder="seu-projeto.firebaseapp.com">
+        
+        <label>NEXT_PUBLIC_FIREBASE_PROJECT_ID:</label>
+        <input type="text" id="projectId" placeholder="seu-projeto-id">
+        
+        <label>NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:</label>
+        <input type="text" id="storageBucket" placeholder="seu-projeto.appspot.com">
+        
+        <label>NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID:</label>
+        <input type="text" id="messagingSenderId" placeholder="123456789">
+        
+        <label>NEXT_PUBLIC_FIREBASE_APP_ID:</label>
+        <input type="text" id="appId" placeholder="1:123456789:web:abc123">
+    </div>
+    
+    <button id="checkBtn" onclick="checkCollections()">🚀 Verificar Coleções</button>
+    
+    <div class="log-container" id="logContainer"></div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, getDocs, getCountFromServer } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        let db;
+
+        function log(message, type = 'info') {
+            const container = document.getElementById('logContainer');
+            const line = document.createElement('div');
+            line.className = `log-line ${type}`;
+            line.textContent = message;
+            container.appendChild(line);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        async function initFirebase() {
+            const config = {
+                apiKey: document.getElementById('apiKey').value,
+                authDomain: document.getElementById('authDomain').value,
+                projectId: document.getElementById('projectId').value,
+                storageBucket: document.getElementById('storageBucket').value,
+                messagingSenderId: document.getElementById('messagingSenderId').value,
+                appId: document.getElementById('appId').value,
+            };
+
+            if (!config.apiKey || !config.projectId) {
+                log('❌ Por favor, preencha pelo menos API Key e Project ID', 'error');
+                return false;
+            }
+
+            try {
+                const app = initializeApp(config);
+                db = getFirestore(app);
+                log('✅ Firebase inicializado com sucesso!', 'success');
+                return true;
+            } catch (error) {
+                log(`❌ Erro ao inicializar Firebase: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        window.checkCollections = async function() {
+            const container = document.getElementById('logContainer');
+            container.innerHTML = '';
+            const btn = document.getElementById('checkBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Verificando...';
+
+            if (!await initFirebase()) {
+                btn.disabled = false;
+                btn.textContent = '🚀 Verificar Coleções';
+                return;
+            }
+
+            log('🔍 Verificando tamanho das coleções do Firestore...', 'info');
+            log('', 'info');
+
+            const collections = [
+                'posicoesDLL',
+                'posicoesAjusteManual',
+                'ordensDLL',
+                'CarteirasDeRefDLL',
+                'strategies',
+                'contasDll',
+                'strategyAllocations'
+            ];
+
+            const results = [];
+
+            for (const collectionName of collections) {
+                try {
+                    log(`📊 Verificando ${collectionName}...`, 'info');
+
+                    const coll = collection(db, collectionName);
+                    const snapshot = await getDocs(coll);
+                    const count = snapshot.size;
+
+                    results.push({
+                        collection: collectionName,
+                        count
+                    });
+
+                    log(`   ✅ ${collectionName}: ${count.toLocaleString('pt-BR')} documentos`, 'success');
+                    log('', 'info');
+
+                } catch (error) {
+                    log(`   ❌ Erro ao verificar ${collectionName}: ${error.message}`, 'error');
+                    results.push({
+                        collection: collectionName,
+                        count: 'ERROR',
+                        error: error.message
+                    });
+                }
+            }
+
+            // Resumo
+            log('╔════════════════════════════════════════════════════════════╗', 'info');
+            log('║              RESUMO DAS COLEÇÕES FIRESTORE                 ║', 'info');
+            log('╠════════════════════════════════════════════════════════════╣', 'info');
+
+            results.forEach(({ collection, count }) => {
+                const collectionStr = collection.padEnd(30);
+                const countStr = count === 'ERROR' ? 'ERROR'.padStart(20) : String(count).padStart(20);
+                log(`║ ${collectionStr} ${countStr} ║`, count === 'ERROR' ? 'error' : 'info');
+            });
+
+            log('╚════════════════════════════════════════════════════════════╝', 'info');
+            log('', 'info');
+
+            // Análise
+            const posicoes = results.find(r => r.collection === 'posicoesDLL')?.count || 0;
+            const ajustes = results.find(r => r.collection === 'posicoesAjusteManual')?.count || 0;
+
+            if (typeof posicoes === 'number' && typeof ajustes === 'number') {
+                log('📊 ANÁLISE:', 'info');
+                log(`   • Total de documentos em posicoesDLL: ${posicoes.toLocaleString('pt-BR')}`, 'info');
+                log(`   • Total de documentos em posicoesAjusteManual: ${ajustes.toLocaleString('pt-BR')}`, 'info');
+                log(`   • Total combinado: ${(posicoes + ajustes).toLocaleString('pt-BR')}`, 'info');
+                log('', 'info');
+                log('🔴 PROBLEMA IDENTIFICADO:', 'warning');
+                log(`   • Reads reportados pelo monitor: 19.688 (posições) + 7.180 (ajustes) = 26.868`, 'warning');
+                log(`   • Documentos reais nas coleções: ${posicoes.toLocaleString('pt-BR')} + ${ajustes.toLocaleString('pt-BR')} = ${(posicoes + ajustes).toLocaleString('pt-BR')}`, 'warning');
+
+                if (posicoes + ajustes < 26868) {
+                    const multiplier = (26868 / (posicoes + ajustes)).toFixed(1);
+                    log(`   • O sistema está lendo os mesmos dados ~${multiplier}x!`, 'error');
+                    log(`   • Isso indica múltiplas chamadas desnecessárias ou falta de cache.`, 'error');
+                } else if (posicoes + ajustes > 26868) {
+                    log(`   • Boa notícia: nem todas as posições foram lidas (leitura seletiva funcionando)`, 'success');
+                }
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🚀 Verificar Coleções';
+        };
+    </script>
+</body>
+</html>

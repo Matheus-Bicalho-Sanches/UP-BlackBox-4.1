@@ -1,0 +1,226 @@
+[
+  {
+    "feature": "ret",
+    "importance": 0.0
+  },
+  {
+    "feature": "logret",
+    "importance": 0.0
+  },
+  {
+    "feature": "vol20",
+    "importance": 0.0
+  },
+  {
+    "feature": "buy_ratio",
+    "importance": 0.0
+  },
+  {
+    "feature": "sell_ratio",
+    "importance": 0.0
+  },
+  {
+    "feature": "ofi_norm",
+    "importance": 0.0
+  },
+  {
+    "feature": "interarrival_mean_s",
+    "importance": 39.143001556396484
+  },
+  {
+    "feature": "hod_sin",
+    "importance": 9.748200416564941
+  },
+  {
+    "feature": "hod_cos",
+    "importance": 28.076799392700195
+  },
+  {
+    "feature": "open",
+    "importance": 42.96480178833008
+  },
+  {
+    "feature": "high",
+    "importance": 148.55799865722656
+  },
+  {
+    "feature": "low",
+    "importance": 0.0
+  },
+  {
+    "feature": "close",
+    "importance": 0.0
+  },
+  {
+    "feature": "volume",
+    "importance": 0.0
+  },
+  {
+    "feature": "trades",
+    "importance": 0.0
+  },
+  {
+    "feature": "dollar",
+    "importance": 0.0
+  },
+  {
+    "feature": "buy_volume",
+    "importance": 0.0
+  },
+  {
+    "feature": "sell_volume",
+    "importance": 0.0
+  },
+  {
+    "feature": "signed_volume",
+    "importance": 0.0
+  },
+  {
+    "feature": "ma_9",
+    "importance": 10.936200141906738
+  },
+  {
+    "feature": "ma_20",
+    "importance": 0.0
+  },
+  {
+    "feature": "ma_50",
+    "importance": 0.0
+  },
+  {
+    "feature": "price_ma9_ratio",
+    "importance": 32.665350914001465
+  },
+  {
+    "feature": "price_ma20_ratio",
+    "importance": 0.0
+  },
+  {
+    "feature": "price_ma50_ratio",
+    "importance": 52.00302028656006
+  },
+  {
+    "feature": "ma9_ma20_cross",
+    "importance": 18.194499969482422
+  },
+  {
+    "feature": "ma20_ma50_cross",
+    "importance": 0.0
+  },
+  {
+    "feature": "ma9_ma50_cross",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_middle",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_upper_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_upper_2std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_upper_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_lower_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_lower_2std",
+    "importance": 29.86479949951172
+  },
+  {
+    "feature": "bb20_lower_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_position",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_touch_upper_1std",
+    "importance": 87.44610214233398
+  },
+  {
+    "feature": "bb20_touch_upper_2std",
+    "importance": 24.86549949645996
+  },
+  {
+    "feature": "bb20_touch_upper_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_touch_lower_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb20_touch_lower_2std",
+    "importance": 26.661699295043945
+  },
+  {
+    "feature": "bb20_touch_lower_3std",
+    "importance": 9.573559761047363
+  },
+  {
+    "feature": "bb50_middle",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_upper_1std",
+    "importance": 60.37799835205078
+  },
+  {
+    "feature": "bb50_upper_2std",
+    "importance": 16.52680015563965
+  },
+  {
+    "feature": "bb50_upper_3std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_lower_1std",
+    "importance": 0.0
+  },
+  {
+    "feature": "bb50_lower_2std",
+    "importance": 55.212100982666016
+  },
+  {
+    "feature": "bb50_lower_3std",
+    "importance": 20.348800659179688
+  },
+  {
+    "feature": "bb50_position",
+    "importance": 24.893000602722168
+  },
+  {
+    "feature": "bb50_touch_upper_1std",
+    "importance": 96.99350929260254
+  },
+  {
+    "feature": "bb50_touch_upper_2std",
+    "importance": 53.11410140991211
+  },
+  {
+    "feature": "bb50_touch_upper_3std",
+    "importance": 44.86410140991211
+  },
+  {
+    "feature": "bb50_touch_lower_1std",
+    "importance": 34.14759826660156
+  },
+  {
+    "feature": "bb50_touch_lower_2std",
+    "importance": 17.459199905395508
+  },
+  {
+    "feature": "bb50_touch_lower_3std",
+    "importance": 0.0
+  }
+]

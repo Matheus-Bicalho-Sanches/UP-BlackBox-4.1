@@ -2189,7 +2189,16 @@ def get_client_positions(account_id: str):
         print(f"[get_client_positions] Total de ajustes manuais: {len(ajustes_manuais)}")
         print(f"[get_client_positions] Posições consolidadas finais: {len(positions)}")
         
-        return {"success": True, "positions": positions}
+        # Incluir métricas de reads para monitoramento
+        return {
+            "success": True, 
+            "positions": positions,
+            "firestore_metrics": {
+                "posicoesDLL_reads": total_docs,
+                "posicoesAjusteManual_reads": len(ajustes_manuais),
+                "total_reads": total_docs + len(ajustes_manuais)
+            }
+        }
         
     except Exception as e:
         print(f"[get_client_positions] Erro ao buscar posições do cliente {account_id}: {e}")
