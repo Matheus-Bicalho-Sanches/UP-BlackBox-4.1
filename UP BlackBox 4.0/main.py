@@ -1579,11 +1579,11 @@ def order_iceberg_master(data: dict = Body(...)):
                         
                         if not filled:
                             print(f"[ICEBERG MASTER] Timeout aguardando execução da ordem {order_id}")
-                            break  # CORREÇÃO: Reduzido de 1s para 0.2s (5x mais rápido)
-                        else:
-                            print(f"[ICEBERG MASTER] Timeout aguardando execução da ordem {order_id}")
-                            break
+                            break  # Sair do loop se timeout
+                        
+                        # ✅ CORREÇÃO: Decrementar quantidade_restante após execução bem-sucedida
                         quantidade_restante -= quantidade_envio
+                        print(f"[ICEBERG MASTER] ✅ Ordem {order_id} executada! Restante para {conta['AccountID']}: {quantidade_restante}")
                         
                         # NOVA FUNCIONALIDADE TWAP - Entre lotes de cada conta
                         if twap_enabled and quantidade_restante > 0:
