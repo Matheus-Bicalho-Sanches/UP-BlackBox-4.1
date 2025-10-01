@@ -1263,9 +1263,9 @@ def order_iceberg(data: dict = Body(...)):
             order_event = threading.Event()
             order_events[str(order_id)] = order_event
             
-            # ⚡ OTIMIZAÇÃO 1: Polling MUITO mais rápido (100ms) com timeout menor
+            # ⚡ OTIMIZAÇÃO 1: Polling MUITO mais rápido (100ms)
             start_time = time.time()
-            max_wait = 18000  # 300 minutos (reduzido de 10 horas)
+            max_wait = 36000  # 10 horas (600 minutos)
             filled = False
             
             print(f"[ICEBERG OPTIMIZED] ⏱️ Aguardando execução da ordem {order_id} (polling otimizado 100ms)...")
@@ -1550,9 +1550,9 @@ def order_iceberg_master(data: dict = Body(...)):
                             print(f"[ICEBERG MASTER] Não foi possível obter ProfitID da ordem.")
                             break
                         
-                        # ⚡ OTIMIZAÇÃO: Polling otimizado (100ms) com timeout reduzido
+                        # ⚡ OTIMIZAÇÃO: Polling otimizado (100ms)
                         start_time = time.time()
-                        max_wait = 600  # 10 minutos
+                        max_wait = 36000  # 10 horas (600 minutos)
                         filled = False
                         
                         while (time.time() - start_time) < max_wait:
