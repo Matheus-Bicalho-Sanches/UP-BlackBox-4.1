@@ -18,8 +18,8 @@ const patrimonioGestora = [
 // Dados de retorno agora são carregados via fetch (JSON estático em public/data).
 
 const stats = [
-  { label: 'Famílias Atendidas', value: 28, suffix: '+' },
-  { label: 'Patrimônio sob Gestão', value: 25000000, prefix: 'R$ ', format: 'money' },
+  { label: 'Famílias Atendidas', value: 60, suffix: '+' },
+  { label: 'Patrimônio sob Gestão', value: 35000000, prefix: 'R$ ', format: 'money' },
   { label: 'Retorno Médio 2024', value: 17.2, suffix: '%', decimals: 1 },
   { label: 'Carteiras Personalizadas', value: 100, suffix: '%' },
 ];
@@ -293,8 +293,8 @@ export default function HeroSectionDataViz() {
                 {(() => {
                   // Estatísticas específicas para cada carteira
                   const stats = selectedCarteira === 'fii' ? [
-                    { label: 'Total de Operações', value: 631, suffix: '' },
-                    { label: 'Tempo Médio por Posição', value: '7d23h', isString: true },
+                    { label: 'Total de Operações', value: 699, suffix: '' },
+                    { label: 'Tempo Médio por Posição', value: '10d22h', isString: true },
                     { label: 'Operações com Ganhos', value: 80.51, suffix: '%', decimals: 2 },
                     { label: 'Operações com Perdas', value: 19.49, suffix: '%', decimals: 2 },
                     { label: 'Maior Ganho por Operação', value: 25, prefix: '+', suffix: '%', decimals: 0 },
