@@ -7,8 +7,6 @@ import html2canvas from 'html2canvas';
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
 
 // Dados reais carregados via fetch (igual à home)
-const [retornoData, setRetornoData] = useState<{date:string; tatica:number; ifix:number; cdi:number;}[]>([]);
-const [retornoDataMulti, setRetornoDataMulti] = useState<{date:string; tatica:number; cdi:number;}[]>([]);
 
 // Mapeia meses PT-BR para números para formatação de data no eixo
 const monthMap: Record<string, string> = {
@@ -216,6 +214,10 @@ export default function MarketingPage() {
   const [retornoTotal, setRetornoTotal] = useState(32.59);
   const [vsIfix, setVsIfix] = useState(9.34);
   const [vsCdi, setVsCdi] = useState(12.98);
+  
+  // Dados reais carregados via fetch (igual à home)
+  const [retornoData, setRetornoData] = useState<{date:string; tatica:number; ifix:number; cdi:number;}[]>([]);
+  const [retornoDataMulti, setRetornoDataMulti] = useState<{date:string; tatica:number; cdi:number;}[]>([]);
 
   // Carregar dados reais (igual à home)
   useEffect(() => {
