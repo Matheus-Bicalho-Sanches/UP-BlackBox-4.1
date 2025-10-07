@@ -118,8 +118,7 @@ function StoriesPreview({
 
       {/* Título */}
       <div className="absolute top-16 left-4 right-4 z-10">
-        <h1 className="text-white text-xl font-bold mb-1">{carteira}</h1>
-        <p className="text-cyan-200 text-sm">Retorno Histórico</p>
+        <h1 className="text-white text-sm font-bold text-center leading-tight">Aumente o retorno da sua carteira com a UP Gestão de recursos</h1>
       </div>
 
       {/* Gráfico */}
@@ -205,8 +204,8 @@ function StoriesPreview({
       <div className="absolute bottom-20 left-4 right-4 z-10">
         <div className="bg-gray-800/80 rounded-lg p-3 backdrop-blur-sm">
           <div className="text-center">
-            <div className="text-cyan-400 text-sm font-bold">+{retornoTotal.toFixed(1)}% de Retorno nos últimos 12 meses</div>
-            <div className="text-gray-300 text-xs">Carteira de Fundos imobiliários, Fundos de Infraestrutura e Fundos do Agronegócio.</div>
+            <div className="text-cyan-400 text-xs font-bold" style={{ fontSize: '10px' }}>+{retornoTotal.toFixed(1)}% de Retorno nos últimos 12 meses</div>
+            <div className="text-gray-300 text-xs" style={{ fontSize: '9px' }}>Carteira de Fundos imobiliários, Fundos de Infraestrutura e Fundos do Agronegócio.</div>
           </div>
         </div>
       </div>
