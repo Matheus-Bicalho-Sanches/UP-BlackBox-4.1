@@ -237,7 +237,7 @@ export default function DashboardLayout({
         </div>
 
         {/* Main Content */}
-        <div className={`transition-all duration-300 ${isSidebarOpen ? 'ml-64' : 'ml-20'}`}>
+        <div className={`transition-all duration-300 bg-gray-900 min-h-screen ${isSidebarOpen ? 'ml-64' : 'ml-20'}`}>
           {/* Top Bar */}
           <div className="bg-gray-800 p-4 flex justify-between items-center">
             <button
@@ -254,7 +254,7 @@ export default function DashboardLayout({
           </div>
 
           {/* Page Content */}
-          <div className="p-6">
+          <div className="bg-gray-900 min-h-full">
             {children}
           </div>
         </div>
