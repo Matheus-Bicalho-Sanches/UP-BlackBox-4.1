@@ -188,7 +188,7 @@ function StoriesPreview({
               type="monotone"
               dataKey="cdi"
               name="CDI"
-              stroke="#38bdf8"
+              stroke="#ffffff"
               strokeWidth={2.2}
               dot={false}
               strokeDasharray="3 3"
