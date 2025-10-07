@@ -333,11 +333,28 @@ export default function HeroSectionIA2() {
       const data = await resp.json();
       setResposta(data.answer);
 
-      // Separar texto e código da resposta
-      const regex = /```(?:js|javascript)([\s\S]*?)```/;
+      // Separar texto e código da resposta - regex mais flexível
+      const regex = /```(?:js|javascript|javascript|js)?\s*([\s\S]*?)```/;
       const match = data.answer.match(regex);
-      const texto = data.answer.split('```')[0].trim();
-      const codigo = match ? match[1].trim() : null;
+      
+      // Se não encontrar com ```, tenta encontrar código sem markdown
+      let texto, codigo;
+      if (match) {
+        texto = data.answer.split('```')[0].trim();
+        codigo = match[1].trim();
+      } else {
+        // Tenta detectar código sem markdown (função JavaScript)
+        const functionRegex = /(function\s+\w+\s*\([^)]*\)\s*\{[\s\S]*?\})/;
+        const functionMatch = data.answer.match(functionRegex);
+        if (functionMatch) {
+          const codeStart = data.answer.indexOf(functionMatch[1]);
+          texto = data.answer.substring(0, codeStart).trim();
+          codigo = functionMatch[1].trim();
+        } else {
+          texto = data.answer;
+          codigo = null;
+        }
+      }
       setRespostaTexto(texto);
       setCodigoIA(codigo);
       setErroExecucao(null);
