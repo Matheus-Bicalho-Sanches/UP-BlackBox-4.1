@@ -391,9 +391,22 @@ export default function HeroSectionIA2() {
           }
           console.log('Resultado da execução do código IA:', resultado);
           if (Array.isArray(resultado)) {
-            setResultadoGrafico(resultado);
-            setMostrarGrafico(true);
-            setResultadoTextoIA(null);
+            // Verificar se é um array de dados para gráfico (com ibov/estrategia ou categoria/label/valor)
+            const isChartData = resultado.length > 0 && (
+              (resultado[0].ibov !== undefined && resultado[0].estrategia !== undefined) ||
+              (resultado[0].categoria !== undefined || resultado[0].label !== undefined) ||
+              (resultado[0].valor !== undefined && resultado[0].data !== undefined)
+            );
+            
+            if (isChartData) {
+              setResultadoGrafico(resultado);
+              setMostrarGrafico(true);
+              setResultadoTextoIA(null);
+            } else {
+              // Array de dados estatísticos - exibir como texto
+              setMostrarGrafico(false);
+              setResultadoTextoIA(JSON.stringify(resultado, null, 2));
+            }
           } else {
             setMostrarGrafico(false);
             setResultadoTextoIA(
