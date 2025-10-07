@@ -201,13 +201,13 @@ function StoriesPreview({
         </ResponsiveContainer>
       </div>
 
-      {/* Métricas no rodapé */}
+      {/* Copy persuasivo */}
       <div className="absolute bottom-20 left-4 right-4 z-10">
         <div className="bg-gray-800/80 rounded-lg p-3 backdrop-blur-sm">
           <div className="text-center">
-            <div className="text-cyan-400 text-lg font-bold">+{retornoTotal.toFixed(1)}%</div>
-            <div className="text-gray-300 text-xs">vs IFIX: +{vsIfix.toFixed(1)}%</div>
-            <div className="text-gray-300 text-xs">vs CDI: +{vsCdi.toFixed(1)}%</div>
+            <div className="text-cyan-400 text-lg font-bold">+{retornoTotal.toFixed(1)}% de Retorno</div>
+            <div className="text-gray-300 text-xs">Superando o mercado em {vsIfix.toFixed(1)}%</div>
+            <div className="text-gray-300 text-xs">Estratégia comprovada e consistente</div>
           </div>
         </div>
       </div>
