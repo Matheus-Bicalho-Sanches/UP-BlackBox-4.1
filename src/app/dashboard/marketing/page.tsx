@@ -205,11 +205,8 @@ function StoriesPreview({
       <div className="absolute bottom-20 left-4 right-4 z-10">
         <div className="bg-gray-800/80 rounded-lg p-3 backdrop-blur-sm">
           <div className="text-center">
-            <div className="text-cyan-400 text-lg font-bold">+{retornoTotal.toFixed(1)}% de Retorno nos últimos 12 meses</div>
-            <div className="text-gray-300 text-xs leading-tight">
-              <div>Carteira de Fundos imobiliários,</div>
-              <div>Fundos de Infraestrutura e Fundos do Agronegócio.</div>
-            </div>
+            <div className="text-cyan-400 text-sm font-bold">+{retornoTotal.toFixed(1)}% de Retorno nos últimos 12 meses</div>
+            <div className="text-gray-300 text-xs">Carteira de Fundos imobiliários, Fundos de Infraestrutura e Fundos do Agronegócio.</div>
           </div>
         </div>
       </div>
