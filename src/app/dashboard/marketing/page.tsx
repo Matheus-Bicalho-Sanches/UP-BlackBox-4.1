@@ -18,9 +18,14 @@ export default function MarketingPage() {
       periodo: '2020-2025',
       customizacoes: {
         titulo: '',
+        subtitulo: '',
         textoCTA: '',
         corPrimaria: '#06b6d4',
         mostrarLegenda: true,
+        tamanhoFonteTitulo: 14, // Fonte padrão
+        tamanhoFonteSubtitulo: 10,
+        posicaoGraficoTop: 40, // Posição padrão (top-40 = 160px)
+        fundoAnimado: false,
       },
       criadoEm: new Date(),
       atualizadoEm: new Date(),
@@ -32,13 +37,38 @@ export default function MarketingPage() {
       carteira: 'BlackBox FIIs',
       periodo: '2020-2025',
       customizacoes: {
-        titulo: '+32.6% de Retorno ao ano te interessa?',
+        titulo: '+32.6% de retorno ao ano te interessa?',
+        subtitulo: 'Esse foi o retorno que os nossos clientes tiveram nos últimos 12 meses investindo em FIIs, FI-Infra e FI-Agro',
         textoCTA: '',
         corPrimaria: '#06b6d4',
         mostrarLegenda: true,
+        tamanhoFonteTitulo: 16, // Fonte ainda maior
+        tamanhoFonteSubtitulo: 9, // Fonte pequena para o subtítulo
+        posicaoGraficoTop: 36, // Gráfico mais próximo do subtítulo (top-36 = 144px)
+        fundoAnimado: false,
       },
       criadoEm: new Date(Date.now() - 86400000), // 1 dia atrás
       atualizadoEm: new Date(Date.now() - 86400000),
+    },
+    // Duplicata da arte 2 com fundo animado
+    {
+      id: '6',
+      nome: 'Story - TrackRecord FIIs 3',
+      carteira: 'BlackBox FIIs',
+      periodo: '2020-2025',
+      customizacoes: {
+        titulo: '+32.6% de retorno ao ano te interessa?',
+        subtitulo: 'Esse foi o retorno que os nossos clientes tiveram nos últimos 12 meses investindo em FIIs, FI-Infra e FI-Agro',
+        textoCTA: '',
+        corPrimaria: '#06b6d4',
+        mostrarLegenda: true,
+        tamanhoFonteTitulo: 16, // Fonte ainda maior
+        tamanhoFonteSubtitulo: 9, // Fonte pequena para o subtítulo
+        posicaoGraficoTop: 36, // Gráfico mais próximo do subtítulo (top-36 = 144px)
+        fundoAnimado: true, // Ativa o fundo animado
+      },
+      criadoEm: new Date(Date.now() - 172800000), // 2 dias atrás
+      atualizadoEm: new Date(Date.now() - 172800000),
     },
     // Artes adicionais para demonstração
     {
@@ -48,9 +78,14 @@ export default function MarketingPage() {
       periodo: '2024-2025',
       customizacoes: {
         titulo: 'Maximize seus investimentos com UP',
+        subtitulo: '',
         textoCTA: 'Comece agora',
         corPrimaria: '#06b6d4',
         mostrarLegenda: true,
+        tamanhoFonteTitulo: 14,
+        tamanhoFonteSubtitulo: 10,
+        posicaoGraficoTop: 40,
+        fundoAnimado: false,
       },
       criadoEm: new Date(Date.now() - 172800000), // 2 dias atrás
       atualizadoEm: new Date(Date.now() - 172800000),
@@ -62,9 +97,14 @@ export default function MarketingPage() {
       periodo: '2023-2025',
       customizacoes: {
         titulo: 'Invista no futuro com UP',
+        subtitulo: '',
         textoCTA: 'Saiba mais',
         corPrimaria: '#06b6d4',
         mostrarLegenda: true,
+        tamanhoFonteTitulo: 14,
+        tamanhoFonteSubtitulo: 10,
+        posicaoGraficoTop: 40,
+        fundoAnimado: false,
       },
       criadoEm: new Date(Date.now() - 172800000), // 2 dias atrás
       atualizadoEm: new Date(Date.now() - 172800000),
@@ -76,9 +116,14 @@ export default function MarketingPage() {
       periodo: '2020-2025',
       customizacoes: {
         titulo: 'Renda passiva que funciona',
+        subtitulo: '',
         textoCTA: 'Invista hoje',
         corPrimaria: '#06b6d4',
         mostrarLegenda: true,
+        tamanhoFonteTitulo: 14,
+        tamanhoFonteSubtitulo: 10,
+        posicaoGraficoTop: 40,
+        fundoAnimado: false,
       },
       criadoEm: new Date(Date.now() - 259200000), // 3 dias atrás
       atualizadoEm: new Date(Date.now() - 259200000),
@@ -288,7 +333,20 @@ export default function MarketingPage() {
           {/* Coluna 2: Preview da Arte (4 colunas) */}
           <div className="col-span-4 h-full">
             <div className="bg-gray-800 rounded-lg p-6 h-full flex flex-col">
-              <h2 className="text-lg font-semibold text-white mb-4">Preview da Arte</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white">Preview da Arte</h2>
+                {arteSelecionada && (
+                  <button
+                    onClick={handleExportar}
+                    className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition duration-300 flex items-center"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Exportar PNG
+                  </button>
+                )}
+              </div>
               
               <div className="flex-1 flex items-center justify-center overflow-auto">
                 {arteSelecionada ? (
@@ -300,7 +358,12 @@ export default function MarketingPage() {
                     vsIfix={metricas.vsIfix}
                     vsCdi={metricas.vsCdi}
                     titulo={arteSelecionada.customizacoes.titulo}
+                    subtitulo={arteSelecionada.customizacoes.subtitulo}
                     textoCTA={arteSelecionada.customizacoes.textoCTA}
+                    tamanhoFonteTitulo={arteSelecionada.customizacoes.tamanhoFonteTitulo}
+                    tamanhoFonteSubtitulo={arteSelecionada.customizacoes.tamanhoFonteSubtitulo}
+                    posicaoGraficoTop={arteSelecionada.customizacoes.posicaoGraficoTop}
+                    fundoAnimado={arteSelecionada.customizacoes.fundoAnimado}
                   />
                 ) : (
                   <div className="text-center text-gray-400">

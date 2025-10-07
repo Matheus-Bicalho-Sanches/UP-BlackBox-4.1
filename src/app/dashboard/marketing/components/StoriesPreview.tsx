@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   ComposedChart,
   Line,
@@ -36,6 +36,114 @@ function formatDateLabel(dateStr: string) {
 // Função para formatar ticks do eixo Y
 function formatPercentTick(value: number) {
   return `${value.toFixed(0)}%`;
+}
+
+// Componente de fundo animado (ticks subindo)
+function AnimatedBackground() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationRef = useRef<number>();
+  const ticksRef = useRef<{ x: number; y: number; len: number; speed: number }[]>([]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    
+    function resize() {
+      if (!canvas || !ctx) return;
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      
+      canvas.width = 270 * dpr; // largura fixa da arte
+      canvas.height = 480 * dpr; // altura fixa da arte
+      canvas.style.width = '270px';
+      canvas.style.height = '480px';
+      
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+
+      // Densidade reduzida para a arte pequena
+      const density = 30;
+      ticksRef.current = Array.from({ length: density }, () => genTick());
+    }
+
+    function genTick() {
+      return {
+        x: Math.random() * 270,
+        y: Math.random() * 480,
+        len: 6 + Math.random() * 16,
+        speed: 0.2 + Math.random() * 0.5,
+      };
+    }
+
+    resize();
+
+    function animate() {
+      if (!canvas || !ctx) return;
+      
+      const width = 270;
+      const height = 480;
+      
+      ctx.clearRect(0, 0, width, height);
+      ctx.lineWidth = 1;
+
+      const now = Date.now();
+
+      ticksRef.current.forEach(t => {
+        // Fade conforme a barra sobe
+        const fade = Math.min(1, Math.max(0, t.y / height));
+        // Pulso de luminescência
+        const pulse = 0.5 + 0.3 * Math.sin((now + t.x * 50) / 400);
+        const alpha = fade * pulse * 0.4; // Mais sutil
+
+        ctx.strokeStyle = '#06b6d4';
+        ctx.globalAlpha = alpha;
+
+        ctx.beginPath();
+        ctx.moveTo(t.x, t.y);
+        ctx.lineTo(t.x, t.y - t.len);
+        ctx.stroke();
+
+        ctx.globalAlpha = 1;
+
+        // Atualizar posição
+        t.y -= t.speed;
+        if (t.y + t.len < 0) {
+          t.x = Math.random() * width;
+          t.y = height + t.len;
+          t.len = 6 + Math.random() * 16;
+          t.speed = 0.2 + Math.random() * 0.5;
+        }
+      });
+
+      animationRef.current = requestAnimationFrame(animate);
+    }
+
+    animate();
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+        zIndex: 0,
+      }}
+    />
+  );
 }
 
 // Componente Tooltip customizado
@@ -112,7 +220,12 @@ interface StoriesPreviewProps {
   vsIfix: number;
   vsCdi: number;
   titulo?: string;
+  subtitulo?: string;
   textoCTA?: string;
+  tamanhoFonteTitulo?: number;
+  tamanhoFonteSubtitulo?: number;
+  posicaoGraficoTop?: number;
+  fundoAnimado?: boolean;
 }
 
 export default function StoriesPreview({ 
@@ -123,7 +236,12 @@ export default function StoriesPreview({
   vsIfix, 
   vsCdi,
   titulo,
-  textoCTA = "Invista com UP"
+  subtitulo,
+  textoCTA = "Invista com UP",
+  tamanhoFonteTitulo = 14,
+  tamanhoFonteSubtitulo = 10,
+  posicaoGraficoTop = 40,
+  fundoAnimado = false
 }: StoriesPreviewProps) {
   const tituloFinal = titulo || "Aumente o retorno da sua carteira com a UP Gestão de recursos";
   
@@ -133,6 +251,8 @@ export default function StoriesPreview({
       className="w-[270px] h-[480px] bg-gradient-to-br from-cyan-900 via-gray-900 to-gray-800 relative overflow-hidden"
       style={{ aspectRatio: '9/16' }}
     >
+      {/* Fundo animado (opcional) */}
+      {fundoAnimado && <AnimatedBackground />}
       {/* Logo no topo */}
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
         <div 
@@ -161,11 +281,19 @@ export default function StoriesPreview({
 
       {/* Título */}
       <div className="absolute top-16 left-4 right-4 z-10">
-        <h1 className="text-white text-sm font-bold text-center leading-tight">{tituloFinal}</h1>
+        <h1 
+          className={`font-bold text-center leading-tight ${tituloFinal.includes('+32.6% de retorno ao ano te interessa?') ? 'text-cyan-400' : 'text-white'}`} 
+          style={{ fontSize: `${tamanhoFonteTitulo}px` }}
+        >
+          {tituloFinal}
+        </h1>
+        {subtitulo && (
+          <p className="text-gray-300 text-center leading-tight mt-2" style={{ fontSize: `${tamanhoFonteSubtitulo}px` }}>{subtitulo}</p>
+        )}
       </div>
 
       {/* Gráfico */}
-      <div className="absolute top-32 left-0 right-4 bottom-48 z-10">
+      <div className="absolute left-0 right-4 bottom-48 z-10" style={{ top: `${posicaoGraficoTop * 4}px` }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={dados} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2dd4bf33" />
