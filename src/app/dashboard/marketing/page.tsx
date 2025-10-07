@@ -92,11 +92,26 @@ function StoriesPreview({
     >
       {/* Logo no topo */}
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
-        <div className="w-24 h-8 flex items-center justify-center">
+        <div 
+          style={{ 
+            width: '96px', 
+            height: '32px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
           <img
             src="/images/up-logo-white.png"
             alt="UP Carteiras Administradas"
-            className="w-full h-full object-contain"
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              width: 'auto',
+              height: 'auto',
+              objectFit: 'contain',
+              display: 'block'
+            }}
           />
         </div>
       </div>
@@ -266,17 +281,46 @@ export default function MarketingPage() {
     if (!element) return;
 
     try {
+      // Garantir que a imagem da logo esteja carregada
+      const logoImg = element.querySelector('img');
+      if (logoImg) {
+        await new Promise((resolve) => {
+          if (logoImg.complete) {
+            resolve(true);
+          } else {
+            logoImg.onload = () => resolve(true);
+            logoImg.onerror = () => resolve(true);
+          }
+        });
+      }
+
       const canvas = await html2canvas(element, {
         width: 1080,
         height: 1920,
-        scale: 4, // Alta resolução
+        scale: 2, // Reduzido para melhor compatibilidade
         useCORS: true,
-        backgroundColor: null
+        backgroundColor: null,
+        allowTaint: true,
+        foreignObjectRendering: false, // Desabilitado para melhor compatibilidade
+        logging: false,
+        // Configurações específicas para melhor renderização
+        onclone: (clonedDoc) => {
+          // Garantir que as imagens sejam carregadas e não distorcidas
+          const images = clonedDoc.querySelectorAll('img');
+          images.forEach(img => {
+            img.style.objectFit = 'contain';
+            img.style.maxWidth = '100%';
+            img.style.maxHeight = '100%';
+            img.style.width = 'auto';
+            img.style.height = 'auto';
+            img.style.display = 'block';
+          });
+        }
       });
 
       const link = document.createElement('a');
       link.download = `up-${carteira.toLowerCase().replace(/\s+/g, '-')}-${periodo}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
     } catch (error) {
       console.error('Erro ao exportar:', error);
