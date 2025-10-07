@@ -123,7 +123,7 @@ function StoriesPreview({
       </div>
 
       {/* Gráfico */}
-      <div className="absolute top-32 left-4 right-4 bottom-32 z-10">
+      <div className="absolute top-32 left-4 right-4 bottom-48 z-10">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={dados} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2dd4bf33" />
@@ -202,7 +202,7 @@ function StoriesPreview({
       </div>
 
       {/* Métricas no rodapé */}
-      <div className="absolute bottom-4 left-4 right-4 z-10">
+      <div className="absolute bottom-20 left-4 right-4 z-10">
         <div className="bg-gray-800/80 rounded-lg p-3 backdrop-blur-sm">
           <div className="text-center">
             <div className="text-cyan-400 text-lg font-bold">+{retornoTotal.toFixed(1)}%</div>
@@ -213,7 +213,7 @@ function StoriesPreview({
       </div>
 
       {/* Call to Action */}
-      <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 z-10">
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10">
         <div className="bg-cyan-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">
           Invista com UP
         </div>
