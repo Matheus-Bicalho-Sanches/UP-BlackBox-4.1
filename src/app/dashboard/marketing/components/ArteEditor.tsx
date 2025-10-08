@@ -6,7 +6,6 @@ import { ArteMarketing } from '../types/arte.types';
 interface ArteEditorProps {
   arte: ArteMarketing | null;
   onUpdate: (campo: string, valor: any) => void;
-  onExportar: () => void;
   onDuplicar: () => void;
   onExcluir: () => void;
 }
@@ -14,7 +13,6 @@ interface ArteEditorProps {
 export default function ArteEditor({
   arte,
   onUpdate,
-  onExportar,
   onDuplicar,
   onExcluir
 }: ArteEditorProps) {

@@ -9,6 +9,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.2.0",
     "@radix-ui/react-checkbox": "^1.1.4",
@@ -30,7 +32,6 @@
     "firebase": "^10.14.1",
     "firebase-admin": "^13.1.0",
     "framer-motion": "^12.5.0",
-    "html2canvas": "^1.4.1",
     "jspdf": "^3.0.1",
     "jspdf-autotable": "^5.0.2",
     "lightweight-charts": "^5.0.8",

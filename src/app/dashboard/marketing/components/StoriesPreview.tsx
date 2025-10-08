@@ -225,7 +225,15 @@ interface StoriesPreviewProps {
   tamanhoFonteTitulo?: number;
   tamanhoFonteSubtitulo?: number;
   posicaoGraficoTop?: number;
+  alturaGrafico?: number;
   fundoAnimado?: boolean;
+  textoRetorno?: string;
+  textoDescricao?: string;
+  mostrarCTA?: boolean;
+  posicaoLogoTop?: number;
+  tamanhoLogo?: number;
+  posicaoTituloTop?: number;
+  posicaoTextoRetornoBottom?: number;
 }
 
 export default function StoriesPreview({ 
@@ -241,9 +249,19 @@ export default function StoriesPreview({
   tamanhoFonteTitulo = 14,
   tamanhoFonteSubtitulo = 10,
   posicaoGraficoTop = 40,
-  fundoAnimado = false
+  alturaGrafico = 140,
+  fundoAnimado = false,
+  textoRetorno,
+  textoDescricao,
+  mostrarCTA = true,
+  posicaoLogoTop = 8,
+  tamanhoLogo = 100,
+  posicaoTituloTop = 16,
+  posicaoTextoRetornoBottom = 28
 }: StoriesPreviewProps) {
   const tituloFinal = titulo || "Aumente o retorno da sua carteira com a UP Gestão de recursos";
+  const textoRetornoFinal = textoRetorno || `+${retornoTotal.toFixed(1)}% de Retorno nos últimos 12 meses`;
+  const textoDescricaoFinal = textoDescricao || "Carteira de Fundos imobiliários, Fundos de Infraestrutura e Fundos do Agronegócio.";
   
   return (
     <div 
@@ -254,11 +272,11 @@ export default function StoriesPreview({
       {/* Fundo animado (opcional) */}
       {fundoAnimado && <AnimatedBackground />}
       {/* Logo no topo */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
+      <div className="absolute left-1/2 transform -translate-x-1/2 z-10" style={{ top: `${posicaoLogoTop * 4}px` }}>
         <div 
           style={{ 
-            width: '96px', 
-            height: '32px',
+            width: `${96 * (tamanhoLogo / 100)}px`, 
+            height: `${32 * (tamanhoLogo / 100)}px`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center'
@@ -280,9 +298,9 @@ export default function StoriesPreview({
       </div>
 
       {/* Título */}
-      <div className="absolute top-16 left-4 right-4 z-10">
+      <div className="absolute left-4 right-4 z-10" style={{ top: `${posicaoTituloTop * 4}px` }}>
         <h1 
-          className={`font-bold text-center leading-tight ${tituloFinal.includes('+32.6% de retorno ao ano te interessa?') ? 'text-cyan-400' : 'text-white'}`} 
+          className={`font-bold text-center leading-tight ${tituloFinal.includes('+32,6% de retorno ao ano te interessa?') ? 'text-cyan-400' : 'text-white'}`} 
           style={{ fontSize: `${tamanhoFonteTitulo}px` }}
         >
           {tituloFinal}
@@ -293,7 +311,7 @@ export default function StoriesPreview({
       </div>
 
       {/* Gráfico */}
-      <div className="absolute left-0 right-4 bottom-48 z-10" style={{ top: `${posicaoGraficoTop * 4}px` }}>
+      <div className="absolute left-0 right-4 z-10" style={{ top: `${posicaoGraficoTop * 4}px`, height: `${alturaGrafico}px` }}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={dados} margin={{ top: 10, right: 20, left: -10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2dd4bf33" />
@@ -372,21 +390,23 @@ export default function StoriesPreview({
       </div>
 
       {/* Copy persuasivo */}
-      <div className="absolute bottom-28 left-4 right-4 z-10">
+      <div className="absolute left-4 right-4 z-10" style={{ bottom: `${posicaoTextoRetornoBottom * 4}px` }}>
         <div className="bg-gray-800/80 rounded-lg p-3 backdrop-blur-sm">
           <div className="text-center">
-            <div className="text-cyan-400 text-xs font-bold" style={{ fontSize: '10px' }}>+{retornoTotal.toFixed(1)}% de Retorno nos últimos 12 meses</div>
-            <div className="text-gray-300 text-xs" style={{ fontSize: '9px' }}>Carteira de Fundos imobiliários, Fundos de Infraestrutura e Fundos do Agronegócio.</div>
+            <div className="text-cyan-400 text-xs font-bold" style={{ fontSize: '10px' }}>{textoRetornoFinal}</div>
+            <div className="text-gray-300 text-xs" style={{ fontSize: '9px' }}>{textoDescricaoFinal}</div>
           </div>
         </div>
       </div>
 
       {/* Call to Action */}
-      <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 z-10">
-        <div className="bg-cyan-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">
-          {textoCTA}
+      {mostrarCTA && (
+        <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 z-10">
+          <div className="bg-cyan-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">
+            {textoCTA}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

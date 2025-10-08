@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import html2canvas from 'html2canvas';
 import ArtesLista from './components/ArtesLista';
 import ArteEditor from './components/ArteEditor';
 import StoriesPreview from './components/StoriesPreview';
@@ -25,6 +24,7 @@ export default function MarketingPage() {
         tamanhoFonteTitulo: 14, // Fonte padrão
         tamanhoFonteSubtitulo: 10,
         posicaoGraficoTop: 40, // Posição padrão (top-40 = 160px)
+        alturaGrafico: 140, // Altura padrão
         fundoAnimado: false,
       },
       criadoEm: new Date(),
@@ -45,6 +45,7 @@ export default function MarketingPage() {
         tamanhoFonteTitulo: 16, // Fonte ainda maior
         tamanhoFonteSubtitulo: 9, // Fonte pequena para o subtítulo
         posicaoGraficoTop: 36, // Gráfico mais próximo do subtítulo (top-36 = 144px)
+        alturaGrafico: 140, // Altura padrão
         fundoAnimado: false,
       },
       criadoEm: new Date(Date.now() - 86400000), // 1 dia atrás
@@ -57,15 +58,23 @@ export default function MarketingPage() {
       carteira: 'BlackBox FIIs',
       periodo: '2020-2025',
       customizacoes: {
-        titulo: '+32.6% de retorno ao ano te interessa?',
-        subtitulo: 'Esse foi o retorno que os nossos clientes tiveram nos últimos 12 meses investindo em FIIs, FI-Infra e FI-Agro',
+        titulo: '+32,6% de retorno ao ano te interessa?',
+        subtitulo: 'Esse foi o retorno que os nossos clientes tiveram em 12 meses investindo em FII, FI-Infra e FI-Agro',
         textoCTA: '',
         corPrimaria: '#06b6d4',
         mostrarLegenda: true,
-        tamanhoFonteTitulo: 16, // Fonte ainda maior
+        tamanhoFonteTitulo: 18, // Fonte ainda maior
         tamanhoFonteSubtitulo: 9, // Fonte pequena para o subtítulo
-        posicaoGraficoTop: 36, // Gráfico mais próximo do subtítulo (top-36 = 144px)
+        posicaoGraficoTop: 44, // Gráfico mais para baixo (top-44 = 176px)
+        alturaGrafico: 160, // Gráfico um pouco mais alto (padrão: 140px)
         fundoAnimado: true, // Ativa o fundo animado
+        textoRetorno: 'Valor mínimo de R$ 50.000,00',
+        textoDescricao: 'Entre em contato para mais informações',
+        mostrarCTA: false, // Remove o botão CTA desta arte
+        posicaoLogoTop: 12, // Logo mais para baixo (top-12 = 48px)
+        tamanhoLogo: 140, // Logo 40% maior (padrão: 100)
+        posicaoTituloTop: 22, // Título mais para baixo (top-22 = 88px)
+        posicaoTextoRetornoBottom: 20, // Box de texto mais para baixo (bottom-20 = 80px)
       },
       criadoEm: new Date(Date.now() - 172800000), // 2 dias atrás
       atualizadoEm: new Date(Date.now() - 172800000),
@@ -85,6 +94,7 @@ export default function MarketingPage() {
         tamanhoFonteTitulo: 14,
         tamanhoFonteSubtitulo: 10,
         posicaoGraficoTop: 40,
+        alturaGrafico: 140, // Altura padrão
         fundoAnimado: false,
       },
       criadoEm: new Date(Date.now() - 172800000), // 2 dias atrás
@@ -104,6 +114,7 @@ export default function MarketingPage() {
         tamanhoFonteTitulo: 14,
         tamanhoFonteSubtitulo: 10,
         posicaoGraficoTop: 40,
+        alturaGrafico: 140, // Altura padrão
         fundoAnimado: false,
       },
       criadoEm: new Date(Date.now() - 172800000), // 2 dias atrás
@@ -123,6 +134,7 @@ export default function MarketingPage() {
         tamanhoFonteTitulo: 14,
         tamanhoFonteSubtitulo: 10,
         posicaoGraficoTop: 40,
+        alturaGrafico: 140, // Altura padrão
         fundoAnimado: false,
       },
       criadoEm: new Date(Date.now() - 259200000), // 3 dias atrás
@@ -252,54 +264,6 @@ export default function MarketingPage() {
     }));
   };
   
-  const handleExportar = async () => {
-    const element = document.getElementById('stories-preview');
-    if (!element) return;
-
-    try {
-      // Garantir que a imagem da logo esteja carregada
-      const logoImg = element.querySelector('img');
-      if (logoImg) {
-        await new Promise((resolve) => {
-          if (logoImg.complete) {
-            resolve(true);
-          } else {
-            logoImg.onload = () => resolve(true);
-            logoImg.onerror = () => resolve(true);
-          }
-        });
-      }
-
-      const canvas = await html2canvas(element, {
-        width: 1080,
-        height: 1920,
-        scale: 2,
-        useCORS: true,
-        backgroundColor: null,
-        allowTaint: true,
-        foreignObjectRendering: false,
-        logging: false,
-        onclone: (clonedDoc) => {
-          const images = clonedDoc.querySelectorAll('img');
-          images.forEach(img => {
-            img.style.objectFit = 'contain';
-            img.style.maxWidth = '100%';
-            img.style.maxHeight = '100%';
-            img.style.width = 'auto';
-            img.style.height = 'auto';
-            img.style.display = 'block';
-          });
-        }
-      });
-
-      const link = document.createElement('a');
-      link.download = `up-${arteSelecionada?.nome.toLowerCase().replace(/\s+/g, '-')}.png`;
-      link.href = canvas.toDataURL('image/png', 1.0);
-      link.click();
-    } catch (error) {
-      console.error('Erro ao exportar:', error);
-    }
-  };
   
   const dadosFiltrados = getDadosFiltrados(arteSelecionada);
   const metricas = getMetricas(arteSelecionada);
@@ -335,17 +299,6 @@ export default function MarketingPage() {
             <div className="bg-gray-800 rounded-lg p-6 h-full flex flex-col">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white">Preview da Arte</h2>
-                {arteSelecionada && (
-                  <button
-                    onClick={handleExportar}
-                    className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition duration-300 flex items-center"
-                  >
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Exportar PNG
-                  </button>
-                )}
               </div>
               
               <div className="flex-1 flex items-center justify-center overflow-auto">
@@ -363,7 +316,15 @@ export default function MarketingPage() {
                     tamanhoFonteTitulo={arteSelecionada.customizacoes.tamanhoFonteTitulo}
                     tamanhoFonteSubtitulo={arteSelecionada.customizacoes.tamanhoFonteSubtitulo}
                     posicaoGraficoTop={arteSelecionada.customizacoes.posicaoGraficoTop}
+                    alturaGrafico={arteSelecionada.customizacoes.alturaGrafico}
                     fundoAnimado={arteSelecionada.customizacoes.fundoAnimado}
+                    textoRetorno={arteSelecionada.customizacoes.textoRetorno}
+                    textoDescricao={arteSelecionada.customizacoes.textoDescricao}
+                    mostrarCTA={arteSelecionada.customizacoes.mostrarCTA}
+                    posicaoLogoTop={arteSelecionada.customizacoes.posicaoLogoTop}
+                    tamanhoLogo={arteSelecionada.customizacoes.tamanhoLogo}
+                    posicaoTituloTop={arteSelecionada.customizacoes.posicaoTituloTop}
+                    posicaoTextoRetornoBottom={arteSelecionada.customizacoes.posicaoTextoRetornoBottom}
                   />
                 ) : (
                   <div className="text-center text-gray-400">
@@ -400,7 +361,6 @@ export default function MarketingPage() {
             <ArteEditor
               arte={arteSelecionada}
               onUpdate={handleUpdateArte}
-              onExportar={handleExportar}
               onDuplicar={() => arteSelecionada && handleDuplicarArte(arteSelecionada.id)}
               onExcluir={() => arteSelecionada && handleExcluirArte(arteSelecionada.id)}
             />
