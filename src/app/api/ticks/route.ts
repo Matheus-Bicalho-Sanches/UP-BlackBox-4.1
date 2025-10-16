@@ -26,6 +26,8 @@ function parseParams(request: NextRequest): TickQueryParams {
   return { symbol, exchange, from, to, limit, timeframe };
 }
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { symbol, exchange, from, to, limit, timeframe } = parseParams(request);
