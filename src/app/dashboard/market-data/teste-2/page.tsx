@@ -300,7 +300,7 @@ export default function EstrategiasQuantPage() {
 
       // Carregar estratégias BlackBox da API
       try {
-        const response = await fetch("http://localhost:8000/strategies");
+        const response = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies");
         if (response.ok) {
           const data = await response.json();
           setBlackBoxStrategies(data.strategies || []);

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import {
   ComposedChart,
   Line,
@@ -13,6 +13,10 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { DadosGrafico } from '../types/arte.types';
+
+export interface StoriesPreviewRef {
+  getElement: () => HTMLElement | null;
+}
 
 // Mapeamento de meses
 const monthMap: { [key: string]: string } = {
@@ -236,7 +240,7 @@ interface StoriesPreviewProps {
   posicaoTextoRetornoBottom?: number;
 }
 
-export default function StoriesPreview({ 
+const StoriesPreview = forwardRef<StoriesPreviewRef, StoriesPreviewProps>(({ 
   carteira, 
   periodo, 
   dados, 
@@ -258,13 +262,19 @@ export default function StoriesPreview({
   tamanhoLogo = 100,
   posicaoTituloTop = 16,
   posicaoTextoRetornoBottom = 28
-}: StoriesPreviewProps) {
+}, ref) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const tituloFinal = titulo || "Aumente o retorno da sua carteira com a UP Gestão de recursos";
   const textoRetornoFinal = textoRetorno || `+${retornoTotal.toFixed(1)}% de Retorno nos últimos 12 meses`;
   const textoDescricaoFinal = textoDescricao || "Carteira de Fundos imobiliários, Fundos de Infraestrutura e Fundos do Agronegócio.";
+
+  useImperativeHandle(ref, () => ({
+    getElement: () => containerRef.current
+  }));
   
   return (
     <div 
+      ref={containerRef}
       id="stories-preview"
       className="w-[270px] h-[480px] bg-gradient-to-br from-cyan-900 via-gray-900 to-gray-800 relative overflow-hidden"
       style={{ aspectRatio: '9/16' }}
@@ -409,5 +419,9 @@ export default function StoriesPreview({
       )}
     </div>
   );
-}
+});
+
+StoriesPreview.displayName = 'StoriesPreview';
+
+export default StoriesPreview;
 

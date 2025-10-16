@@ -8,7 +8,7 @@ export async function GET(
     const accountId = params.account_id;
     
     // URL do backend (ajuste conforme necessário)
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_URL || '${process.env.NEXT_PUBLIC_BACKEND_URL}';
     
     // Fazer requisição para o backend com headers anti-cache
     const response = await fetch(`${backendUrl}/client-positions/${accountId}`, {

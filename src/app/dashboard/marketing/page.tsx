@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ArtesLista from './components/ArtesLista';
 import ArteEditor from './components/ArteEditor';
-import StoriesPreview from './components/StoriesPreview';
+import StoriesPreview, { StoriesPreviewRef } from './components/StoriesPreview';
 import { ArteMarketing, DadosGrafico } from './types/arte.types';
+import { useVideoExport } from '@/hooks/useVideoExport';
 
 export default function MarketingPage() {
   // Estado para gerenciar artes
@@ -148,6 +149,12 @@ export default function MarketingPage() {
   const [retornoData, setRetornoData] = useState<DadosGrafico[]>([]);
   const [retornoDataMulti, setRetornoDataMulti] = useState<DadosGrafico[]>([]);
   
+  // Ref para o componente StoriesPreview
+  const previewRef = useRef<StoriesPreviewRef>(null);
+  
+  // Hook de exportação de vídeo
+  const { exportVideo, progress, isExporting } = useVideoExport();
+  
   // Carregar dados reais (igual à implementação anterior)
   useEffect(() => {
     fetch('/data/retorno-carteira.json')
@@ -264,6 +271,26 @@ export default function MarketingPage() {
     }));
   };
   
+  const handleExportarVideo = async () => {
+    const element = previewRef.current?.getElement();
+    if (!element) {
+      alert('Erro: elemento de preview não encontrado');
+      return;
+    }
+    
+    try {
+      await exportVideo(element, {
+        width: 1080,
+        height: 1920,
+        fps: 60,
+        duration: 15
+      });
+    } catch (error) {
+      console.error('Erro ao exportar vídeo:', error);
+      alert('Erro ao exportar vídeo. Verifique o console para mais detalhes.');
+    }
+  };
+  
   
   const dadosFiltrados = getDadosFiltrados(arteSelecionada);
   const metricas = getMetricas(arteSelecionada);
@@ -301,31 +328,60 @@ export default function MarketingPage() {
                 <h2 className="text-lg font-semibold text-white">Preview da Arte</h2>
               </div>
               
-              <div className="flex-1 flex items-center justify-center overflow-auto">
+              <div className="flex-1 flex flex-col items-center justify-center overflow-auto">
                 {arteSelecionada ? (
-                  <StoriesPreview
-                    carteira={arteSelecionada.carteira}
-                    periodo={arteSelecionada.periodo}
-                    dados={dadosFiltrados}
-                    retornoTotal={metricas.retornoTotal}
-                    vsIfix={metricas.vsIfix}
-                    vsCdi={metricas.vsCdi}
-                    titulo={arteSelecionada.customizacoes.titulo}
-                    subtitulo={arteSelecionada.customizacoes.subtitulo}
-                    textoCTA={arteSelecionada.customizacoes.textoCTA}
-                    tamanhoFonteTitulo={arteSelecionada.customizacoes.tamanhoFonteTitulo}
-                    tamanhoFonteSubtitulo={arteSelecionada.customizacoes.tamanhoFonteSubtitulo}
-                    posicaoGraficoTop={arteSelecionada.customizacoes.posicaoGraficoTop}
-                    alturaGrafico={arteSelecionada.customizacoes.alturaGrafico}
-                    fundoAnimado={arteSelecionada.customizacoes.fundoAnimado}
-                    textoRetorno={arteSelecionada.customizacoes.textoRetorno}
-                    textoDescricao={arteSelecionada.customizacoes.textoDescricao}
-                    mostrarCTA={arteSelecionada.customizacoes.mostrarCTA}
-                    posicaoLogoTop={arteSelecionada.customizacoes.posicaoLogoTop}
-                    tamanhoLogo={arteSelecionada.customizacoes.tamanhoLogo}
-                    posicaoTituloTop={arteSelecionada.customizacoes.posicaoTituloTop}
-                    posicaoTextoRetornoBottom={arteSelecionada.customizacoes.posicaoTextoRetornoBottom}
-                  />
+                  <>
+                    <StoriesPreview
+                      ref={previewRef}
+                      carteira={arteSelecionada.carteira}
+                      periodo={arteSelecionada.periodo}
+                      dados={dadosFiltrados}
+                      retornoTotal={metricas.retornoTotal}
+                      vsIfix={metricas.vsIfix}
+                      vsCdi={metricas.vsCdi}
+                      titulo={arteSelecionada.customizacoes.titulo}
+                      subtitulo={arteSelecionada.customizacoes.subtitulo}
+                      textoCTA={arteSelecionada.customizacoes.textoCTA}
+                      tamanhoFonteTitulo={arteSelecionada.customizacoes.tamanhoFonteTitulo}
+                      tamanhoFonteSubtitulo={arteSelecionada.customizacoes.tamanhoFonteSubtitulo}
+                      posicaoGraficoTop={arteSelecionada.customizacoes.posicaoGraficoTop}
+                      alturaGrafico={arteSelecionada.customizacoes.alturaGrafico}
+                      fundoAnimado={arteSelecionada.customizacoes.fundoAnimado}
+                      textoRetorno={arteSelecionada.customizacoes.textoRetorno}
+                      textoDescricao={arteSelecionada.customizacoes.textoDescricao}
+                      mostrarCTA={arteSelecionada.customizacoes.mostrarCTA}
+                      posicaoLogoTop={arteSelecionada.customizacoes.posicaoLogoTop}
+                      tamanhoLogo={arteSelecionada.customizacoes.tamanhoLogo}
+                      posicaoTituloTop={arteSelecionada.customizacoes.posicaoTituloTop}
+                      posicaoTextoRetornoBottom={arteSelecionada.customizacoes.posicaoTextoRetornoBottom}
+                    />
+                    
+                    {/* Botão de exportação de vídeo - apenas para artes com fundo animado */}
+                    {arteSelecionada.customizacoes.fundoAnimado && (
+                      <button
+                        onClick={handleExportarVideo}
+                        disabled={isExporting}
+                        className="mt-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2"
+                      >
+                        {isExporting ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Exportando... {progress}%</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            <span>Exportar Vídeo (15s)</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <div className="text-center text-gray-400">
                     <svg className="w-20 h-20 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">

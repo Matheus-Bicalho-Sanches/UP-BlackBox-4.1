@@ -32,25 +32,58 @@ import threading
 import time
 import uuid
 import datetime
+from dotenv import load_dotenv
+
+# =========================================
+# Carregar variáveis de ambiente
+# =========================================
+# Tenta carregar .env.production primeiro (produção), senão .env (desenvolvimento)
+if os.path.exists('.env.production'):
+    load_dotenv('.env.production')
+    print("✅ Carregado: .env.production")
+else:
+    load_dotenv('.env')
+    print("✅ Carregado: .env (desenvolvimento)")
+
+# =========================================
+# Configuração de ambiente
+# =========================================
+ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
+print(f"🌍 Ambiente: {ENVIRONMENT}")
+
+# =========================================
+# Configuração de CORS
+# =========================================
+# CORS configurado por ambiente para segurança
+if ENVIRONMENT == 'production':
+    # Produção: Apenas origens específicas e seguras
+    ALLOWED_ORIGINS_STR = os.getenv('ALLOWED_ORIGINS', '')
+    ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_STR.split(',') if origin.strip()]
+    
+    if not ALLOWED_ORIGINS:
+        print("⚠️ AVISO: ALLOWED_ORIGINS não configurado em produção! Usando lista vazia.")
+        ALLOWED_ORIGINS = []
+    
+    print(f"🔒 CORS Produção: {ALLOWED_ORIGINS}")
+else:
+    # Desenvolvimento: Permite localhost para facilitar desenvolvimento
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ]
+    print(f"🔓 CORS Desenvolvimento: {ALLOWED_ORIGINS}")
 
 # Aqui você importaria a função real de login da DLL
 # from profit_dll import login_profit
 
-app = FastAPI()
+app = FastAPI(title="UP BlackBox 4.0 API", version="4.0.0")
 
-# Configuração de CORS para permitir o frontend acessar o backend
+# Aplicar middleware CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", 
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        # Permitir qualquer origem em desenvolvimento (mais permissivo)
-        "*"
-    ],
+    allow_origins=ALLOWED_ORIGINS,  # ✅ Configurado por ambiente
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=[

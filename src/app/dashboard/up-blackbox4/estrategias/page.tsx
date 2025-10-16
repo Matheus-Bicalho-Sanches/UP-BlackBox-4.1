@@ -41,7 +41,7 @@ export default function EstrategiasPage() {
   useEffect(() => {
     async function fetchStrategies() {
       try {
-        const res = await fetch("http://localhost:8000/strategies");
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setStrategies(data.strategies || []);
@@ -60,7 +60,7 @@ export default function EstrategiasPage() {
     try {
       // envia para backend (ainda não implementado). Enquanto isso, mock local
       const payload = { name: newName.trim(), description: newDesc.trim() };
-      const res = await fetch("http://localhost:8000/strategies", {
+      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -204,12 +204,12 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
     async function fetchData() {
       try {
         // Buscar alocações
-        const allocRes = await fetch(`http://localhost:8000/allocations?strategy_id=${strategy.id}`);
+        const allocRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategy.id}`);
         if (!allocRes.ok) throw new Error("Falha ao buscar alocações");
         const allocData = await allocRes.json();
         
         // Buscar contas da API
-        const accRes = await fetch("http://localhost:8000/contasDll");
+        const accRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
         let fetchedAccounts: any[] = [];
         let nomeMap: {[key: string]: string} = {};
         
@@ -267,7 +267,7 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
     };
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/allocations", {
+      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -292,7 +292,7 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
   async function handleDelete(allocation: Allocation) {
     if (!confirm("Excluir alocação?")) return;
     await fetch(
-      `http://localhost:8000/allocations/${allocation.strategy_id}/${allocation.account_id}/${allocation.broker_id}`,
+      `${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations/${allocation.strategy_id}/${allocation.account_id}/${allocation.broker_id}`,
       { method: "DELETE" }
     );
     setAllocations((prev) => prev.filter((a) => a.id !== allocation.id));
@@ -379,7 +379,7 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
                             try {
                               const newValueNum = Number(editingValue);
                               if (Number.isNaN(newValueNum) || newValueNum < 0) return alert('Valor inválido');
-                              const res = await fetch(`http://localhost:8000/allocations/${a.strategy_id}/${a.account_id}/${a.broker_id}`, {
+                              const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations/${a.strategy_id}/${a.account_id}/${a.broker_id}`, {
                                 method: 'PUT',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ valor_investido: newValueNum })

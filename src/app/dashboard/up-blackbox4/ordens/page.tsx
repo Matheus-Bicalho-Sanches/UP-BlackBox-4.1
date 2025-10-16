@@ -97,7 +97,7 @@ function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMa
       if (useStrategyAllocations) {
         // Usar alocações da estratégia específica
         const strategyId = strategyIds[0];
-        const allocRes = await fetch(`http://localhost:8000/allocations?strategy_id=${strategyId}`);
+        const allocRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`);
         if (allocRes.ok) {
           const allocData = await allocRes.json();
           for (const alloc of allocData.allocations || []) {
@@ -106,7 +106,7 @@ function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMa
         }
       } else {
         // Usar valores totais das contas (Master Global)
-        const contasDllRes = await fetch("http://localhost:8000/contasDll");
+        const contasDllRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
         if (contasDllRes.ok) {
           const contasDllData = await contasDllRes.json();
           for (const c of contasDllData.contas || []) {
@@ -359,13 +359,13 @@ export default function OrdensPage() {
   useEffect(() => {
     async function fetchAccounts() {
       try {
-        const res = await fetch("http://localhost:8000/accounts");
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts");
         const data = await res.json();
         if (res.ok && data.accounts && data.accounts.length > 0) {
           let fetchedAccounts = data.accounts;
           // Buscar nomes dos clientes no contasDll
           try {
-            const contasDllRes = await fetch("http://localhost:8000/contasDll");
+            const contasDllRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
             if (contasDllRes.ok) {
               const contasDllData = await contasDllRes.json();
               const contasDll: any[] = contasDllData.contas || [];
@@ -397,7 +397,7 @@ export default function OrdensPage() {
 
     async function fetchStrategies() {
       try {
-        const res = await fetch("http://localhost:8000/strategies");
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies");
         if (res.ok) {
           const data = await res.json();
           setStrategies(data.strategies || []);
@@ -422,7 +422,7 @@ export default function OrdensPage() {
   // Função para buscar informações da iceberg
   const fetchIcebergInfo = async (icebergId: string) => {
     try {
-      const response = await fetch(`http://localhost:8000/iceberg_info/${icebergId}`);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/iceberg_info/${icebergId}`);
       const data = await response.json();
       return data.success ? data.iceberg : null;
     } catch (error) {
@@ -434,7 +434,7 @@ export default function OrdensPage() {
   useEffect(() => {
     async function fetchValores() {
       try {
-        const res = await fetch("http://localhost:8000/contasDll");
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
         if (res.ok) {
           const data = await res.json();
           const map: Record<string, number> = {};
@@ -453,7 +453,7 @@ export default function OrdensPage() {
     try {
       if (strategyId) {
         // Buscar alocações da estratégia específica
-        const allocRes = await fetch(`http://localhost:8000/allocations?strategy_id=${strategyId}`);
+        const allocRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`);
         if (allocRes.ok) {
           const allocData = await allocRes.json();
           const valorMap: Record<string, number> = {};
@@ -467,7 +467,7 @@ export default function OrdensPage() {
       }
       
       // Fallback: buscar de contasDll (Master Global)
-      const contasDllRes = await fetch("http://localhost:8000/contasDll");
+      const contasDllRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
       if (contasDllRes.ok) {
         const contasDllData = await contasDllRes.json();
         const contasDll: any[] = contasDllData.contas || [];
@@ -661,7 +661,7 @@ export default function OrdensPage() {
       } else if (selectedAccount.startsWith('strategy:')) {
         const strategyId = selectedAccount.replace('strategy:','');
         // buscar alocações
-        const allocRes = await fetch(`http://localhost:8000/allocations?strategy_id=${strategyId}`);
+        const allocRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`);
         const allocData = await allocRes.json();
         const accIds:string[] = (allocData.allocations||[]).map((a:any)=>a.account_id);
         if(accIds.length===0){ setLog('Nenhuma alocação para estratégia'); setLoading(false); return; }
@@ -739,7 +739,7 @@ export default function OrdensPage() {
   async function handleEditOrder(values: any) {
     if (!orderToEdit) return;
     try {
-      const res = await fetch("http://localhost:8000/edit_order", {
+      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -765,7 +765,7 @@ export default function OrdensPage() {
 
   async function handleDeleteOrder(order: any) {
     try {
-      const res = await fetch("http://localhost:8000/cancel_order", {
+      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1226,7 +1226,7 @@ export default function OrdensPage() {
         onSave={async (data) => {
           if (!editBatch) return;
           try {
-            const res = await fetch("http://localhost:8000/edit_orders_batch", {
+            const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_orders_batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1268,7 +1268,7 @@ export default function OrdensPage() {
         onConfirm={async () => {
           if (!deleteBatch) return;
           try {
-            const res = await fetch("http://localhost:8000/cancel_orders_batch", {
+            const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_orders_batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ master_batch_id: deleteBatch.batchId })

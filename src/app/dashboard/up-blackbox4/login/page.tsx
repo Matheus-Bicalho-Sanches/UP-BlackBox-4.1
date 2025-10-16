@@ -27,7 +27,7 @@ export default function LoginPage() {
     setLoading(true);
     setLog("");
     try {
-      const res = await fetch("http://localhost:8000/login", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/login`, {
         method: "POST"
       });
       const data = await res.json();
@@ -46,7 +46,7 @@ export default function LoginPage() {
     setLogoffLoading(true);
     setLogoffMsg("");
     try {
-      const res = await fetch("http://localhost:8000/logoff", { method: "POST" });
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/logoff`, { method: "POST" });
       if (res.ok) {
         setLogoffMsg("Logoff realizado com sucesso!");
       } else {
