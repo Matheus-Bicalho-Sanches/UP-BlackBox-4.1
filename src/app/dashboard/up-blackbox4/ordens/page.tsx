@@ -843,7 +843,7 @@ export default function OrdensPage() {
     else if(o.LastUpdate){ d = parseDate(o); }
     if(!d && o.createdAt){ d = parseDate(o); }
     return d ? d.toLocaleString('pt-BR') : '-';
-  }
+  };
 
   return (
     <div style={{ maxWidth: '90%', margin: "40px auto", padding: 8, background: "#222", borderRadius: 8 }}>
