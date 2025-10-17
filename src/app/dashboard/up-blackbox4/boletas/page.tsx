@@ -91,13 +91,13 @@ export default function BoletasPage() {
   useEffect(() => {
     async function fetchAccounts() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts");
         const data = await res.json();
         if (res.ok && data.accounts && data.accounts.length > 0) {
           let fetchedAccounts = data.accounts;
           // Buscar nomes de clientes no contasDll
           try {
-            const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+            const contasDllRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
             if (contasDllRes.ok) {
               const contasDllData = await contasDllRes.json();
               const contasDll:any[] = contasDllData.contas || [];
@@ -130,7 +130,7 @@ export default function BoletasPage() {
     // fetch strategies
     async function fetchStrategies() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`);
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies");
         if (res.ok) {
           const data = await res.json();
           setStrategies(data.strategies || []);
@@ -196,7 +196,7 @@ export default function BoletasPage() {
       if (selectedAccount.startsWith('strategy:')) {
         const strategyId = selectedAccount.replace('strategy:', '');
         const orderPayload = { account_id: 'MASTER', strategy_id: strategyId, ticker, quantity, price, side, exchange };
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, {
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(orderPayload),
@@ -222,14 +222,14 @@ export default function BoletasPage() {
         // Gerar um master_batch_id único
         const master_batch_id = uuidv4();
         // Buscar Valor Investido de cada conta na coleção contasDLL
-        const contasSnap = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+        const contasSnap = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts");
         const contasData = await contasSnap.json();
         const contas = contasData.accounts || [];
         // Buscar os valores investidos de cada conta
         let contasDll: any[] = [];
         let contasDllLog = '';
         try {
-          const contasDllSnap = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+          const contasDllSnap = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
           if (contasDllSnap.ok) {
             const contasDllData = await contasDllSnap.json();
             contasDll = contasDllData.contas || [];
@@ -270,7 +270,7 @@ export default function BoletasPage() {
           // Incluir master_batch_id e master_base_qty no payload
           const orderPayload = { account_id: acc.AccountID, broker_id: acc.BrokerID, ticker, quantity: quantidadeEnviada, price, side, exchange, master_batch_id, master_base_qty: quantity };
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, {
+            const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/order", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(orderPayload),
@@ -283,7 +283,6 @@ export default function BoletasPage() {
               results.push(`Conta ${acc.AccountID}: Valor Investido = R$ ${valorInvestido.toFixed(2)}, fator = ${fator.toFixed(3)}, quantidade = ${quantidadeEnviada} → ${data.detail || "Erro ao enviar ordem."}`);
             }
           } catch (err) {
-            const fator = valorInvestido / 10000;
             results.push(`Conta ${acc.AccountID}: Valor Investido = R$ ${valorInvestido.toFixed(2)}, fator = ${fator.toFixed(3)}, quantidade = ${quantidadeEnviada} → Erro de conexão com o backend.`);
           }
         }
@@ -297,7 +296,7 @@ export default function BoletasPage() {
         if (selectedStrategy) {
           orderPayload.strategy_id = selectedStrategy;
         }
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, {
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/order", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(orderPayload),
@@ -335,7 +334,7 @@ export default function BoletasPage() {
     }
     
     try {
-      let endpoint = `${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg`;
+      let endpoint = "${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg";
       let payload: any = {
         account_id: icebergAccount,
         broker_id: icebergBroker,
@@ -350,13 +349,13 @@ export default function BoletasPage() {
         twap_interval: isTwapEnabled ? Number(twapInterval) : null
       };
       if (icebergAccount.startsWith('strategy:')) {
-        endpoint = `${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg_master`;
+        endpoint = "${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg_master";
         payload.strategy_id = icebergAccount.replace('strategy:', '');
         payload.account_id = 'MASTER';
         delete payload.broker_id;
         payload.group_size = Number(icebergGroupSize);
       } else if (icebergAccount === "MASTER") {
-        endpoint = `${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg_master`;
+        endpoint = "${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg_master";
         payload.group_size = Number(icebergGroupSize);
       } else {
         // Individual account - add strategy_id if selected
@@ -400,7 +399,7 @@ export default function BoletasPage() {
         payload.lote = Number(closeLote);
         payload.group_size = Number(closeGroupSize);
       }
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/close_master_batch`, {
+      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/close_master_batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)

@@ -106,7 +106,7 @@ function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMa
         }
       } else {
         // Usar valores totais das contas (Master Global)
-        const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+        const contasDllRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
         if (contasDllRes.ok) {
           const contasDllData = await contasDllRes.json();
           for (const c of contasDllData.contas || []) {
@@ -359,13 +359,13 @@ export default function OrdensPage() {
   useEffect(() => {
     async function fetchAccounts() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts");
         const data = await res.json();
         if (res.ok && data.accounts && data.accounts.length > 0) {
           let fetchedAccounts = data.accounts;
           // Buscar nomes dos clientes no contasDll
           try {
-            const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+            const contasDllRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
             if (contasDllRes.ok) {
               const contasDllData = await contasDllRes.json();
               const contasDll: any[] = contasDllData.contas || [];
@@ -397,7 +397,7 @@ export default function OrdensPage() {
 
     async function fetchStrategies() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`);
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies");
         if (res.ok) {
           const data = await res.json();
           setStrategies(data.strategies || []);
@@ -434,7 +434,7 @@ export default function OrdensPage() {
   useEffect(() => {
     async function fetchValores() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
         if (res.ok) {
           const data = await res.json();
           const map: Record<string, number> = {};
@@ -467,7 +467,7 @@ export default function OrdensPage() {
       }
       
       // Fallback: buscar de contasDll (Master Global)
-      const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+      const contasDllRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
       if (contasDllRes.ok) {
         const contasDllData = await contasDllRes.json();
         const contasDll: any[] = contasDllData.contas || [];
@@ -739,7 +739,7 @@ export default function OrdensPage() {
   async function handleEditOrder(values: any) {
     if (!orderToEdit) return;
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_order`, {
+      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -765,7 +765,7 @@ export default function OrdensPage() {
 
   async function handleDeleteOrder(order: any) {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_order`, {
+      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -827,11 +827,9 @@ export default function OrdensPage() {
   // Agrupar ordens por master_batch_id
   const batchGroups: { [batchId: string]: any[] } = {};
   const singleOrders: any[] = [];
-  orders.forEach((order) => {
+  orders.forEach(order => {
     if (order.master_batch_id) {
-      if (!batchGroups[order.master_batch_id]) {
-        batchGroups[order.master_batch_id] = [];
-      }
+      if (!batchGroups[order.master_batch_id]) batchGroups[order.master_batch_id] = [];
       batchGroups[order.master_batch_id].push(order);
     } else {
       singleOrders.push(order);
@@ -839,19 +837,13 @@ export default function OrdensPage() {
   });
   const batchIds = Object.keys(batchGroups);
 
-  // Função auxiliar para formatar timestamp
-  const formatTs = (o: any): string => {
-    let d: Date | null = null;
-    if (o.LastUpdate?.toDate) {
-      d = o.LastUpdate.toDate();
-    } else if (o.LastUpdate) {
-      d = parseDate(o);
-    }
-    if (!d && o.createdAt) {
-      d = parseDate(o);
-    }
+  const formatTs = (o:any)=>{
+    let d:Date|null = null;
+    if(o.LastUpdate?.toDate){ d = o.LastUpdate.toDate(); }
+    else if(o.LastUpdate){ d = parseDate(o); }
+    if(!d && o.createdAt){ d = parseDate(o); }
     return d ? d.toLocaleString('pt-BR') : '-';
-  };
+  }
 
   return (
     <div style={{ maxWidth: '90%', margin: "40px auto", padding: 8, background: "#222", borderRadius: 8 }}>
@@ -1234,7 +1226,7 @@ export default function OrdensPage() {
         onSave={async (data) => {
           if (!editBatch) return;
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_orders_batch`, {
+            const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_orders_batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1246,7 +1238,7 @@ export default function OrdensPage() {
             });
             const result = await res.json();
             if (res.ok) {
-              let message = `Edição em lote concluída! Sucesso: ${result.results.filter((r: any) => r.success).length}, Falha: ${result.results.filter((r: any) => !r.success).length}`);
+              let message = `Edição em lote concluída! Sucesso: ${result.results.filter((r: any) => r.success).length}, Falha: ${result.results.filter((r: any) => !r.success).length}`;
               if (result.iceberg_lote_updated) {
                 message += '\n\n✅ Tamanho do lote da iceberg foi atualizado com sucesso!';
               }
@@ -1276,14 +1268,14 @@ export default function OrdensPage() {
         onConfirm={async () => {
           if (!deleteBatch) return;
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_orders_batch`, {
+            const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_orders_batch", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ master_batch_id: deleteBatch.batchId })
             });
             const result = await res.json();
             if (res.ok) {
-              alert(`Exclusão em lote concluída! Sucesso: ${result.results.filter((r: any) => r.success).length}, Falha: ${result.results.filter((r: any) => !r.success).length}`));
+              alert(`Exclusão em lote concluída! Sucesso: ${result.results.filter((r: any) => r.success).length}, Falha: ${result.results.filter((r: any) => !r.success).length}`);
             } else {
               alert(result.detail || "Erro ao excluir lote.");
             }

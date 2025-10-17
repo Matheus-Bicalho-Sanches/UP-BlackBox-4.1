@@ -1232,7 +1232,7 @@ export default function SyncPage() {
   // Função para buscar BrokerID de uma conta
   const getBrokerIdForAccount = async (accountId: string): Promise<number | null> => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+      const response = await fetch('${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -1565,7 +1565,7 @@ Deseja prosseguir?
           console.log(`[sendIndividualSimpleOrder] Enviando ordem para conta ${accountData.accountId}:`, orderPayload);
 
           // Enviar ordem
-          const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, {
+          const response = await fetch('${process.env.NEXT_PUBLIC_BACKEND_URL}/order', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -2010,7 +2010,7 @@ Deseja prosseguir?
       console.log('[sendIndividualIcebergOrder] Enviando ordem iceberg master:', masterPayload);
 
       // Enviar ordem iceberg master
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg_master`, {
+      const response = await fetch('${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg_master', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -4149,7 +4149,7 @@ Deseja prosseguir?
                       // Buscar dados corretos da DLL (BrokerID correto)
                       let dllAccountData = null;
                       try {
-                        const accountsResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+                        const accountsResponse = await fetch('${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts');
                         if (accountsResponse.ok) {
                           const accountsData = await accountsResponse.json();
                           dllAccountData = accountsData.accounts?.find((acc: any) => acc.AccountID === account.AccountID);
@@ -4199,7 +4199,7 @@ Deseja realmente enviar esta ordem?`;
                       }
 
                       // Enviar ordem para o backend
-                      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, {
+                      const response = await fetch('${process.env.NEXT_PUBLIC_BACKEND_URL}/order', {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
@@ -4337,7 +4337,7 @@ Deseja realmente enviar esta ordem?`;
                       // Buscar dados corretos da DLL (BrokerID correto)
                       let dllAccountData = null;
                       try {
-                        const accountsResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+                        const accountsResponse = await fetch('${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts');
                         if (accountsResponse.ok) {
                           const accountsData = await accountsResponse.json();
                           dllAccountData = accountsData.accounts?.find((acc: any) => acc.AccountID === account.AccountID);
@@ -4397,7 +4397,7 @@ Deseja realmente enviar esta ordem iceberg?`;
                       }
 
                       // Enviar ordem iceberg para o backend
-                      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg`, {
+                      const response = await fetch('${process.env.NEXT_PUBLIC_BACKEND_URL}/order_iceberg', {
                         method: 'POST',
                         headers: {
                           'Content-Type': 'application/json',
