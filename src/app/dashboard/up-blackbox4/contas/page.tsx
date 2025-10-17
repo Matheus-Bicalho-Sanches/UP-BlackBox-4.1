@@ -152,7 +152,7 @@ export default function ContasPage() {
         onClick={async () => {
           if (!showAccountsList && backendAccounts.length === 0) {
             try {
-              const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts");
+              const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
               const data = await res.json();
               if (data.accounts) {
                 setBackendAccounts(data.accounts);

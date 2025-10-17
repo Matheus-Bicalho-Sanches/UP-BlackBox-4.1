@@ -678,7 +678,7 @@ export default function SaldoPage() {
       exchange: "B",
     };
     try {
-      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/order", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

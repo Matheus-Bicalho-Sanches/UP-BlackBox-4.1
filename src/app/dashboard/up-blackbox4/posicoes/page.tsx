@@ -108,13 +108,13 @@ export default function PosicoesPage() {
   useEffect(() => {
     async function fetchAccounts() {
       try {
-        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts");
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
         const data = await res.json();
         if (res.ok && data.accounts && data.accounts.length > 0) {
           let fetchedAccounts = data.accounts;
           // Buscar nomes dos clientes na coleção contasDll
           try {
-            const contasDllRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
+            const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
             if (contasDllRes.ok) {
               const contasDllData = await contasDllRes.json();
               const contasDll: any[] = contasDllData.contas || [];
@@ -148,7 +148,7 @@ export default function PosicoesPage() {
     // fetch strategies
     async function fetchStrategies() {
       try {
-        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies");
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`);
         if (res.ok) {
           const data = await res.json();
           setStrategies(data.strategies || []);

@@ -41,7 +41,7 @@ export default function EstrategiasPage() {
   useEffect(() => {
     async function fetchStrategies() {
       try {
-        const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies");
+        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         setStrategies(data.strategies || []);
@@ -60,7 +60,7 @@ export default function EstrategiasPage() {
     try {
       // envia para backend (ainda não implementado). Enquanto isso, mock local
       const payload = { name: newName.trim(), description: newDesc.trim() };
-      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -209,7 +209,7 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
         const allocData = await allocRes.json();
         
         // Buscar contas da API
-        const accRes = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll");
+        const accRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
         let fetchedAccounts: any[] = [];
         let nomeMap: {[key: string]: string} = {};
         
@@ -267,7 +267,7 @@ function AllocationModal({ strategy, onClose }: AllocationModalProps) {
     };
     setLoading(true);
     try {
-      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
