@@ -827,9 +827,11 @@ export default function OrdensPage() {
   // Agrupar ordens por master_batch_id
   const batchGroups: { [batchId: string]: any[] } = {};
   const singleOrders: any[] = [];
-  orders.forEach(order => {
+  orders.forEach((order) => {
     if (order.master_batch_id) {
-      if (!batchGroups[order.master_batch_id]) batchGroups[order.master_batch_id] = [];
+      if (!batchGroups[order.master_batch_id]) {
+        batchGroups[order.master_batch_id] = [];
+      }
       batchGroups[order.master_batch_id].push(order);
     } else {
       singleOrders.push(order);
@@ -837,11 +839,17 @@ export default function OrdensPage() {
   });
   const batchIds = Object.keys(batchGroups);
 
-  const formatTs = (o:any)=>{
-    let d:Date|null = null;
-    if(o.LastUpdate?.toDate){ d = o.LastUpdate.toDate(); }
-    else if(o.LastUpdate){ d = parseDate(o); }
-    if(!d && o.createdAt){ d = parseDate(o); }
+  // Função auxiliar para formatar timestamp
+  const formatTs = (o: any): string => {
+    let d: Date | null = null;
+    if (o.LastUpdate?.toDate) {
+      d = o.LastUpdate.toDate();
+    } else if (o.LastUpdate) {
+      d = parseDate(o);
+    }
+    if (!d && o.createdAt) {
+      d = parseDate(o);
+    }
     return d ? d.toLocaleString('pt-BR') : '-';
   };
 
