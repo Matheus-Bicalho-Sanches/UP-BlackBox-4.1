@@ -739,7 +739,7 @@ export default function OrdensPage() {
   async function handleEditOrder(values: any) {
     if (!orderToEdit) return;
     try {
-      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_order", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -765,7 +765,7 @@ export default function OrdensPage() {
 
   async function handleDeleteOrder(order: any) {
     try {
-      const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_order", {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1226,7 +1226,7 @@ export default function OrdensPage() {
         onSave={async (data) => {
           if (!editBatch) return;
           try {
-            const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_orders_batch", {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/edit_orders_batch`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1268,7 +1268,7 @@ export default function OrdensPage() {
         onConfirm={async () => {
           if (!deleteBatch) return;
           try {
-            const res = await fetch("${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_orders_batch", {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/cancel_orders_batch`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ master_batch_id: deleteBatch.batchId })
