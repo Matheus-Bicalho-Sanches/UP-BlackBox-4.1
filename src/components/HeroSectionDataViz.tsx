@@ -300,12 +300,12 @@ export default function HeroSectionDataViz() {
                     { label: 'Maior Ganho por Operação', value: 25, prefix: '+', suffix: '%', decimals: 0 },
                     { label: 'Fator de Lucro', value: 4.79, suffix: 'x', decimals: 2 },
                   ] : [
-                    { label: 'Total de Operações', value: 164, suffix: '' },
-                    { label: 'Tempo Médio por Posição', value: '16h56m', isString: true },
-                    { label: 'Operações com Ganhos', value: 53.05, suffix: '%', decimals: 2 },
-                    { label: 'Operações com Perdas', value: 46.95, suffix: '%', decimals: 2 },
-                    { label: 'Maior Ganho por Operação', value: 1.92, prefix: '+', suffix: '%', decimals: 2 },
-                    { label: 'Fator de Lucro', value: 1.38, suffix: 'x', decimals: 2 },
+                    { label: 'Total de Operações', value: 208, suffix: '' },
+                    { label: 'Tempo Médio por Posição', value: '2d18h', isString: true },
+                    { label: 'Operações com Ganhos', value: 85.58, suffix: '%', decimals: 2 },
+                    { label: 'Operações com Perdas', value: 14.42, suffix: '%', decimals: 2 },
+                    { label: 'Maior Ganho por Operação', value: 7.7, prefix: '+', suffix: '%', decimals: 1 },
+                    { label: 'Fator de Lucro', value: 6.3, suffix: 'x', decimals: 1 },
                   ];
                   
                   return stats.map((stat, idx) => (
