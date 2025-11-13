@@ -24,11 +24,12 @@ const Navbar = () => {
   // Control mobile menu visibility
   const [menuOpen, setMenuOpen] = useState(false);
   const pathname = usePathname();
-  // Special styling for contact page
-  const isContactPage = pathname === '/contato';
+  // Pages that should keep the navbar in light mode even at the top
+  const lightRoutes = ['/contato', '/equipe', '/institucional', '/servicos'];
+  const isStaticLightPage = lightRoutes.includes(pathname);
 
   // Helper to know if nav is in "light" mode
-  const isLight = isScrolled || isContactPage || menuOpen;
+  const isLight = isScrolled || isStaticLightPage || menuOpen;
 
   // Detect page scroll and update state
   useEffect(() => {
@@ -73,6 +74,38 @@ const Navbar = () => {
               Início
             </Link>
             <Link
+              href="/equipe"
+              className={`transition-colors ${
+                isLight ? 'text-gray-900 hover:text-cyan-500' : 'text-white hover:text-gray-200'
+              }`}
+            >
+              Equipe
+            </Link>
+            <Link
+              href="/institucional"
+              className={`transition-colors ${
+                isLight ? 'text-gray-900 hover:text-cyan-500' : 'text-white hover:text-gray-200'
+              }`}
+            >
+              Institucional
+            </Link>
+            <Link
+              href="/servicos"
+              className={`transition-colors ${
+                isLight ? 'text-gray-900 hover:text-cyan-500' : 'text-white hover:text-gray-200'
+              }`}
+            >
+              Nossos serviços
+            </Link>
+            <Link
+              href="/contato"
+              className={`transition-colors ${
+                isLight ? 'text-gray-900 hover:text-cyan-500' : 'text-white hover:text-gray-200'
+              }`}
+            >
+              Contato
+            </Link>
+            <Link
               href="/login"
               className={`transition-colors ${
                 isLight ? 'text-gray-900 hover:text-cyan-500' : 'text-white hover:text-gray-200'
@@ -108,7 +141,9 @@ const Navbar = () => {
 
         {/* Mobile dropdown */}
         <div
-          className={`md:hidden transition-max-h duration-500 overflow-hidden ${menuOpen ? 'max-h-60' : 'max-h-0'}`}
+          className={`md:hidden transition-max-h duration-500 overflow-hidden ${
+            menuOpen ? 'max-h-96' : 'max-h-0'
+          }`}
         >
           <div className="flex flex-col space-y-4 py-4">
             <Link
@@ -117,6 +152,34 @@ const Navbar = () => {
               className={`px-4 ${isLight ? 'text-gray-900' : 'text-white'}`}
             >
               Início
+            </Link>
+            <Link
+              href="/equipe"
+              onClick={() => setMenuOpen(false)}
+              className={`px-4 ${isLight ? 'text-gray-900' : 'text-white'}`}
+            >
+              Equipe
+            </Link>
+            <Link
+              href="/institucional"
+              onClick={() => setMenuOpen(false)}
+              className={`px-4 ${isLight ? 'text-gray-900' : 'text-white'}`}
+            >
+              Institucional
+            </Link>
+            <Link
+              href="/servicos"
+              onClick={() => setMenuOpen(false)}
+              className={`px-4 ${isLight ? 'text-gray-900' : 'text-white'}`}
+            >
+              Nossos serviços
+            </Link>
+            <Link
+              href="/contato"
+              onClick={() => setMenuOpen(false)}
+              className={`px-4 ${isLight ? 'text-gray-900' : 'text-white'}`}
+            >
+              Contato
             </Link>
             <Link
               href="/login"
