@@ -1,16 +1,144 @@
-import PageTemplate from '../(public)/components/PageTemplate';
+'use client';
+
+import { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
+import TeamSection from './components/TeamSection';
+import { CultureHighlights } from './components/CultureHighlights';
+import TeamGrid from './components/TeamGrid';
+import TeamFilterBar, { ALL_AREAS_OPTION } from './components/TeamFilterBar';
+import { cultureHighlights, leadershipTeam, specialistTeam, teamAreas } from './teamData';
+
+const CursorGlow = dynamic(() => import('@/components/CursorGlow'), { ssr: false });
+const Footer = dynamic(() => import('@/components/Footer'));
 
 export default function EquipePage() {
+  const [selectedArea, setSelectedArea] = useState<string>(ALL_AREAS_OPTION);
+
+  const filteredMembers = useMemo(() => {
+    if (selectedArea === ALL_AREAS_OPTION) {
+      return specialistTeam;
+    }
+    return specialistTeam.filter((member) => member.area === selectedArea);
+  }, [selectedArea]);
+
   return (
-    <PageTemplate
-      title="Nossa Equipe"
-      subtitle="Conheça os profissionais responsáveis por construir estratégias de investimento sob medida."
-    >
-      <p className="text-base md:text-lg text-gray-500">
-        Em breve adicionaremos detalhes sobre nossos especialistas, certificações e a forma como colaboramos para
-        entregar performance consistente aos nossos clientes.
-      </p>
-    </PageTemplate>
+    <>
+      <CursorGlow />
+      <main className="relative z-10">
+        <section className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 py-32">
+          <div className="container mx-auto px-4">
+            <div className="max-w-3xl space-y-6">
+              <p className="text-sm uppercase tracking-[0.4em] text-cyan-300">Equipe UP</p>
+              <h1 className="text-4xl font-semibold text-white md:text-5xl">
+                Pessoas que unem experiência de mercado, dados e tecnologia para entregar performance com propósito.
+              </h1>
+              <p className="text-lg text-slate-200">
+                Nossa estrutura é formada por especialistas que vivem o mercado todos os dias, com governança, processos
+                auditados e a mesma skin in the game dos nossos clientes.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href="#lideranca"
+                  className="rounded-full bg-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cyan-600"
+                >
+                  Conheça a liderança
+                </Link>
+                <Link
+                  href="/contato"
+                  className="rounded-full border border-white/40 px-6 py-3 text-sm font-semibold text-white/80 backdrop-blur transition hover:border-white hover:text-white"
+                >
+                  Fale com a equipe
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <TeamSection
+          id="cultura"
+          eyebrow="Nossa Cultura"
+          title="Especialistas multidisciplinares conectados por valores em comum"
+          description="Unimos gestores, pesquisadores, analistas de dados e especialistas em relacionamento para construir soluções proprietárias de alto impacto."
+          background="default"
+        >
+          <CultureHighlights highlights={cultureHighlights} />
+        </TeamSection>
+
+        <TeamSection
+          id="lideranca"
+          eyebrow="Liderança"
+          title="Board executivo e heads responsáveis por guiar nossa estratégia"
+          description="Profissionais com décadas de mercado e governança robusta, alinhados com nossos clientes e parceiros."
+          background="muted"
+        >
+          <TeamGrid members={leadershipTeam} highlightFirst />
+        </TeamSection>
+
+        <TeamSection
+          id="especialistas"
+          eyebrow="Times e Especialistas"
+          title="Times que tornam nossas carteiras vivas todos os dias"
+          description="Filtre por área para conhecer os profissionais responsáveis por cada frente da UP."
+        >
+          <div className="space-y-12">
+            <TeamFilterBar areas={teamAreas} selectedArea={selectedArea} onSelect={setSelectedArea} />
+            <TeamGrid members={filteredMembers} />
+          </div>
+        </TeamSection>
+
+        <TeamSection
+          id="colaboracao"
+          eyebrow="Colaboração em Ação"
+          title="Dados, governança e proximidade com o investidor"
+          description="Combinação de research proprietário, aprendizado de máquina e atendimento dedicado para cada perfil."
+          background="muted"
+        >
+          <div className="grid gap-6 md:grid-cols-3">
+            <div className="rounded-2xl border border-cyan-100 bg-white/90 p-6 text-center shadow">
+              <p className="text-4xl font-semibold text-cyan-600">+20</p>
+              <p className="mt-2 text-sm text-gray-600">
+                certificações técnicas (CFA, CNPI, CFP, FRM) dentro do time
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white/90 p-6 text-center shadow">
+              <p className="text-4xl font-semibold text-cyan-600">24/7</p>
+              <p className="mt-2 text-sm text-gray-600">
+                monitoramento com alertas automáticos e comitês extraordinários
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white/90 p-6 text-center shadow">
+              <p className="text-4xl font-semibold text-cyan-600">+150</p>
+              <p className="mt-2 text-sm text-gray-600">
+                estudos proprietários ao ano, combinando modelos quantitativos e análises qualitativas
+              </p>
+            </div>
+          </div>
+        </TeamSection>
+
+        <section className="bg-gradient-to-r from-cyan-600 to-blue-600 py-20">
+          <div className="container mx-auto px-4">
+            <div className="flex flex-col gap-6 text-center text-white md:flex-row md:items-center md:justify-between md:text-left">
+              <div className="max-w-2xl space-y-3">
+                <p className="text-sm uppercase tracking-[0.3em] text-white/70">Próximo passo</p>
+                <h2 className="text-3xl font-semibold">Converse com quem acompanha o mercado ao seu lado</h2>
+                <p className="text-lg text-white/80">
+                  Agende uma conversa com nossos especialistas para entender como podemos estruturar uma carteira sob
+                  medida para seus objetivos.
+                </p>
+              </div>
+              <Link
+                href="/contato"
+                className="inline-flex items-center justify-center rounded-full bg-white px-8 py-3 text-sm font-semibold text-cyan-700 shadow-lg transition hover:bg-slate-100"
+              >
+                Falar com a equipe
+              </Link>
+            </div>
+          </div>
+        </section>
+      </main>
+      <Footer />
+    </>
   );
 }
 
