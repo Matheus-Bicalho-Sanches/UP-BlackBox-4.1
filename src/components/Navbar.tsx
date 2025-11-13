@@ -121,7 +121,7 @@ const Navbar = () => {
                 isLight ? 'bg-cyan-500 text-white hover:bg-cyan-600' : 'bg-white text-gray-900 hover:bg-gray-100'
               }`}
             >
-              Entre em contato conosco
+              Entre em contato
             </a>
           </div>
 

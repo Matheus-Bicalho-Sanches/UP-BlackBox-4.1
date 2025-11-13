@@ -9,12 +9,12 @@ const milestones = [
   { year: 'jan/2024', title: 'Planejamento', desc: 'Início do planejamento para a abertura da gestora' },
   { year: 'jun/2024', title: 'Equipe', desc: 'Abertura do processo seletivo e recrutamento da equipe' },
   { year: 'jul/2024', title: 'Início Quant', desc: 'Primeiras análises e backtests quantitativos' },
-  { year: 'out/2024', title: 'Carteira tática', desc: 'Início da carteira BlackBox FIIs em contas reais' },
+  { year: 'out/2024', title: 'Carteira tática', desc: 'Início da carteira UP FIIs em contas reais' },
   { year: 'dez/2024', title: 'Abertura CNPJ', desc: 'Abertura do CNPJ da gestora' },
   { year: 'maio/2025', title: 'Homologação CVM', desc: 'Gestora recebe aprovação da CVM para operar' },
   { year: 'junho/2025', title: 'Desenvolvimento robô', desc: 'Primeiros testes de operações completamente automatizadas' },
   { year: 'junho/2025', title: 'Novas estratégias', desc: 'Desenvolvimento de estratégias em outras classes de ativo' },
-  { year: 'jul/2025', title: 'BlackBox Multi', desc: 'Início da carteira multimercado em contas reais' },
+  { year: 'jul/2025', title: 'UP Multimercado', desc: 'Início da carteira multimercado em contas reais' },
   { year: 'Em breve', title: 'Automação completa', desc: 'Lançamento das primeiras estratégias 100% automatizadas' },
 ];
 

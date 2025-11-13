@@ -42,6 +42,11 @@ function formatPercentTick(v: number) {
   return v < 0 ? '' : `${v.toFixed(1)}%`;
 }
 
+const carteiraLabels: Record<'fii' | 'multi', string> = {
+  fii: 'UP FIIs',
+  multi: 'UP Multimercado',
+};
+
 // Custom tooltip
 function CustomTooltip({ active, payload, label }: TooltipProps<ValueType, NameType>) {
   if (active && payload && payload.length) {
@@ -63,10 +68,13 @@ function CustomTooltip({ active, payload, label }: TooltipProps<ValueType, NameT
 function CustomLegend({ payload }: { payload?: any[] }) {
   if (!payload) return null;
   
-  // Filtra para remover entradas indesejadas e manter apenas BlackBox FIIs, IFIX e CDI
+  // Filtra para remover entradas indesejadas e manter apenas carteiras e benchmarks válidos
   const filteredPayload = payload.filter(entry => {
-    // Remove qualquer entrada que seja 'tatica' mas não tenha o nome correto
-    if (entry.dataKey === 'tatica' && entry.value !== 'BlackBox FIIs') {
+    if (
+      entry.dataKey === 'tatica' &&
+      entry.value !== 'UP FIIs' &&
+      entry.value !== 'UP Multimercado'
+    ) {
       return false;
     }
     return true;
@@ -192,7 +200,7 @@ export default function HeroSectionDataViz() {
                     : 'text-gray-300 hover:text-white hover:bg-gray-700/50'
                 }`}
               >
-                BlackBox FIIs
+                UP FIIs
               </button>
               <button
                 onClick={() => setSelectedCarteira('multi')}
@@ -202,7 +210,7 @@ export default function HeroSectionDataViz() {
                     : 'text-gray-300 hover:text-white hover:bg-gray-700/50'
                 }`}
               >
-                BlackBox Multi
+                UP Multimercado
               </button>
             </div>
           </div>
@@ -210,7 +218,7 @@ export default function HeroSectionDataViz() {
           {/* Gráfico de retorno da carteira (agora na primeira coluna) */}
           <div className="bg-white/10 rounded-xl p-6 shadow-lg backdrop-blur-md">
             <h3 className="text-lg font-semibold text-cyan-300 mb-2">
-              Retorno da carteira {selectedCarteira === 'fii' ? 'BlackBox FIIs' : 'BlackBox Multi'}
+              Retorno da carteira {carteiraLabels[selectedCarteira]}
             </h3>
             <ResponsiveContainer width="100%" aspect={chartAspect}>
               <ComposedChart key={`${chartKey}-${selectedCarteira}`} data={currentData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
@@ -244,7 +252,7 @@ export default function HeroSectionDataViz() {
                 <Line
                   type="monotone"
                   dataKey="tatica"
-                  name="BlackBox FIIs"
+                  name={carteiraLabels[selectedCarteira]}
                   stroke="#06b6d4"
                   strokeWidth={2.2}
                   dot={false}
