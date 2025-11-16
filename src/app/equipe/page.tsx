@@ -39,7 +39,7 @@ export default function EquipePage() {
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link
-                  href="/contato"
+                  href="https://api.whatsapp.com/send/?phone=5543991811304&text&type=phone_number&app_absent=0"
                   className="rounded-full border border-white/40 px-6 py-3 text-sm font-semibold text-white/80 backdrop-blur transition hover:border-white hover:text-white"
                 >
                   Fale com a equipe
@@ -72,29 +72,29 @@ export default function EquipePage() {
         </TeamSection>
 
         <TeamSection
-          id="colaboracao"
-          eyebrow="Colaboração em Ação"
-          title="Dados, governança e proximidade com o investidor"
-          description="Combinação de research proprietário, aprendizado de máquina e atendimento dedicado para cada perfil."
+          id="expertise"
+          eyebrow="Expertise"
+          title="Dados, tecnologia e inteligência artificial"
+          description="Combinação de research proprietário, IA e backtests para a tomada de decisão."
           background="muted"
         >
           <div className="grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border border-cyan-100 bg-white/90 p-6 text-center shadow">
-              <p className="text-4xl font-semibold text-cyan-600">+20</p>
+              <p className="text-4xl font-semibold text-cyan-600">+ 200 MB</p>
               <p className="mt-2 text-sm text-gray-600">
-                certificações técnicas (CFA, CNPI, CFP, FRM) dentro do time
+                de dados armazenados todos os dias úteis
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white/90 p-6 text-center shadow">
-              <p className="text-4xl font-semibold text-cyan-600">24/7</p>
+              <p className="text-4xl font-semibold text-cyan-600">+ 1000</p>
               <p className="mt-2 text-sm text-gray-600">
-                monitoramento com alertas automáticos e comitês extraordinários
+                backtests realizados semanalmente
               </p>
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white/90 p-6 text-center shadow">
-              <p className="text-4xl font-semibold text-cyan-600">+150</p>
+              <p className="text-4xl font-semibold text-cyan-600">+ 500</p>
               <p className="mt-2 text-sm text-gray-600">
-                estudos proprietários ao ano, combinando modelos quantitativos e análises qualitativas
+                ordens de compra ou venda executadas diariamente
               </p>
             </div>
           </div>
@@ -112,7 +112,7 @@ export default function EquipePage() {
                 </p>
               </div>
               <Link
-                href="/contato"
+                href="https://api.whatsapp.com/send/?phone=5543991811304&text&type=phone_number&app_absent=0"
                 className="inline-flex items-center justify-center rounded-full bg-white px-8 py-3 text-sm font-semibold text-cyan-700 shadow-lg transition hover:bg-slate-100"
               >
                 Falar com a equipe
