@@ -23,12 +23,33 @@ const StoryTimeline = ({ events }: StoryTimelineProps) => {
             Crescemos integrando pesquisa, tecnologia e governança, mantendo o foco em relações duradouras.
           </p>
         </header>
-        <div className="space-y-6 border-l border-slate-200 pl-6 md:grid md:grid-cols-2 md:gap-6 md:border-0 md:pl-0">
-          {events.map((event, index) => (
-            <div key={event.year} className="md:relative md:before:absolute md:before:-left-3 md:before:top-6 md:before:h-6 md:before:w-6 md:before:rounded-full md:before:border md:before:border-cyan-500 md:before:bg-white">
-              <TimelineEventCard {...event} />
-            </div>
-          ))}
+        {/* Mobile: left border timeline; Desktop: two-column alternating with center line */}
+        <div className="space-y-6 border-l border-slate-200 pl-6 md:space-y-0 md:border-0 md:pl-0">
+          <div className="relative md:grid md:grid-cols-2 md:gap-x-10 md:gap-y-16 md:items-start">
+            {/* Center vertical line for desktop */}
+            <div className="hidden md:block absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-slate-200" />
+
+            {events.map((event, index) => {
+              const isLeft = index % 2 === 0;
+              // Use transform to create stagger without affecting layout height
+              const offsetClass = index % 2 === 1 ? 'md:translate-y-20' : '';
+              return (
+                <div
+                  key={event.year}
+                  className={`relative ${isLeft ? 'md:pr-8' : 'md:pl-8'} ${offsetClass} md:flex md:flex-col`}
+                >
+                  {/* Connector dot on center line (desktop only) */}
+                  <span
+                    aria-hidden="true"
+                    className={`hidden md:block absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full border border-cyan-500 bg-white ${
+                      isLeft ? 'right-[-7px]' : 'left-[-7px]'
+                    }`}
+                  />
+                  <TimelineEventCard {...event} />
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>

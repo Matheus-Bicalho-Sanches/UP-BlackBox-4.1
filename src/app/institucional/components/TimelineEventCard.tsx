@@ -8,7 +8,7 @@ type TimelineEventCardProps = {
 
 const TimelineEventCard = ({ year, title, description }: TimelineEventCardProps) => {
   return (
-    <article className="relative rounded-3xl border border-slate-200 bg-white/90 p-6 shadow">
+    <article className="relative h-full min-h-[120px] rounded-3xl border border-slate-200 bg-white/90 p-6 md:px-8 md:py-6 shadow flex flex-col">
       <div className="flex items-baseline gap-3">
         <span className="text-sm font-semibold uppercase tracking-[0.3em] text-cyan-600">{year}</span>
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
