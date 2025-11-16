@@ -7,7 +7,7 @@ import TeamSection from './components/TeamSection';
 import { CultureHighlights } from './components/CultureHighlights';
 import TeamGrid from './components/TeamGrid';
 import TeamFilterBar, { ALL_AREAS_OPTION } from './components/TeamFilterBar';
-import { cultureHighlights, leadershipTeam, specialistTeam, teamAreas } from './teamData';
+import { cultureHighlights, specialistTeam, teamAreas } from './teamData';
 
 const CursorGlow = dynamic(() => import('@/components/CursorGlow'), { ssr: false });
 const Footer = dynamic(() => import('@/components/Footer'));
@@ -19,7 +19,7 @@ export default function EquipePage() {
     if (selectedArea === ALL_AREAS_OPTION) {
       return specialistTeam;
     }
-    return specialistTeam.filter((member) => member.area === selectedArea);
+    return specialistTeam.filter((member) => member.areas.includes(selectedArea));
   }, [selectedArea]);
 
   return (
@@ -31,19 +31,13 @@ export default function EquipePage() {
             <div className="max-w-3xl space-y-6">
               <p className="text-sm uppercase tracking-[0.4em] text-cyan-300">Equipe UP</p>
               <h1 className="text-4xl font-semibold text-white md:text-5xl">
-                Pessoas que unem experiência de mercado, dados e tecnologia para entregar performance com propósito.
+                Pessoas com experiência de mercado, focadas em retornos acima da média
               </h1>
               <p className="text-lg text-slate-200">
-                Nossa estrutura é formada por especialistas que vivem o mercado todos os dias, com governança, processos
+                Equipe de especialistas com governança, processos
                 auditados e a mesma skin in the game dos nossos clientes.
               </p>
               <div className="flex flex-wrap gap-3">
-                <Link
-                  href="#lideranca"
-                  className="rounded-full bg-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cyan-600"
-                >
-                  Conheça a liderança
-                </Link>
                 <Link
                   href="/contato"
                   className="rounded-full border border-white/40 px-6 py-3 text-sm font-semibold text-white/80 backdrop-blur transition hover:border-white hover:text-white"
@@ -59,26 +53,16 @@ export default function EquipePage() {
           id="cultura"
           eyebrow="Nossa Cultura"
           title="Especialistas multidisciplinares conectados por valores em comum"
-          description="Unimos gestores, pesquisadores, analistas de dados e especialistas em relacionamento para construir soluções proprietárias de alto impacto."
+          description="Unimos gestores, desenvolvedores, analistas de dados e especialistas em relacionamento para construir soluções proprietárias."
           background="default"
         >
           <CultureHighlights highlights={cultureHighlights} />
         </TeamSection>
 
         <TeamSection
-          id="lideranca"
-          eyebrow="Liderança"
-          title="Board executivo e heads responsáveis por guiar nossa estratégia"
-          description="Profissionais com décadas de mercado e governança robusta, alinhados com nossos clientes e parceiros."
-          background="muted"
-        >
-          <TeamGrid members={leadershipTeam} highlightFirst />
-        </TeamSection>
-
-        <TeamSection
           id="especialistas"
           eyebrow="Times e Especialistas"
-          title="Times que tornam nossas carteiras vivas todos os dias"
+          title="Conheça as pessoas da equipe"
           description="Filtre por área para conhecer os profissionais responsáveis por cada frente da UP."
         >
           <div className="space-y-12">

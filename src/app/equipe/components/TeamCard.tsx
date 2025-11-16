@@ -5,7 +5,7 @@ import Image from 'next/image';
 export type TeamCardProps = {
   name: string;
   role: string;
-  area: string;
+  areas: string[];
   bio: string;
   badges?: string[];
   imageUrl?: string;
@@ -17,7 +17,7 @@ export type TeamCardProps = {
 export const TeamCard = ({
   name,
   role,
-  area,
+  areas,
   bio,
   badges = [],
   imageUrl,
@@ -25,6 +25,7 @@ export const TeamCard = ({
   tenure,
   highlight = false,
 }: TeamCardProps) => {
+  const areasLabel = areas?.length ? areas.join(' / ') : undefined;
   return (
     <article
       className={`relative overflow-hidden rounded-2xl border ${
@@ -45,7 +46,9 @@ export const TeamCard = ({
       )}
       <div className="p-6 space-y-4">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-widest text-cyan-600">{area}</p>
+          {areasLabel && (
+            <p className="text-xs font-semibold uppercase tracking-widest text-cyan-600">{areasLabel}</p>
+          )}
           <h3 className="text-xl font-semibold text-gray-900">{name}</h3>
           <p className="text-sm font-medium text-gray-600">{role}</p>
         </div>
