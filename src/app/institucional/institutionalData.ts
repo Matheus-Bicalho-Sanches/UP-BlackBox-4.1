@@ -20,34 +20,34 @@ export const heroData = {
 
 export const timelineEvents = [
   {
-    year: '2014',
-    title: 'Fundação da UP Investimentos',
+    year: 'jul/24',
+    title: 'Início da atividade de gestão',
     description:
-      'Iniciamos como uma boutique de gestão independente focada em carteiras de renda variável para famílias empresárias do sul do Brasil.',
+      'Atuação do gestor CGA, Matheus Bicalho, ainda na pessoa física enquanto estruturávamos o CNPJ.',
   },
   {
-    year: '2017',
-    title: 'Criação do UP Quant Lab',
+    year: 'Out/24',
+    title: 'Carteira UP FIIs',
     description:
-      'Estruturamos o laboratório quantitativo e começamos a combinar dados alternativos com análises macro, lançando a carteira multimercado estruturada.',
+      'Início da carteira UP FIIs, nossa primeira estratégia de renda variável com fatores quantitativos e horizonte de investimento mais curto.',
   },
   {
-    year: '2019',
-    title: 'Expansão para gestão patrimonial completa',
+    year: 'Dez/24',
+    title: 'Abertura do CNPJ',
     description:
-      'Passamos a administrar carteiras globais, previdenciárias e veículos exclusivos, integrando relatórios consolidados e governança familiar.',
+      'Com equipe já montada e testada, abrimos o CNPJ e demos entrada no processo de homologação na CVM em Dez/24.',
   },
   {
-    year: '2022',
-    title: 'Governança reforçada e novos comitês',
+    year: 'Mai/25',
+    title: 'Homologação CVM',
     description:
-      'Implementamos comitês independentes de auditoria, risco e ESG, além de migrar nossos sistemas para infraestrutura cloud proprietária.',
+      'Com a homologação, inicia-se uma nova fase de desenvolvimento de sistemas e ganho de escala em vários processos.',
   },
   {
-    year: '2024',
-    title: 'Parceria estratégica com gestoras internacionais',
+    year: 'Nov/25',
+    title: 'Estratégia UP Multimercado',
     description:
-      'Firmamos acordos com casas globais para diversificar a exposição dos clientes com ETFs, fundos 40 Act e estruturas de crédito privado internacional.',
+      'Após quase 1 ano de desenvolvimento e testes, abrimos a estratégia para captação para público geral pela primeira vez.',
   },
 ];
 
