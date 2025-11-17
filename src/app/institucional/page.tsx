@@ -7,7 +7,6 @@ import StoryTimeline from './sections/StoryTimeline';
 import ValueGrid from './sections/ValueGrid';
 import GovernanceGrid from './sections/GovernanceGrid';
 import ProcessFlow from './sections/ProcessFlow';
-import RecognitionsWall from './sections/RecognitionsWall';
 import DocumentLibrary from './sections/DocumentLibrary';
 import {
   heroData,
@@ -15,7 +14,6 @@ import {
   valuePillars,
   governanceItems,
   processSteps,
-  recognitions,
 } from './institutionalData';
 import documents from './policyDocuments';
 
@@ -32,7 +30,6 @@ export default function InstitucionalPage() {
         <ValueGrid pillars={valuePillars} />
         <GovernanceGrid items={governanceItems} />
         <ProcessFlow steps={processSteps} />
-        <RecognitionsWall recognitions={recognitions} />
         <DocumentLibrary documents={documents} />
 
         <section className="bg-gradient-to-r from-cyan-600 to-blue-600 py-20">
@@ -48,16 +45,10 @@ export default function InstitucionalPage() {
               </div>
               <div className="flex flex-wrap justify-center gap-3 md:justify-end">
                 <Link
-                  href="/equipe"
+                  href="https://api.whatsapp.com/send/?phone=5543991811304&text&type=phone_number&app_absent=0"
                   className="rounded-full bg-white px-8 py-3 text-sm font-semibold text-cyan-700 shadow-lg transition hover:bg-slate-100"
                 >
-                  Conhecer a equipe
-                </Link>
-                <Link
-                  href="/contato"
-                  className="rounded-full border border-white/40 px-8 py-3 text-sm font-semibold text-white/90 hover:border-white hover:text-white"
-                >
-                  Falar com a governança
+                  Fale conosco
                 </Link>
               </div>
             </div>

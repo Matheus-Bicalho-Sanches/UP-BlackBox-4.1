@@ -53,28 +53,28 @@ export const timelineEvents = [
 
 export const valuePillars = [
   {
-    icon: '🤝',
+    icon: 'partnership',
     title: 'Alinhamento total',
     description:
       'Investimos nas mesmas estratégias dos nossos clientes, garantindo decisões com skin in the game e transparência absoluta.',
   },
   {
-    icon: '⚙️',
+    icon: 'technology',
     title: 'Tecnologia proprietária',
     description:
-      'Plataformas internas de monitoramento e rebalanceamento, com integrações em tempo real com corretoras e custodiantes.',
+      'Plataformas internas de monitoramento e rebalanceamento, com integrações em tempo real com corretoras e bolsa',
   },
   {
-    icon: '📚',
-    title: 'Educação contínua',
+    icon: 'education',
+    title: 'Melhoria contínua',
     description:
-      'Produzimos relatórios, webinars e workshops para clientes e times internos, compartilhando nossa leitura de mercado.',
+      'Analisamos novos dados, backtests e estratégias diariamente. O mercado é praticamente algo vivo e o nosso sistema também.',
   },
   {
-    icon: '🌱',
-    title: 'Responsabilidade ESG',
+    icon: 'esg',
+    title: 'Full Partnership',
     description:
-      'Compromisso com práticas sustentáveis, avaliando riscos socioambientais e governança nas empresas investidas.',
+      'Colaboradores, assim que possível, viram sócios.A maior parte da remuneração da equipe vem da distribuição de lucros',
   },
 ];
 
@@ -84,17 +84,17 @@ export const governanceItems = [
     title: 'Estrutura robusta de governança',
     bullets: [
       'Comitê executivo com representantes de gestão, risco, compliance e tecnologia',
-      'Comitê de investimentos com calendário semanal, atas públicas para clientes',
-      'Comitê ESG e conselho consultivo externo com especialistas independentes',
+      'Comitê de investimentos com calendário semanal',
+      'Comitê de Compliance para LGPD, PLD e FT e outros temas',
     ],
   },
   {
     eyebrow: 'Compliance & Risco',
     title: 'Controles em conformidade com as melhores práticas',
     bullets: [
-      'Políticas internas alinhadas à CVM, ANBIMA e LGPD',
-      'Monitoramento de risco com métricas de volatilidade, drawdown e stress tests',
-      'Auditorias externas anuais e relatórios de compliance periódicos',
+      'Políticas internas alinhadas à CVM',
+      'Monitoramento de risco com métricas de liquidez, drawdown e position sizing',
+      'Dados pessoais de leads e clientes anonimizados sempre que possível',
     ],
   },
   {
@@ -102,8 +102,8 @@ export const governanceItems = [
     title: 'Comunicação clara e alinhada',
     bullets: [
       'Relatórios executivos mensais com linguagem acessível',
-      'Portal do cliente com dashboards e notificações em tempo real',
-      'Canais dedicados para governança e ouvidoria independente',
+      'Grupo no WhatsApp para dúvidas do dia a dia',
+      'Reunião online para elaboração e acompanhamento da carteira',
     ],
   },
 ];
@@ -125,32 +125,9 @@ export const processSteps = [
       'Operações são executadas de forma controlada, com monitoramento intraday, alertas e rebalanceamentos automáticos.',
   },
   {
-    step: 'Relatórios & governança',
+    step: 'Relatórios & transparência',
     description:
-      'Produzimos relatórios executivos, reuniões com famílias e conselhos, e documentação completa para auditorias.',
-  },
-];
-
-export const recognitions = [
-  {
-    title: 'Selo ANBIMA',
-    description: 'Certificação de aderência às melhores práticas de gestão de recursos e atendimento ao investidor.',
-    year: '2023',
-  },
-  {
-    title: 'Carbono Neutro',
-    description: 'Programa de compensação de emissões das operações da UP e offset das viagens de negócios.',
-    year: '2024',
-  },
-  {
-    title: 'Prêmio Destaque em Governança',
-    description: 'Reconhecimento fictício por práticas de governança e transparência junto a clientes corporativos.',
-    year: '2024',
-  },
-  {
-    title: 'Laboratório de Inovação Financeira',
-    description: 'Parceria com hubs de tecnologia para acelerar soluções de analytics e IA aplicada ao mercado financeiro.',
-    year: '2025',
+      'Envio de relatórios mensais para os clientes, com realinhamento do planejamento financeiro feito sempre que necessário.',
   },
 ];
 

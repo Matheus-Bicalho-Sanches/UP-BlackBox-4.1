@@ -20,8 +20,7 @@ const GovernanceGrid = ({ items }: GovernanceGridProps) => {
             Estrutura dedicada a decisões conscientes e transparentes
           </h2>
           <p className="text-lg text-gray-600">
-            Nossos comitês e políticas internas garantem que cada alocação seja feita com alinhamento, evidência e
-            comunicação clara.
+            Nossos comitês e políticas internas garantem que cada alocação seja registrada em nosso sistema e seja feita com alinhamento e comunicação clara.
           </p>
         </header>
         <div className="grid gap-6 md:grid-cols-3">
