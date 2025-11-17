@@ -55,7 +55,7 @@ export default function ServicosPage() {
           </div>
         </section>
 
-        <section id="servicos" className="bg-white py-20 md:py-24">
+        <section id="servicos" className="bg-white py-8 md:py-12">
           <div className="container mx-auto px-4">
             <header className="max-w-3xl space-y-4 text-center md:text-left">
               <p className="text-sm uppercase tracking-[0.3em] text-cyan-600">Soluções sob medida</p>
@@ -75,7 +75,7 @@ export default function ServicosPage() {
           </div>
         </section>
 
-        <section id="comparativo" className="bg-slate-50 py-20 md:py-24">
+        <section id="comparativo" className="bg-slate-50 py-8 md:py-12">
           <div className="container mx-auto px-4 space-y-10">
             <header className="max-w-3xl space-y-4 text-center md:text-left">
               <p className="text-sm uppercase tracking-[0.3em] text-cyan-600">Comparativo rápido</p>
@@ -88,7 +88,7 @@ export default function ServicosPage() {
           </div>
         </section>
 
-        <section className="bg-white py-20 md:py-24">
+        <section className="bg-white py-8 md:py-12">
           <div className="container mx-auto px-4 space-y-12">
             <header className="max-w-3xl space-y-4 text-center md:text-left">
               <p className="text-sm uppercase tracking-[0.3em] text-cyan-600">Jornada do investidor</p>
@@ -104,7 +104,7 @@ export default function ServicosPage() {
           </div>
         </section>
 
-        <section className="bg-slate-900 py-20 md:py-24">
+        <section className="bg-slate-900 py-8 md:py-12">
           <div className="container mx-auto px-4 space-y-12">
             <header className="max-w-3xl space-y-4 text-center md:text-left">
               <p className="text-sm uppercase tracking-[0.3em] text-cyan-400">Diferenciais</p>
@@ -119,7 +119,7 @@ export default function ServicosPage() {
           </div>
         </section>
 
-        <section className="bg-white py-20 md:py-24">
+        <section className="bg-white py-8 md:py-12">
           <div className="container mx-auto px-4 space-y-12">
             <header className="max-w-3xl space-y-4 text-center md:text-left">
               <p className="text-sm uppercase tracking-[0.3em] text-cyan-600">O que dizem nossos clientes</p>
@@ -132,7 +132,7 @@ export default function ServicosPage() {
           </div>
         </section>
 
-        <section className="bg-slate-50 py-20 md:py-24">
+        <section className="bg-slate-50 py-8 md:py-12">
           <div className="container mx-auto px-4 space-y-12">
             <header className="max-w-3xl space-y-4 text-center md:text-left">
               <p className="text-sm uppercase tracking-[0.3em] text-cyan-600">Perguntas frequentes</p>
@@ -145,7 +145,7 @@ export default function ServicosPage() {
           </div>
         </section>
 
-        <section className="bg-gradient-to-r from-cyan-600 to-blue-600 py-20">
+        <section className="bg-gradient-to-r from-cyan-600 to-blue-600 py-10">
           <div className="container mx-auto px-4">
             <div className="flex flex-col gap-6 text-center text-white md:flex-row md:items-center md:justify-between md:text-left">
               <div className="max-w-2xl space-y-3">

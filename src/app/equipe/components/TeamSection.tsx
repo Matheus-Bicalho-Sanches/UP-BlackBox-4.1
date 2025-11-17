@@ -28,7 +28,7 @@ export const TeamSection = ({
     <section
       id={id}
       aria-labelledby={id ? `${id}-title` : undefined}
-      className={`${sectionBg[background]} py-16 md:py-24`}
+      className={`${sectionBg[background]} py-8 md:py-12`}
     >
       <div className="container mx-auto px-4">
         <header className="max-w-3xl mx-auto text-center space-y-4">

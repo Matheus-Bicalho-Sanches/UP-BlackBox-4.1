@@ -17,7 +17,7 @@ type ContactChannelsProps = {
 
 const ContactChannels = ({ channels }: ContactChannelsProps) => {
   return (
-    <section className="bg-white py-18 md:py-20">
+    <section className="bg-white py-8 md:py-12">
       <div className="container mx-auto px-4 space-y-10">
         <header className="max-w-3xl space-y-4 text-center md:text-left">
           <p className="text-sm uppercase tracking-[0.3em] text-cyan-600">Canais diretos</p>

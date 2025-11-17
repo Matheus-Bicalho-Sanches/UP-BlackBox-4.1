@@ -32,7 +32,7 @@ export default function InstitucionalPage() {
         <ProcessFlow steps={processSteps} />
         <DocumentLibrary documents={documents} />
 
-        <section className="bg-gradient-to-r from-cyan-600 to-blue-600 py-20">
+        <section className="bg-gradient-to-r from-cyan-600 to-blue-600 py-10">
           <div className="container mx-auto px-4">
             <div className="flex flex-col gap-6 text-center text-white md:flex-row md:items-center md:justify-between md:text-left">
               <div className="max-w-2xl space-y-3">

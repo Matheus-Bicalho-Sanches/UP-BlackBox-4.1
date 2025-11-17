@@ -59,7 +59,7 @@ const ContactForm = ({ id, privacyNotice }: ContactFormProps) => {
   };
 
   return (
-    <section id={id} className="bg-white py-18 md:py-20">
+    <section id={id} className="bg-white py-8 md:py-12">
       <div className="container mx-auto px-4">
         <div className="grid gap-10 md:grid-cols-2">
           <div className="space-y-5">
