@@ -37,7 +37,7 @@ export const ServiceComparisonTable = ({ items }: ServiceComparisonTableProps) =
                 Benchmark
               </th>
               <th scope="col" className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-                Governança
+                Relacionamento
               </th>
             </tr>
           </thead>
@@ -79,7 +79,7 @@ export const ServiceComparisonTable = ({ items }: ServiceComparisonTableProps) =
                   <dd>{item.benchmark}</dd>
                 </div>
                 <div>
-                  <dt className="font-semibold text-slate-500">Governança</dt>
+                  <dt className="font-semibold text-slate-500">Relacionamento</dt>
                   <dd>{item.governance}</dd>
                 </div>
               </dl>

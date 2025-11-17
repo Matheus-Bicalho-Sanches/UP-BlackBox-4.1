@@ -30,11 +30,10 @@ export default function ServicosPage() {
             <div className="max-w-3xl space-y-6">
               <p className="text-sm uppercase tracking-[0.4em] text-cyan-300">Nossos Serviços</p>
               <h1 className="text-4xl font-semibold text-white md:text-5xl">
-                Portfólios administrados com governança, dados proprietários e acompanhamento diário.
+                Portfólios administrados com dados, tecnologia, análise fundamentalista e quantitativa.
               </h1>
               <p className="text-lg text-slate-200">
-                Três propostas complementares para blindar patrimônio, criar renda previsível e capturar oportunidades
-                táticas com disciplina.
+                Três estratégias complementares para gestão de patrimônio, com diferentes níveis de liquidez, risco e retorno.
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link
@@ -44,7 +43,9 @@ export default function ServicosPage() {
                   Explorar serviços
                 </Link>
                 <Link
-                  href="/contato"
+                  href="https://api.whatsapp.com/send/?phone=5543991811304&text&type=phone_number&app_absent=0"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="rounded-full border border-white/40 px-6 py-3 text-sm font-semibold text-white/80 backdrop-blur transition hover:border-white hover:text-white"
                 >
                   Falar com especialista

@@ -60,7 +60,7 @@ const documents = [
     category: 'Compliance',
     title: 'Formulário de referência',
     description:
-      'Formulário para referência de clientes e parceiros, contendo informações necessárias para processos de onboarding.',
+      'Formulário para referência com diversos dados sobre a gestora, conforme CVM 558.',
     href: 'https://drive.google.com/file/d/1uAkakSFDPWN8s7KrtyNR0ohbQPmFTKXl/view?usp=sharing',
   },
 ];
