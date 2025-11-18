@@ -69,13 +69,13 @@ export const specialistTeam: TeamMember[] = [
 
 export const cultureHighlights = [
   {
-    title: 'Parceria com Skin in the Game',
+    title: 'Alinhamento de interesses',
     description: 'Gestores investem nos mesmos portfólios que os clientes, alinhando incentivos e decisões de longo prazo.',
     icon: 'partnership',
   },
   {
     title: 'Governança e Compliance',
-    description: 'Rotinas auditadas, comitês independentes e políticas transparentes para proteger cada decisão de investimento.',
+    description: 'Processos internos bem definidos, comitês independentes e supervisão interna pelo compliance.',
     icon: 'governance',
   },
   {

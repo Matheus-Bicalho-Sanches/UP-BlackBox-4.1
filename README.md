@@ -75,6 +75,9 @@ PROFIT_FEED_URL=         # e.g. http://localhost:8001
 BACKEND_URL=             # default http://localhost:8000 (UP back office)
 NEXT_PUBLIC_BACKEND_ASK_URL= # matches backendhomepagesiteUP deployment, defaults to http://localhost:3001/ask
 NEXT_PUBLIC_EXCHANGE_TZ=      # optional, defaults to America/Sao_Paulo
+RESEND_API_KEY=               # API key from Resend (https://resend.com) for contact form emails
+RESEND_FROM_EMAIL=            # optional, email sender (defaults to onboarding@resend.dev for testing)
+CONTACT_EMAIL=                # optional, email recipient (defaults to matheus.bs@up-gestora.com.br)
 ```
 
 Check any `.env.*` files already present for reference values that you may need in your environment.

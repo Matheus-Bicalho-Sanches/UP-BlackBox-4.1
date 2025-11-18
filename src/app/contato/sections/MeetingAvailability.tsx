@@ -8,6 +8,7 @@ type MeetingAvailabilityProps = {
     day: string;
     period: string;
     description: string;
+    whatsappMessage?: string;
   }>;
 };
 
@@ -22,7 +23,7 @@ const MeetingAvailability = ({ slots }: MeetingAvailabilityProps) => {
             Escolha o período ideal e nosso time confirma a agenda com link de reunião ou visita presencial.
           </p>
         </header>
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {slots.map((slot) => (
             <MeetingSlotCard key={slot.id} {...slot} />
           ))}

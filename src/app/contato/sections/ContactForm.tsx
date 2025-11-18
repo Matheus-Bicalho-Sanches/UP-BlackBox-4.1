@@ -41,21 +41,62 @@ const subjects = [
 
 const ContactForm = ({ id, privacyNotice }: ContactFormProps) => {
   const [formData, setFormData] = useState<FormData>(initialData);
-  const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState<string>('');
 
   const handleChange = (field: keyof FormData) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const value = field === 'consent' ? (event.target as HTMLInputElement).checked : event.target.value;
     setFormData((prev) => ({ ...prev, [field]: value }));
+    // Limpar mensagens de erro quando o usuário começar a digitar
+    if (status === 'error') {
+      setStatus('idle');
+      setErrorMessage('');
+    }
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    
     if (!formData.consent) {
       setStatus('error');
+      setErrorMessage('Confirme o consentimento para seguirmos com o atendimento.');
       return;
     }
-    setStatus('success');
-    setFormData(initialData);
+
+    setStatus('loading');
+    setErrorMessage('');
+
+    try {
+      const response = await fetch('/api/contato', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao enviar mensagem');
+      }
+
+      setStatus('success');
+      setFormData(initialData);
+      setErrorMessage('');
+      
+      // Scroll suave para a mensagem de sucesso
+      setTimeout(() => {
+        const successMessage = document.querySelector('[aria-live="polite"]');
+        if (successMessage) {
+          successMessage.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 100);
+    } catch (error: any) {
+      setStatus('error');
+      setErrorMessage(error.message || 'Erro ao enviar mensagem. Por favor, tente novamente ou entre em contato diretamente pelo WhatsApp.');
+      console.error('Erro ao enviar formulário:', error);
+    }
   };
 
   return (
@@ -67,14 +108,14 @@ const ContactForm = ({ id, privacyNotice }: ContactFormProps) => {
             <h2 className="text-3xl font-semibold text-gray-900 md:text-4xl">Conte-nos como podemos ajudar</h2>
             <p className="text-lg text-gray-600">
               Nossa equipe usa estas informações para montar o diagnóstico inicial e direcionar o especialista mais
-              adequado. Inclua detalhes sobre seu patrimônio, horizonte e restrições.
+              adequado. Inclua detalhes sobre seu patrimônio, horizonte e restrições se possível.
             </p>
             <ul className="space-y-3 text-sm text-gray-600">
               <li>
                 • Resposta em até 1 dia útil com próximas etapas e materiais personalizados.
               </li>
               <li>
-                • Podemos assinar NDA e enviar canais criptografados para documentos sensíveis.
+                • Podemos assinar NDA e/ou receber dados anonimizados, se necessário.
               </li>
               <li>
                 • Para atendimento imediato, utilize o WhatsApp institucional.
@@ -170,9 +211,10 @@ const ContactForm = ({ id, privacyNotice }: ContactFormProps) => {
 
             <button
               type="submit"
-              className="w-full rounded-full bg-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cyan-600"
+              disabled={status === 'loading'}
+              className="w-full rounded-full bg-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-cyan-500"
             >
-              Enviar mensagem
+              {status === 'loading' ? 'Enviando...' : 'Enviar mensagem'}
             </button>
 
             {status === 'success' && (
@@ -182,7 +224,7 @@ const ContactForm = ({ id, privacyNotice }: ContactFormProps) => {
             )}
             {status === 'error' && (
               <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-                Confirme o consentimento para seguirmos com o atendimento.
+                {errorMessage || 'Erro ao enviar mensagem. Por favor, tente novamente ou entre em contato diretamente pelo WhatsApp.'}
               </p>
             )}
           </form>

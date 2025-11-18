@@ -24,19 +24,13 @@ export default function ContatoPage() {
     <>
       <CursorGlow />
       <main className="relative z-10">
-        <section className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 py-24 md:py-28">
+        <section className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-800 pt-24 pb-12 md:pt-28 md:pb-16">
           <div className="container mx-auto px-4">
             <div className="max-w-3xl space-y-6">
               <p className="text-sm uppercase tracking-[0.4em] text-cyan-300">{hero.eyebrow}</p>
               <h1 className="text-4xl font-semibold text-white md:text-5xl">{hero.title}</h1>
               <p className="text-lg text-slate-200">{hero.subtitle}</p>
               <div className="flex flex-wrap gap-3">
-                <Link
-                  href="#formulario"
-                  className="rounded-full bg-cyan-500 px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cyan-600"
-                >
-                  {hero.primaryCta.label}
-                </Link>
                 <a
                   href={hero.secondaryCta.href}
                   target="_blank"

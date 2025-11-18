@@ -30,11 +30,36 @@ export const ProcessTimeline = ({ steps }: ProcessTimelineProps) => {
           <p className="mt-5 rounded-full bg-cyan-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-cyan-700">
             Entregável: {step.deliverable}
           </p>
+          {/* Seta vertical para mobile */}
           {index < steps.length - 1 && (
             <span
               aria-hidden
-              className="absolute -bottom-8 left-1/2 hidden h-16 w-px bg-gradient-to-b from-cyan-500/60 to-transparent md:block"
+              className="absolute -bottom-8 left-1/2 block h-16 w-px -translate-x-1/2 bg-gradient-to-b from-cyan-500/60 to-transparent md:hidden"
             />
+          )}
+          {/* Seta horizontal para desktop */}
+          {index < steps.length - 1 && (
+            <div
+              aria-hidden
+              className="absolute right-0 top-1/2 hidden -translate-y-1/2 translate-x-1/2 md:block"
+            >
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="text-cyan-500"
+              >
+                <path
+                  d="M9 18L15 12L9 6"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
           )}
         </li>
       ))}
