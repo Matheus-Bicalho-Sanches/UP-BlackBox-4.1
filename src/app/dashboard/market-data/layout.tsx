@@ -39,4 +39,4 @@ export default function MarketDataLayout({
       <div>{children}</div>
     </div>
   );
-}
+} 

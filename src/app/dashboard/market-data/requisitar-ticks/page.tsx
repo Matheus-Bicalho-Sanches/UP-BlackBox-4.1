@@ -49,32 +49,81 @@ export default function RequestTicksPage() {
       // Se estiver em prod, use a variável de ambiente pública
       const API_URL = process.env.NEXT_PUBLIC_PROFIT_FEED_URL || "http://localhost:8001";
 
-      const res = await fetch(`${API_URL}/history/ticks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ticker: ticker.toUpperCase(),
-          start: startFormatted,
-          end: endFormatted,
-        }),
-      });
+      console.log("🔍 Iniciando requisição de ticks...");
+      console.log("📍 URL:", `${API_URL}/history/ticks`);
+      console.log("📋 Parâmetros:", { ticker: ticker.toUpperCase(), start: startFormatted, end: endFormatted });
+
+      // Criar AbortController para timeout
+      // Calcula timeout dinamicamente: 1 minuto por dia, mínimo 2 minutos, máximo 10 minutos
+      const startDateObj = new Date(startDate);
+      const endDateObj = new Date(endDate);
+      const daysDiff = Math.ceil((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const dynamicTimeout = Math.min(Math.max(daysDiff * 60, 120), 600) * 1000; // Entre 2min e 10min
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        console.log(`⏱️ Timeout após ${dynamicTimeout / 1000} segundos`);
+      }, dynamicTimeout);
+
+      let res: Response;
+      try {
+        res = await fetch(`${API_URL}/history/ticks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ticker: ticker.toUpperCase(),
+            start: startFormatted,
+            end: endFormatted,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      console.log("✅ Resposta recebida:", res.status, res.statusText);
 
       if (!res.ok) {
-        throw new Error(`Erro na requisição: ${res.statusText}`);
+        const errorText = await res.text();
+        console.error("❌ Erro na resposta:", errorText);
+        throw new Error(`Erro na requisição (${res.status}): ${res.statusText}`);
       }
 
       const json = await res.json();
+      console.log("📦 Dados recebidos:", json.count, "ticks");
+
       if (json.error) {
         throw new Error(json.error);
       }
 
-      setData(json.ticks || []);
-      if ((json.ticks || []).length === 0) {
+      const ticks = json.ticks || [];
+      setData(ticks);
+      
+      if (ticks.length === 0) {
         setError("Nenhum dado encontrado para o período.");
+      } else if (ticks.length < 50) {
+        // Aviso se vierem poucos ticks (pode indicar período sem dados ou fora do histórico)
+        const startDateObj = new Date(startDate);
+        const endDateObj = new Date(endDate);
+        const daysDiff = Math.ceil((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        const ticksPerDay = (ticks.length / daysDiff).toFixed(1);
+        
+        if (Number(ticksPerDay) < 10) {
+          setError(`⚠️ Poucos ticks coletados: ${ticks.length} para ${daysDiff} dia(s) (média: ${ticksPerDay} ticks/dia). Isso pode indicar:\n- Período sem negociação (fins de semana/feriados)\n- Datas fora do histórico disponível (últimos 90 dias)\n- Problemas na conexão com a DLL\n\nTente datas mais recentes ou verifique se há dados disponíveis para o período.`);
+        }
       }
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Erro ao buscar dados");
+      console.error("❌ Erro capturado:", err);
+      if (err.name === 'AbortError') {
+        const daysDiff = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        const timeoutMinutes = Math.min(Math.max(daysDiff, 2), 10);
+        setError(`Timeout: A requisição demorou mais de ${timeoutMinutes} minuto(s). Para períodos maiores, os dados podem demorar mais. Tente um período menor ou aguarde mais tempo.`);
+      } else if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+        setError(`Erro de conexão: Não foi possível conectar ao backend em ${process.env.NEXT_PUBLIC_PROFIT_FEED_URL || "http://localhost:8001"}. Verifique se o dispatcher está rodando.`);
+      } else {
+        setError(err.message || "Erro ao buscar dados");
+      }
     } finally {
       setLoading(false);
     }
@@ -84,7 +133,8 @@ export default function RequestTicksPage() {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = `${ticker}_${startDate}_${endDate}.json`;
+    a.href = url;
+    a.download = `${ticker}_${startDate}_${endDate}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -107,7 +157,8 @@ export default function RequestTicksPage() {
     const blob = new Blob([csvContent], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = `${ticker}_${startDate}_${endDate}.csv`;
+    a.href = url;
+    a.download = `${ticker}_${startDate}_${endDate}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -209,7 +260,7 @@ export default function RequestTicksPage() {
                 <div>ID</div>
               </div>
               <div className="max-h-[300px] overflow-y-auto">
-                {data.slice(0, 100).map((tick, i) => (
+                {data.slice(0, 50).map((tick, i) => (
                   <div key={i} className="bg-gray-800 p-2 border-b border-gray-700/50 grid grid-cols-6 font-mono text-xs text-gray-300 hover:bg-gray-700/50">
                     <div>{tick.t.split("T")[1]?.slice(0,12) || tick.t}</div>
                     <div>{tick.p}</div>
@@ -219,9 +270,10 @@ export default function RequestTicksPage() {
                     <div>{tick.id}</div>
                   </div>
                 ))}
-                {data.length > 100 && (
-                  <div className="p-2 text-center text-xs text-gray-500 italic">
-                    ... e mais {data.length - 100} ticks ...
+                {data.length > 50 && (
+                  <div className="p-2 text-center text-xs text-gray-500 italic bg-gray-900/50 border-t border-gray-700">
+                    Mostrando apenas os primeiros 50 ticks de {data.length} coletados. 
+                    Use "Download JSON" ou "Download CSV" para baixar todos os dados.
                   </div>
                 )}
               </div>

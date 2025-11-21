@@ -12,12 +12,14 @@ import asyncio
 import ctypes
 import json
 import os
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import logging
 import time
 import threading
 from collections import deque, defaultdict
+from typing import Dict
 from urllib import request as _urlreq, error as _urlerr
 # ----------------------------------------------------------------------------
 # Logging básico (ajustável via LOG_LEVEL=DEBUG|INFO|WARNING)
@@ -130,14 +132,43 @@ HistoryTradeCallbackType = ctypes.WINFUNCTYPE(
     ctypes.c_int,      # tradeType
 )
 
+# Progresso de requisição histórica
+ProgressCallbackType = ctypes.WINFUNCTYPE(
+    None,
+    TAssetID,          # rAssetID
+    ctypes.c_int,      # nProgress (0-100)
+)
+
+@dataclass
+class ActiveHistoryRequest:
+    request_id: str
+    start_ts: float  # epoch seconds (UTC)
+    end_ts: float    # epoch seconds (UTC)
+    ticks: list
+    created_at: float
+    progress: int = 0  # Progresso do download (0-100)
+
+
 # --- NOVO: Buffer para requisições sob demanda ---
-# Dict: ticker -> list of dict (ticks)
-active_history_requests: dict[str, list[dict]] = {}
+# Dict: ticker -> dict[request_id, ActiveHistoryRequest]
+active_history_requests: Dict[str, Dict[str, ActiveHistoryRequest]] = {}
 history_req_lock = threading.Lock()
 
 @HistoryTradeCallbackType
 def _history_trade_cb(asset: TAssetID, date: str, trade_number: int, price: float, vol: float, qtd: int, *_):
     try:
+        ticker_orig = asset.ticker if asset and asset.ticker else "UNKNOWN"
+        ticker_upper = ticker_orig.strip().upper()  # Normalização reforçada
+        
+        # Log TODOS os callbacks históricos para debug (primeiros 10 e depois a cada 100)
+        if not hasattr(_history_trade_cb, "call_count"):
+            _history_trade_cb.call_count = {}
+        count = _history_trade_cb.call_count.get(ticker_upper, 0) + 1
+        _history_trade_cb.call_count[ticker_upper] = count
+        
+        if count <= 10 or count % 100 == 0:
+            logging.info("🔔 History callback #%d for '%s': date=%s, price=%.2f, qty=%d", count, ticker_upper, date, price, qtd)
+        
         dt_utc = _parse_profit_datetime(date)
         
         # 1. Processamento normal de backfill (candles de 1 min)
@@ -146,28 +177,77 @@ def _history_trade_cb(asset: TAssetID, date: str, trade_number: int, price: floa
             minute_ms = int(minute.timestamp() * 1000)
             dt_ms = int(dt_utc.timestamp() * 1000)
             # store: (dt_ms, trade_number, price, vol, qtd)
-            history_backfill[asset.ticker][minute_ms].append((dt_ms, int(trade_number or 0), float(price), float(vol or 0.0), int(qtd or 0)))
+            history_backfill[ticker_upper][minute_ms].append((dt_ms, int(trade_number or 0), float(price), float(vol or 0.0), int(qtd or 0)))
         except Exception as e:
             logging.warning("history_cb backfill error: %s", e)
 
-        # 2. Processamento de requisições sob demanda
-        ticker_upper = asset.ticker.upper() if asset and asset.ticker else ""
-        if ticker_upper in active_history_requests:
-            with history_req_lock:
-                # Verificar novamente dentro do lock
-                if ticker_upper in active_history_requests:
-                    tick_data = {
-                        "t": dt_utc.isoformat(),
-                        "ts": dt_utc.timestamp(),
-                        "p": float(price),
-                        "q": int(qtd or 0),
-                        "v": float(vol or 0),
-                        "id": int(trade_number or 0)
-                    }
-                    active_history_requests[ticker_upper].append(tick_data)
+        # 2. Processamento de requisições sob demanda (considera múltiplos request_ids por ticker)
+        matched_request = False
+        with history_req_lock:
+            ticker_requests = active_history_requests.get(ticker_upper)
+            if ticker_requests:
+                tick_data = {
+                    "t": dt_utc.isoformat(),
+                    "ts": dt_utc.timestamp(),
+                    "p": float(price),
+                    "q": int(qtd or 0),
+                    "v": float(vol or 0),
+                    "id": int(trade_number or 0),
+                }
+                for req_id, req in ticker_requests.items():
+                    if req.start_ts <= tick_data["ts"] <= req.end_ts:
+                        req.ticks.append(tick_data)
+                        matched_request = True
+                        if len(req.ticks) % 100 == 0:
+                            logging.info(
+                                "History request %s collected %d ticks for %s",
+                                req_id,
+                                len(req.ticks),
+                                ticker_upper,
+                            )
+            else:
+                # Se o ticker não estiver na lista, verifica se há requisições ativas para outros tickers
+                # Loga apenas uma vez a cada 1000 ticks ignorados para não floodar
+                if active_history_requests and (count % 1000 == 0):
+                    keys = list(active_history_requests.keys())
+                    logging.warning("Ignored history tick for '%s' (not requested). Active requests: %s", ticker_upper, keys)
+
+        if not matched_request and ticker_requests:
+            # Registramos quando o tick ficou fora da janela solicitada
+            if count % 200 == 0:
+                logging.info(
+                    "Tick for %s ignored (out of requested ranges). ts=%s windows=%s",
+                    ticker_upper,
+                    tick_data["t"],
+                    [(req.start_ts, req.end_ts) for req in ticker_requests.values()],
+                )
 
     except Exception as e:
-        logging.warning("history_cb parse error: %s", e)
+        logging.warning("history_cb parse error for ticker %s: %s", ticker_orig if asset and asset.ticker else "UNKNOWN", e)
+
+
+@ProgressCallbackType
+def _progress_cb(asset: TAssetID, progress: int):
+    """Callback de progresso para requisições históricas (0-100)."""
+    try:
+        ticker_orig = asset.ticker if asset and asset.ticker else "UNKNOWN"
+        ticker_upper = ticker_orig.strip().upper()
+        
+        # Atualiza progresso para todas as requisições ativas deste ticker
+        with history_req_lock:
+            ticker_requests = active_history_requests.get(ticker_upper)
+            if ticker_requests:
+                for req_id, req in ticker_requests.items():
+                    req.progress = progress
+                    # Loga apenas a cada 25% de progresso para não floodar
+                    if progress % 25 == 0 or progress == 100:
+                        logging.info("Progress for %s (req %s): %d%%", ticker_upper, req_id, progress)
+            else:
+                # Loga se não houver requisição ativa (pode ser de backfill automático)
+                if progress % 50 == 0 or progress == 100:
+                    logging.debug("Progress callback for %s: %d%% (no active request)", ticker_upper, progress)
+    except Exception as e:
+        logging.warning("progress_cb error for ticker %s: %s", ticker_orig if asset and asset.ticker else "UNKNOWN", e)
 
 
 SUBSCRIBED_TICKERS: set[str] = {"PETR4"}
@@ -219,12 +299,12 @@ def initialize_market_session():
         LOGIN_PASS,
         _state_cb,
         _trade_cb,
-        ctypes.cast(_history_trade_cb, ctypes.c_void_p),
-        None,
-        None,
-        None,
-        None,
-        None,
+        None,  # NewDailyCallback
+        None,  # PriceBookCallback
+        None,  # OfferBookCallback
+        ctypes.cast(_history_trade_cb, ctypes.c_void_p),  # HistoryTradeCallback
+        ctypes.cast(_progress_cb, ctypes.c_void_p),  # ProgressCallback
+        None,  # TinyBookCallback
     )
     logging.info("DLLInitializeMarketLogin -> %s", ret)
 
@@ -472,6 +552,16 @@ def _parse_profit_datetime(date_str: str) -> datetime:
 def _day_string(dt: datetime) -> str:
     return dt.strftime("%d/%m/%Y")
 
+def _day_datetime_string(dt: datetime, start_of_day: bool = True) -> str:
+    """
+    Retorna string no formato DD/MM/YYYY HH:mm:SS conforme documentação da DLL.
+    Se start_of_day=True, retorna 00:00:00, senão retorna 23:59:59.
+    """
+    if start_of_day:
+        return dt.strftime("%d/%m/%Y 00:00:00")
+    else:
+        return dt.strftime("%d/%m/%Y 23:59:59")
+
 def _call_get_history_recent(ticker: str, exch: str = "B", minutes: int = 3) -> None:
     """Solicita histórico do dia e o flusher filtra; pedimos only recent (3 min) para reduzir carga."""
     if not hasattr(dll, "GetHistoryTrades"):
@@ -498,11 +588,13 @@ def _call_get_history_recent(ticker: str, exch: str = "B", minutes: int = 3) -> 
 # -----------------------------------------------------------------------------
 # NOVO: Função para requisição síncrona de histórico (para API sob demanda)
 # -----------------------------------------------------------------------------
-def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, timeout_sec: float = 30.0) -> list[dict]:
+def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, timeout_sec: float = 60.0, save_to_firestore: bool = True) -> list[dict]:
     """
     Executa GetHistoryTrades para um período específico e aguarda coleta dos dados.
     Datas formato 'dd/MM/yyyy'.
+    Itera dia a dia porque a DLL precisa de uma chamada por dia.
     Bloqueia a thread atual, então execute em executor se chamado via async.
+    Se save_to_firestore=True, salva os dados no Firestore antes de retornar.
     """
     if not hasattr(dll, "GetHistoryTrades"):
         logging.error("DLL GetHistoryTrades not available")
@@ -514,58 +606,232 @@ def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, time
     # Inscreve para garantir histórico liberado (segundo doc Nelogica)
     SubscribeTicker(ticker, exchange)
 
-    # Prepara buffer
-    with history_req_lock:
-        active_history_requests[ticker] = []  # Limpa/inicia buffer
-
     try:
         get_hist = dll.GetHistoryTrades
         get_hist.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p]
         get_hist.restype = ctypes.c_int
         
-        logging.info("Requesting history for %s from %s to %s", ticker, start_date, end_date)
+        # Parse das datas para iterar dia a dia
+        try:
+            start_dt = datetime.strptime(start_date, "%d/%m/%Y")
+            end_dt = datetime.strptime(end_date, "%d/%m/%Y")
+        except ValueError as e:
+            logging.error("Invalid date format. Expected dd/MM/yyyy, got: %s, %s", start_date, end_date)
+            return []
         
-        # Chama DLL
-        code = get_hist(ticker, exchange, start_date, end_date)
-        if code != 0:
-            logging.error("GetHistoryTrades error code: %s", code)
-            # Mesmo com erro, as vezes vem algo? Não, melhor abortar
-            # return [] 
-            # Na verdade a documentação diz que code!=0 é erro. Mas vamos esperar um pouco só pra garantir.
+        local_tz = datetime.now().astimezone().tzinfo or timezone.utc
+        start_local = start_dt.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=local_tz)
+        end_local = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999, tzinfo=local_tz)
+        start_ts = start_local.astimezone(timezone.utc).timestamp()
+        end_ts = end_local.astimezone(timezone.utc).timestamp()
+
+        request_id = f"{int(time.time() * 1000)}-{threading.get_ident()}"
+        with history_req_lock:
+            ticker_requests = active_history_requests.setdefault(ticker, {})
+            ticker_requests[request_id] = ActiveHistoryRequest(
+                request_id=request_id,
+                start_ts=start_ts,
+                end_ts=end_ts,
+                ticks=[],
+                created_at=time.time(),
+            )
+
+        num_days = (end_dt - start_dt).days + 1
+        logging.info("Requesting history for %s from %s to %s (%d days)", ticker, start_date, end_date, num_days)
         
-        # Aguarda chegada dos dados
-        # Critério de parada: tempo sem novos ticks (silence timeout) ou timeout total
+        # Itera dia a dia (a DLL precisa de uma chamada por dia)
+        # Pula fins de semana (sábado=5, domingo=6)
+        cur = start_dt
+        days_requested = 0
+        days_skipped = 0
+        
+        while cur <= end_dt:
+            # Verifica se é fim de semana
+            weekday = cur.weekday()  # 0=segunda, 6=domingo
+            if weekday >= 5:  # Sábado ou domingo
+                logging.info("Skipping weekend day %s", _day_string(cur))
+                cur += timedelta(days=1)
+                days_skipped += 1
+                continue
+                
+            # Formato completo conforme documentação: DD/MM/YYYY HH:mm:SS
+            day_start_str = _day_datetime_string(cur, start_of_day=True)  # 00:00:00
+            day_end_str = _day_datetime_string(cur, start_of_day=False)   # 23:59:59
+            logging.info("Requesting day %s for %s (from %s to %s)", _day_string(cur), ticker, day_start_str, day_end_str)
+            
+            # Chama DLL para este dia específico com horário completo
+            code = get_hist(ticker, exchange, day_start_str, day_end_str)
+            if code != 0:
+                logging.warning("GetHistoryTrades failed for %s on %s: code=%s", ticker, _day_string(cur), code)
+            else:
+                days_requested += 1
+                # Espera um pouco para callbacks deste dia chegarem
+                time.sleep(1.5)  # Aumentado de 1.0 para 1.5 segundos
+            
+            cur += timedelta(days=1)
+        
+        if days_skipped > 0:
+            logging.info("Skipped %d weekend days", days_skipped)
+        
+        if days_requested == 0:
+            logging.error("No days successfully requested")
+            with history_req_lock:
+                ticker_map = active_history_requests.get(ticker, {})
+                ticker_map.pop(request_id, None)
+                if not ticker_map:
+                    active_history_requests.pop(ticker, None)
+            return []
+        
+        logging.info("All days requested for %s (req %s). Waiting for data collection...", ticker, request_id)
+        
+        # Aguarda chegada dos dados de todos os dias
+        # Critério de parada: progresso 100% + delay, tempo sem novos ticks (silence timeout), ou timeout total
         start_wait = time.time()
         last_count = 0
+        last_progress = 0
         silence_start = time.time()
-        silence_threshold = 2.0  # 2 segundos sem novos ticks = fim da transmissão
+        progress_100_time = None
+        silence_threshold = 10.0  # 10 segundos sem novos ticks = fim da transmissão
+        progress_100_wait = 5.0   # Aguarda 5s após progresso 100% para garantir ticks finais
+        
+        logging.info("Starting collection wait (timeout=%ds, silence=%ds, progress_100_wait=%ds)...", timeout_sec, silence_threshold, progress_100_wait)
         
         while (time.time() - start_wait) < timeout_sec:
-            time.sleep(0.2)
+            time.sleep(0.5)
             
             with history_req_lock:
-                current_len = len(active_history_requests.get(ticker, []))
+                ticker_map = active_history_requests.get(ticker)
+                active_req = ticker_map.get(request_id) if ticker_map else None
+                current_len = len(active_req.ticks) if active_req else 0
+                current_progress = active_req.progress if active_req else 0
             
+            if active_req is None:
+                logging.warning("Active request %s for %s not found (maybe cancelled).", request_id, ticker)
+                break
+
+            # Detectar quando progresso chega a 100%
+            if current_progress == 100 and last_progress != 100:
+                progress_100_time = time.time()
+                logging.info("Progress reached 100%% for %s (req %s). Waiting %ds for final ticks...", ticker, request_id, progress_100_wait)
+                last_progress = 100
+
+            # Se progresso chegou a 100% e passou o tempo de espera sem novos ticks, retornar
+            if progress_100_time is not None and current_progress == 100:
+                if current_len > last_count:
+                    progress_100_time = time.time()  # Reset se chegarem mais ticks
+                    last_count = current_len
+                elif (time.time() - progress_100_time) > progress_100_wait:
+                    logging.info("History collection finished by progress 100%% for %s (req %s). Total: %d ticks", ticker, request_id, current_len)
+                    break
+
             if current_len > last_count:
                 last_count = current_len
                 silence_start = time.time()  # Reset silence timer
+                if progress_100_time is None:  # Só loga progresso se ainda não chegou a 100%
+                    if current_len % 50 == 0 or current_len == 1:  # Log mais frequente para debug
+                        logging.info("Collected %d ticks so far for %s (req %s) (progress: %d%%)...", current_len, ticker, request_id, current_progress)
             elif (time.time() - silence_start) > silence_threshold and current_len > 0:
-                logging.info("History collection finished by silence for %s. Total: %d", ticker, current_len)
+                logging.info("History collection finished by silence for %s (req %s). Total: %d ticks", ticker, request_id, current_len)
                 break
+            
+            # Atualizar last_progress
+            if current_progress != last_progress and last_progress != 100:
+                last_progress = current_progress
+        
+        if (time.time() - start_wait) >= timeout_sec:
+            logging.warning("History collection timeout reached for %s (req %s) after %ds. Total collected: %d ticks", ticker, request_id, timeout_sec, last_count)
+        
+        # Aguarda um pouco mais para callbacks finais (semelhante ao history_probe.py)
+        logging.info("Waiting for final callbacks...")
+        final_wait_start = time.time()
+        while (time.time() - final_wait_start) < 3.0:  # Mais 3 segundos para callbacks finais
+            time.sleep(0.2)
+            with history_req_lock:
+                ticker_map = active_history_requests.get(ticker)
+                active_req = ticker_map.get(request_id) if ticker_map else None
+                if not active_req:
+                    break
+                final_len = len(active_req.ticks)
+                if final_len > current_len:
+                    current_len = final_len
+                    silence_start = time.time()  # Reset se chegou mais dados
+                    logging.info("Received additional %d ticks in final wait for %s (req %s)", final_len - last_count, ticker, request_id)
+                    last_count = final_len
                 
         # Recupera dados finais
         with history_req_lock:
-            result = list(active_history_requests.get(ticker, []))
-            # Remove do active requests para não consumir memória indefinidamente
-            del active_history_requests[ticker]
+            ticker_map = active_history_requests.get(ticker, {})
+            active_req = ticker_map.pop(request_id, None)
+            if not ticker_map:
+                active_history_requests.pop(ticker, None)
             
+        if not active_req:
+            logging.warning("No data captured for %s (req %s).", ticker, request_id)
+            return []
+
+        logging.info("History extraction completed. Total ticks: %d (req %s)", len(active_req.ticks), request_id)
+        result = list(active_req.ticks)
+        logging.info("🟡 request_history_ticks_sync: About to return %d ticks", len(result))
+        
+        # Salvar no Firestore antes de retornar (dentro da função para garantir salvamento)
+        doc_id = None
+        if save_to_firestore and result:
+            try:
+                logging.info("💾 [START] Saving %d ticks to Firestore...", len(result))
+                import time as time_module
+                from datetime import datetime as dt_module
+                
+                # Criar documento com ID único baseado em ticker, datas e timestamp
+                request_timestamp = dt_module.now()
+                doc_id = f"{ticker.upper()}_{start_date.replace('/', '')}_{end_date.replace('/', '')}_{int(time_module.time())}"
+                logging.info("💾 [STEP 1] Created doc_id: %s", doc_id)
+                
+                # Importar firestore aqui para garantir que está disponível
+                from firebase_admin import firestore as firestore_module
+                
+                # Estrutura do documento
+                doc_data = {
+                    "ticker": ticker.upper(),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "request_timestamp": request_timestamp.isoformat(),
+                    "total_ticks": len(result),
+                    "ticks": result,
+                    "created_at": firestore_module.SERVER_TIMESTAMP,
+                    "saved_at": firestore_module.SERVER_TIMESTAMP,
+                }
+                logging.info("💾 [STEP 2] Created doc_data with %d ticks", len(result))
+                
+                # Salvar no Firestore Database (collection: history_ticks)
+                # Nota: Firestore Database é diferente de Storage (arquivos)
+                logging.info("💾 [STEP 3] Calling Firestore Database set() for collection 'history_ticks'...")
+                doc_ref = db.collection("history_ticks").document(doc_id)
+                doc_ref.set(doc_data)
+                logging.info("💾 [STEP 4] Firestore Database set() completed successfully")
+                
+                logging.info("✅ Saved to Firestore with ID: %s", doc_id)
+            except Exception as save_err:
+                logging.error("❌ Error saving to Firestore: %s", save_err, exc_info=True)
+                import traceback
+                logging.error("Full traceback: %s", traceback.format_exc())
+                # Continuar mesmo se falhar o salvamento
+        
+        # Adicionar doc_id ao resultado para retornar (se salvo com sucesso)
+        if doc_id:
+            logging.info("🟢 request_history_ticks_sync: Returning %d ticks with doc_id=%s", len(result), doc_id)
+        else:
+            logging.info("🟢 request_history_ticks_sync: Returning %d ticks (not saved)", len(result))
+        
+        logging.info("🟢 request_history_ticks_sync: FINAL RETURN with %d ticks", len(result))
         return result
 
     except Exception as e:
-        logging.error("request_history_ticks_sync failed: %s", e)
+        logging.error("request_history_ticks_sync failed: %s", e, exc_info=True)
         with history_req_lock:
-            if ticker in active_history_requests:
-                del active_history_requests[ticker]
+            ticker_map = active_history_requests.get(ticker, {})
+            req_removed = ticker_map.pop(request_id, None)
+            if req_removed and not ticker_map:
+                active_history_requests.pop(ticker, None)
         return []
 
 
