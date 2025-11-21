@@ -130,26 +130,44 @@ HistoryTradeCallbackType = ctypes.WINFUNCTYPE(
     ctypes.c_int,      # tradeType
 )
 
+# --- NOVO: Buffer para requisições sob demanda ---
+# Dict: ticker -> list of dict (ticks)
+active_history_requests: dict[str, list[dict]] = {}
+history_req_lock = threading.Lock()
+
 @HistoryTradeCallbackType
 def _history_trade_cb(asset: TAssetID, date: str, trade_number: int, price: float, vol: float, qtd: int, *_):
     try:
-        # Definição adiantada; o buffer de backfill é preenchido depois que estruturas são criadas
-        # Vamos apenas armazenar provisoriamente num buffer global que será definido mais abaixo.
-        from datetime import datetime as _dt, timezone as _tz
+        dt_utc = _parse_profit_datetime(date)
+        
+        # 1. Processamento normal de backfill (candles de 1 min)
         try:
-            dt_naive = _dt.strptime(date, "%d/%m/%Y %H:%M:%S.%f")
-        except ValueError:
-            dt_naive = _dt.strptime(date, "%d/%m/%Y %H:%M:%S")
-        local = dt_naive.astimezone() if dt_naive.tzinfo else dt_naive.replace(tzinfo=_dt.now().astimezone().tzinfo)
-        dt_utc = local.astimezone(_tz.utc)
-        minute_ms = int(dt_utc.replace(second=0, microsecond=0).timestamp() * 1000)
-        # uso tardio de history_backfill: se ainda não existir, será inicializado adiante
-        try:
-            history_backfill[asset.ticker][minute_ms].append((price, int(qtd or 0)))  # type: ignore[name-defined]
-        except NameError:
-            pass
-    except Exception:
-        pass
+            minute = dt_utc.replace(second=0, microsecond=0)
+            minute_ms = int(minute.timestamp() * 1000)
+            dt_ms = int(dt_utc.timestamp() * 1000)
+            # store: (dt_ms, trade_number, price, vol, qtd)
+            history_backfill[asset.ticker][minute_ms].append((dt_ms, int(trade_number or 0), float(price), float(vol or 0.0), int(qtd or 0)))
+        except Exception as e:
+            logging.warning("history_cb backfill error: %s", e)
+
+        # 2. Processamento de requisições sob demanda
+        ticker_upper = asset.ticker.upper() if asset and asset.ticker else ""
+        if ticker_upper in active_history_requests:
+            with history_req_lock:
+                # Verificar novamente dentro do lock
+                if ticker_upper in active_history_requests:
+                    tick_data = {
+                        "t": dt_utc.isoformat(),
+                        "ts": dt_utc.timestamp(),
+                        "p": float(price),
+                        "q": int(qtd or 0),
+                        "v": float(vol or 0),
+                        "id": int(trade_number or 0)
+                    }
+                    active_history_requests[ticker_upper].append(tick_data)
+
+    except Exception as e:
+        logging.warning("history_cb parse error: %s", e)
 
 
 SUBSCRIBED_TICKERS: set[str] = {"PETR4"}
@@ -450,17 +468,6 @@ def _parse_profit_datetime(date_str: str) -> datetime:
     local = dt_naive.astimezone() if dt_naive.tzinfo else dt_naive.replace(tzinfo=datetime.now().astimezone().tzinfo)
     return local.astimezone(timezone.utc)
 
-@HistoryTradeCallbackType
-def _history_trade_cb(asset: TAssetID, date: str, trade_number: int, price: float, vol: float, qtd: int, *_):
-    try:
-        dt_utc = _parse_profit_datetime(date)
-        minute = dt_utc.replace(second=0, microsecond=0)
-        minute_ms = int(minute.timestamp() * 1000)
-        dt_ms = int(dt_utc.timestamp() * 1000)
-        # store: (dt_ms, trade_number, price, vol, qtd)
-        history_backfill[asset.ticker][minute_ms].append((dt_ms, int(trade_number or 0), float(price), float(vol or 0.0), int(qtd or 0)))
-    except Exception as e:
-        logging.warning("history_cb parse error: %s", e)
 
 def _day_string(dt: datetime) -> str:
     return dt.strftime("%d/%m/%Y")
@@ -487,6 +494,80 @@ def _call_get_history_recent(ticker: str, exch: str = "B", minutes: int = 3) -> 
         _call_get_history_recent.cutoff_ms_by_ticker[ticker] = cutoff
     except Exception as e:
         logging.warning("GetHistoryTrades call error: %s", e)
+
+# -----------------------------------------------------------------------------
+# NOVO: Função para requisição síncrona de histórico (para API sob demanda)
+# -----------------------------------------------------------------------------
+def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, timeout_sec: float = 30.0) -> list[dict]:
+    """
+    Executa GetHistoryTrades para um período específico e aguarda coleta dos dados.
+    Datas formato 'dd/MM/yyyy'.
+    Bloqueia a thread atual, então execute em executor se chamado via async.
+    """
+    if not hasattr(dll, "GetHistoryTrades"):
+        logging.error("DLL GetHistoryTrades not available")
+        return []
+
+    ticker = ticker.upper()
+    exchange = "B"  # Padrão B3
+
+    # Inscreve para garantir histórico liberado (segundo doc Nelogica)
+    SubscribeTicker(ticker, exchange)
+
+    # Prepara buffer
+    with history_req_lock:
+        active_history_requests[ticker] = []  # Limpa/inicia buffer
+
+    try:
+        get_hist = dll.GetHistoryTrades
+        get_hist.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p]
+        get_hist.restype = ctypes.c_int
+        
+        logging.info("Requesting history for %s from %s to %s", ticker, start_date, end_date)
+        
+        # Chama DLL
+        code = get_hist(ticker, exchange, start_date, end_date)
+        if code != 0:
+            logging.error("GetHistoryTrades error code: %s", code)
+            # Mesmo com erro, as vezes vem algo? Não, melhor abortar
+            # return [] 
+            # Na verdade a documentação diz que code!=0 é erro. Mas vamos esperar um pouco só pra garantir.
+        
+        # Aguarda chegada dos dados
+        # Critério de parada: tempo sem novos ticks (silence timeout) ou timeout total
+        start_wait = time.time()
+        last_count = 0
+        silence_start = time.time()
+        silence_threshold = 2.0  # 2 segundos sem novos ticks = fim da transmissão
+        
+        while (time.time() - start_wait) < timeout_sec:
+            time.sleep(0.2)
+            
+            with history_req_lock:
+                current_len = len(active_history_requests.get(ticker, []))
+            
+            if current_len > last_count:
+                last_count = current_len
+                silence_start = time.time()  # Reset silence timer
+            elif (time.time() - silence_start) > silence_threshold and current_len > 0:
+                logging.info("History collection finished by silence for %s. Total: %d", ticker, current_len)
+                break
+                
+        # Recupera dados finais
+        with history_req_lock:
+            result = list(active_history_requests.get(ticker, []))
+            # Remove do active requests para não consumir memória indefinidamente
+            del active_history_requests[ticker]
+            
+        return result
+
+    except Exception as e:
+        logging.error("request_history_ticks_sync failed: %s", e)
+        with history_req_lock:
+            if ticker in active_history_requests:
+                del active_history_requests[ticker]
+        return []
+
 
 async def backfill_flusher():
     while True:
@@ -579,4 +660,4 @@ def start_background_feed(loop: asyncio.AbstractEventLoop):
 
 # para execução standalone (python profit_feed.py)
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

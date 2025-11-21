@@ -12,6 +12,7 @@ from services.profit.profit_feed import (
     db,
     current_candles,
     initialize_market_session,
+    request_history_ticks_sync
 )  # type: ignore
 import asyncio
 import logging
@@ -28,6 +29,11 @@ class SubReq(BaseModel):
 class UnsubReq(BaseModel):
     ticker: str
 
+class HistoryReq(BaseModel):
+    ticker: str
+    start: str  # dd/MM/yyyy
+    end: str    # dd/MM/yyyy
+
 # TODO: manter lista de subs ativos, chamar UnsubscribeTicker se disponível
 
 @app.post("/subscribe")
@@ -40,6 +46,23 @@ def subscribe(req: SubReq):
 def unsubscribe(req: UnsubReq):
     # Placeholder – implementar chamada ao UnsubscribeTicker
     return {"result": "ok"}
+
+@app.post("/history/ticks")
+async def get_history_ticks(req: HistoryReq):
+    loop = asyncio.get_running_loop()
+    # Executa chamada síncrona (que pode demorar) no executor padrão
+    try:
+        ticks = await loop.run_in_executor(
+            None, 
+            request_history_ticks_sync,
+            req.ticker, 
+            req.start, 
+            req.end
+        )
+        return {"count": len(ticks), "ticks": ticks}
+    except Exception as e:
+        logging.error("Error in /history/ticks: %s", e)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 # Endpoint para candle corrente em memória
 @app.get("/current/{ticker}")
@@ -69,4 +92,4 @@ async def _startup():
             except Exception as e:
                 logging.error("Erro ao reinscrever %s: %s", t, e)
     except Exception as e:
-        logging.error("Falha ao carregar activeSubscriptions: %s", e) 
+        logging.error("Falha ao carregar activeSubscriptions: %s", e)
