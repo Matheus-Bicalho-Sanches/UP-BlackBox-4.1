@@ -26,40 +26,6 @@ interface SaldoLogChange {
 
 function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayValues, setDisplayValues, loading, clientName, clientAccountId, indicators }: any) {
   if (!isOpen) return null;
-
-  // Função auxiliar para converter valor pt-BR para número, permitindo valores negativos durante digitação
-  const parseNumericValue = (inputValue: string, currentNumericValue: number): number => {
-    // Se o campo estiver vazio, retorna 0
-    if (!inputValue || inputValue.trim() === '') {
-      return 0;
-    }
-    
-    // Remove pontos (separadores de milhar) e troca vírgula por ponto
-    const normalizedForParse = inputValue.replace(/\./g, '').replace(',', '.');
-    
-    // Se o valor for apenas "-", mantém o valor atual ou retorna 0
-    if (normalizedForParse === '-') {
-      return currentNumericValue;
-    }
-    
-    // Tenta converter para número
-    const parsed = parseFloat(normalizedForParse);
-    
-    // Se for um número válido (incluindo negativos), retorna ele
-    if (!isNaN(parsed) && isFinite(parsed)) {
-      return parsed;
-    }
-    
-    // Se não conseguir converter mas o valor começa com "-" e tem números, 
-    // pode estar digitando (ex: "-1,"), então mantém o valor atual
-    if (normalizedForParse.startsWith('-') && /^-?\d/.test(normalizedForParse)) {
-      return currentNumericValue;
-    }
-    
-    // Caso contrário, retorna 0
-    return 0;
-  };
-
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-[#222] rounded-lg p-6 w-full max-w-lg">
@@ -107,9 +73,8 @@ function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayVal
                     const inputValue = e.target.value;
                     const normalized = inputValue.replace(/\./g, ',');
                     setDisplayValues((v: any) => ({ ...v, "Saldo D+1": normalized }));
-                    // Converter pt-BR para número, permitindo valores negativos durante digitação
-                    const currentValue = values["Saldo D+1"] || 0;
-                    const numericValue = parseNumericValue(inputValue, currentValue);
+                    // Converter pt-BR para número
+                    const numericValue = parseFloat(inputValue.replace(/\./g, '').replace(',', '.')) || 0;
                     setValues((v: any) => ({ ...v, "Saldo D+1": numericValue }));
                   }}
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
@@ -133,9 +98,8 @@ function EditSaldoModal({ isOpen, onClose, onSave, values, setValues, displayVal
                     const inputValue = e.target.value;
                     const normalized = inputValue.replace(/\./g, ',');
                     setDisplayValues((v: any) => ({ ...v, "Saldo D+2": normalized }));
-                    // Converter pt-BR para número, permitindo valores negativos durante digitação
-                    const currentValue = values["Saldo D+2"] || 0;
-                    const numericValue = parseNumericValue(inputValue, currentValue);
+                    // Converter pt-BR para número
+                    const numericValue = parseFloat(inputValue.replace(/\./g, '').replace(',', '.')) || 0;
                     setValues((v: any) => ({ ...v, "Saldo D+2": numericValue }));
                   }}
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-md text-white"
@@ -1210,21 +1174,14 @@ export default function SaldoPage() {
                           quantity: position.quantity, 
                           avgPrice: manualLftsPrice || 0 // Usar preço manual
                         }); 
-                        // Função auxiliar para formatar número para string pt-BR (preserva negativos)
-                        const formatToPtBR = (value: number): string => {
-                          if (value === 0) return "0";
-                          // Converte para string e troca ponto por vírgula (formato pt-BR)
-                          return value.toString().replace('.', ',');
-                        };
-                        
                         setEditDisplayValues({
-                          "Saldo Hoje": formatToPtBR(item["Saldo Hoje"] ?? 0),
-                          "Saldo D+1": formatToPtBR(saldoD1Final),
-                          "Saldo D+2": formatToPtBR(saldoD2Final),
-                          PctSaldoMin: formatToPtBR(item.PctSaldoMin ?? DEFAULT_PCT_MIN),
-                          PctSaldoMax: formatToPtBR(item.PctSaldoMax ?? DEFAULT_PCT_MAX),
+                          "Saldo Hoje": (item["Saldo Hoje"] || 0).toString(),
+                          "Saldo D+1": (saldoD1Final || 0).toString(),
+                          "Saldo D+2": (saldoD2Final || 0).toString(),
+                          PctSaldoMin: ((item.PctSaldoMin ?? DEFAULT_PCT_MIN) || 0).toString(),
+                          PctSaldoMax: ((item.PctSaldoMax ?? DEFAULT_PCT_MAX) || 0).toString(),
                           quantity: (position.quantity || 0).toString(),
-                          avgPrice: formatToPtBR(manualLftsPrice || 0)
+                          avgPrice: ((manualLftsPrice || 0) || 0).toString()
                         });
                         setModalOpen(true); 
                       }} 
