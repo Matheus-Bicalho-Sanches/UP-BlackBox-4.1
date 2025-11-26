@@ -76,13 +76,15 @@ async def get_history_ticks(req: HistoryReq):
         logging.info("🔵 About to call executor...")
         
         # Usar executor dedicado ao invés de None (executor padrão pode estar bloqueado)
-        ticks = await loop.run_in_executor(
+        # request_history_ticks_sync agora retorna (ticks, storage_info)
+        ticks, storage_info = await loop.run_in_executor(
             history_executor,
             request_history_ticks_sync,
             req.ticker, 
             req.start, 
             req.end,
-            120.0  # timeout de 120 segundos (2 minutos)
+            120.0,  # timeout de 120 segundos (2 minutos)
+            True # save_to_firestore
         )
         
         logging.info("🟢 Executor completed! Received %d ticks", len(ticks) if ticks else 0)
@@ -90,12 +92,17 @@ async def get_history_ticks(req: HistoryReq):
         
         if not ticks:
             logging.warning("⚠️ No ticks returned, returning empty response")
-            return {"count": 0, "ticks": [], "saved": False}
-        
-        # O salvamento já foi feito dentro de request_history_ticks_sync
-        # Verificar se há doc_id nos logs para extrair (por enquanto, assumir que foi salvo)
-        # Nota: Se request_history_ticks_sync retornou, o salvamento foi feito
-        doc_id = None  # Será extraído dos logs ou passado via retorno se necessário - retornar dados de qualquer forma
+            return {
+                "count": 0, 
+                "ticks": [], 
+                "has_more": False,
+                "saved": False, 
+                "storage_url": None,
+                "storage_path": None,
+                "file_size": None,
+                "file_format": None,
+                "message": "Nenhum tick encontrado para o período solicitado. Verifique se o ticker está correto e se há dados disponíveis para as datas informadas."
+            }
         
         # Log primeiro e último tick para debug
         logging.info("First tick sample: %s", ticks[0] if ticks else None)
@@ -103,13 +110,25 @@ async def get_history_ticks(req: HistoryReq):
             logging.info("Last tick sample: %s", ticks[-1])
         
         # Preparar resposta (salvamento foi feito dentro de request_history_ticks_sync)
+        # Retornar apenas primeiros 50 ticks para preview (evita response muito grande)
+        preview_ticks = ticks[:50] if len(ticks) > 50 else ticks
+        saved = storage_info is not None
+        
         response_data = {
             "count": len(ticks), 
-            "ticks": ticks,
-            "saved": True,  # Assumir que foi salvo se chegou aqui
-            "message": f"Dados salvos no Firestore na collection 'history_ticks'",
+            "ticks": preview_ticks,
+            "has_more": len(ticks) > 50,  # Indica se há mais ticks além dos 50 retornados
+            "saved": saved,
+            "storage_url": storage_info["storage_url"] if storage_info else None,
+            "storage_path": storage_info["storage_path"] if storage_info else None,
+            "file_size": storage_info["file_size"] if storage_info else None,
+            "file_format": storage_info["file_format"] if storage_info else None,
+            "message": "Dados salvos no Firebase Storage. Use storage_url para download completo." if saved else "Dados não foram salvos.",
         }
-        logging.info("📦 Preparing response with count=%d", len(ticks))
+        logging.info("📦 Preparing response with count=%d (preview: %d ticks)", len(ticks), len(preview_ticks))
+        if storage_info:
+            logging.info("📦 Storage info: url=%s, size=%d bytes, format=%s", 
+                        storage_info["storage_url"], storage_info["file_size"], storage_info["file_format"])
         
         # Tentar serializar para verificar se há problemas
         response_size = 0
@@ -122,9 +141,9 @@ async def get_history_ticks(req: HistoryReq):
         except (TypeError, ValueError) as json_err:
             logging.error("❌ JSON serialization failed: %s", json_err, exc_info=True)
             # Tentar serializar cada tick individualmente para identificar o problema
-            if ticks:
+            if preview_ticks:
                 try:
-                    json_module.dumps(ticks[0])
+                    json_module.dumps(preview_ticks[0])
                     logging.error("First tick is serializable, problem may be in count or structure")
                 except Exception as tick_err:
                     logging.error("First tick failed to serialize: %s", tick_err, exc_info=True)
@@ -133,7 +152,8 @@ async def get_history_ticks(req: HistoryReq):
             logging.error("❌ Unexpected error during JSON serialization: %s", json_err, exc_info=True)
             return JSONResponse({"error": f"Unexpected error: {str(json_err)}"}, status_code=500)
         
-        logging.info("📤 Returning response to client (count=%d, size=%.2f KB)...", len(ticks), response_size / 1024)
+        logging.info("📤 Returning response to client (count=%d, preview=%d, size=%.2f KB)...", 
+                    len(ticks), len(preview_ticks), response_size / 1024)
         
         try:
             return response_data

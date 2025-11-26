@@ -23,6 +23,15 @@ export default function RequestTicksPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<Tick[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [storageInfo, setStorageInfo] = useState<{
+    url: string | null;
+    path: string | null;
+    size: number | null;
+    format: string | null;
+    saved: boolean;
+    count: number;
+    hasMore: boolean;
+  } | null>(null);
 
   const handleSearch = async () => {
     if (!ticker || !startDate || !endDate) {
@@ -33,6 +42,7 @@ export default function RequestTicksPage() {
     setLoading(true);
     setError(null);
     setData([]);
+    setStorageInfo(null);
 
     try {
       // Formatar datas para dd/MM/yyyy se vierem do input type="date" (yyyy-MM-dd)
@@ -99,6 +109,17 @@ export default function RequestTicksPage() {
 
       const ticks = json.ticks || [];
       setData(ticks);
+      
+      // Capturar informações do Storage
+      setStorageInfo({
+        url: json.storage_url || null,
+        path: json.storage_path || null,
+        size: json.file_size || null,
+        format: json.file_format || null,
+        saved: json.saved || false,
+        count: json.count || ticks.length,
+        hasMore: json.has_more || false,
+      });
       
       if (ticks.length === 0) {
         setError("Nenhum dado encontrado para o período.");
@@ -234,18 +255,40 @@ export default function RequestTicksPage() {
           <CardContent>
             <div className="flex flex-col md:flex-row justify-between items-center gap-4">
               <div>
-                <p className="text-lg">Total de ticks: <span className="font-bold text-cyan-400">{data.length}</span></p>
+                <p className="text-lg">
+                  Total de ticks: <span className="font-bold text-cyan-400">{storageInfo?.count || data.length}</span>
+                  {storageInfo?.hasMore && (
+                    <span className="text-sm text-yellow-400 ml-2">(mostrando preview de {data.length})</span>
+                  )}
+                </p>
                 <p className="text-sm text-gray-400">
                   Primeiro: {data[0]?.t} | Último: {data[data.length-1]?.t}
                 </p>
+                {storageInfo?.saved && storageInfo.url && (
+                  <div className="mt-2 p-2 bg-green-900/30 border border-green-700 rounded text-sm">
+                    <p className="text-green-400">✅ Dados salvos no Firebase Storage</p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Tamanho: {storageInfo.size ? `${(storageInfo.size / 1024 / 1024).toFixed(2)} MB` : 'N/A'} | 
+                      Formato: {storageInfo.format || 'N/A'}
+                    </p>
+                  </div>
+                )}
               </div>
               
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap">
+                {storageInfo?.url && (
+                  <Button 
+                    onClick={() => window.open(storageInfo.url!, '_blank')}
+                    className="bg-cyan-600 hover:bg-cyan-700 text-white"
+                  >
+                    📥 Baixar do Storage
+                  </Button>
+                )}
                 <Button variant="outline" onClick={downloadJSON} className="border-gray-600 text-gray-200 hover:bg-gray-700 hover:text-white">
-                  Download JSON
+                  Download JSON (Preview)
                 </Button>
                 <Button onClick={downloadCSV} className="bg-green-600 hover:bg-green-700 text-white">
-                  Download CSV
+                  Download CSV (Preview)
                 </Button>
               </div>
             </div>
@@ -270,10 +313,19 @@ export default function RequestTicksPage() {
                     <div>{tick.id}</div>
                   </div>
                 ))}
-                {data.length > 50 && (
+                {(storageInfo?.hasMore || data.length > 50) && (
                   <div className="p-2 text-center text-xs text-gray-500 italic bg-gray-900/50 border-t border-gray-700">
-                    Mostrando apenas os primeiros 50 ticks de {data.length} coletados. 
-                    Use "Download JSON" ou "Download CSV" para baixar todos os dados.
+                    {storageInfo?.saved && storageInfo.url ? (
+                      <>
+                        Mostrando apenas os primeiros 50 ticks de {storageInfo.count} coletados. 
+                        {" "}Use o botão "📥 Baixar do Storage" para baixar todos os {storageInfo.count} ticks completos.
+                      </>
+                    ) : (
+                      <>
+                        Mostrando apenas os primeiros 50 ticks de {data.length} coletados. 
+                        {" "}Use "Download JSON" ou "Download CSV" para baixar todos os dados.
+                      </>
+                    )}
                   </div>
                 )}
               </div>

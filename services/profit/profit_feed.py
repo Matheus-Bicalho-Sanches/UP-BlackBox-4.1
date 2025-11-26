@@ -12,8 +12,20 @@ import asyncio
 import ctypes
 import json
 import os
+import tempfile
+import gzip
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo as ZoneInfoClass
+    USE_ZONEINFO = True
+except ImportError:
+    # Python < 3.9 fallback
+    try:
+        import pytz
+        USE_ZONEINFO = False
+    except ImportError:
+        raise RuntimeError("zoneinfo (Python 3.9+) ou pytz é necessário para timezone support")
 from pathlib import Path
 import logging
 import time
@@ -32,7 +44,7 @@ logging.basicConfig(
 
 
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, storage
 from dotenv import load_dotenv
 from services.profit.db_pg import upsert_candle_1m
 
@@ -51,7 +63,9 @@ if not firebase_admin._apps:
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
     if not cred_path:
         raise RuntimeError("Defina GOOGLE_APPLICATION_CREDENTIALS com o caminho para o json de serviço ou coloque-o em UP BlackBox 4.0/secrets")
-    firebase_admin.initialize_app(credentials.Certificate(cred_path))
+    firebase_admin.initialize_app(credentials.Certificate(cred_path), {
+        "storageBucket": os.getenv("NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET", "up-gestao.firebasestorage.app")
+    })
 
 db = firestore.client()
 
@@ -155,10 +169,26 @@ active_history_requests: Dict[str, Dict[str, ActiveHistoryRequest]] = {}
 history_req_lock = threading.Lock()
 
 @HistoryTradeCallbackType
-def _history_trade_cb(asset: TAssetID, date: str, trade_number: int, price: float, vol: float, qtd: int, *_):
+def _history_trade_cb(
+    asset: TAssetID, 
+    date: str, 
+    trade_number: int, 
+    price: float, 
+    vol: float, 
+    qtd: int,
+    buy_agent: int,
+    sell_agent: int,
+    trade_type: int
+):
     try:
         ticker_orig = asset.ticker if asset and asset.ticker else "UNKNOWN"
         ticker_upper = ticker_orig.strip().upper()  # Normalização reforçada
+        
+        # Log sempre quando há requisições ativas (para debug)
+        with history_req_lock:
+            has_active_requests = bool(active_history_requests)
+            if has_active_requests:
+                logging.debug("🔔 History callback received for '%s' while there are active requests", ticker_upper)
         
         # Log TODOS os callbacks históricos para debug (primeiros 10 e depois a cada 100)
         if not hasattr(_history_trade_cb, "call_count"):
@@ -166,10 +196,25 @@ def _history_trade_cb(asset: TAssetID, date: str, trade_number: int, price: floa
         count = _history_trade_cb.call_count.get(ticker_upper, 0) + 1
         _history_trade_cb.call_count[ticker_upper] = count
         
-        if count <= 10 or count % 100 == 0:
+        # Log sempre os primeiros 20 callbacks para qualquer ticker (não apenas primeiros 10)
+        if count <= 20 or count % 100 == 0:
             logging.info("🔔 History callback #%d for '%s': date=%s, price=%.2f, qty=%d", count, ticker_upper, date, price, qtd)
         
+        # Log sempre os primeiros callbacks, independente da contagem
+        if count == 1:
+            logging.info("🔔 FIRST History callback for '%s': date=%s", ticker_upper, date)
+        
         dt_utc = _parse_profit_datetime(date)
+        
+        # Obter nomes das corretoras
+        buy_agent_name = _get_agent_name(buy_agent)
+        sell_agent_name = _get_agent_name(sell_agent)
+        
+        # Determinar agressora baseado em trade_type
+        aggressor = _determine_aggressor(trade_type)
+        
+        # Mapear trade_type para valor legível
+        trade_type_str = _map_trade_type(trade_type)
         
         # 1. Processamento normal de backfill (candles de 1 min)
         try:
@@ -193,6 +238,13 @@ def _history_trade_cb(asset: TAssetID, date: str, trade_number: int, price: floa
                     "q": int(qtd or 0),
                     "v": float(vol or 0),
                     "id": int(trade_number or 0),
+                    "buy_agent_id": int(buy_agent or 0),
+                    "buy_agent_name": buy_agent_name,
+                    "sell_agent_id": int(sell_agent or 0),
+                    "sell_agent_name": sell_agent_name,
+                    "trade_type": int(trade_type or 0),
+                    "trade_type_str": trade_type_str,
+                    "aggressor": aggressor,
                 }
                 for req_id, req in ticker_requests.items():
                     if req.start_ts <= tick_data["ts"] <= req.end_ts:
@@ -207,18 +259,26 @@ def _history_trade_cb(asset: TAssetID, date: str, trade_number: int, price: floa
                             )
             else:
                 # Se o ticker não estiver na lista, verifica se há requisições ativas para outros tickers
-                # Loga apenas uma vez a cada 1000 ticks ignorados para não floodar
-                if active_history_requests and (count % 1000 == 0):
+                # Loga sempre os primeiros ticks para debug
+                if count <= 5:
+                    keys = list(active_history_requests.keys())
+                    logging.warning("⚠️ History callback for '%s' but no active requests for this ticker. Active requests: %s (callback #%d)", 
+                                  ticker_upper, keys, count)
+                elif active_history_requests and (count % 1000 == 0):
                     keys = list(active_history_requests.keys())
                     logging.warning("Ignored history tick for '%s' (not requested). Active requests: %s", ticker_upper, keys)
 
         if not matched_request and ticker_requests:
             # Registramos quando o tick ficou fora da janela solicitada
             if count % 200 == 0:
+                tick_data_temp = {
+                    "t": dt_utc.isoformat(),
+                    "ts": dt_utc.timestamp(),
+                }
                 logging.info(
                     "Tick for %s ignored (out of requested ranges). ts=%s windows=%s",
                     ticker_upper,
-                    tick_data["t"],
+                    tick_data_temp["t"],
                     [(req.start_ts, req.end_ts) for req in ticker_requests.values()],
                 )
 
@@ -540,13 +600,96 @@ async def hf_ingest_loop():
             await asyncio.sleep(0.5)
 
 
+# Cache para nomes de agentes (evitar múltiplas chamadas DLL)
+_agent_name_cache: dict[int, str] = {}
+
+def _get_agent_name(agent_id: int) -> str:
+    """Obtém nome da corretora usando funções da DLL."""
+    if agent_id <= 0:
+        return ""
+    
+    # Verificar cache
+    if agent_id in _agent_name_cache:
+        return _agent_name_cache[agent_id]
+    
+    try:
+        if hasattr(dll, "GetAgentShortNameByID"):
+            get_short = dll.GetAgentShortNameByID
+            get_short.argtypes = [ctypes.c_int]
+            get_short.restype = ctypes.c_wchar_p
+            name = get_short(agent_id)
+            if name:
+                _agent_name_cache[agent_id] = name
+                return name
+    except Exception:
+        pass
+    
+    # Fallback para nome completo
+    try:
+        if hasattr(dll, "GetAgentNameByID"):
+            get_name = dll.GetAgentNameByID
+            get_name.argtypes = [ctypes.c_int]
+            get_name.restype = ctypes.c_wchar_p
+            name = get_name(agent_id)
+            if name:
+                _agent_name_cache[agent_id] = name
+                return name
+    except Exception:
+        pass
+    
+    # Fallback para ID
+    return str(agent_id)
+
+TRADE_TYPE_MAP = {
+    1: "Cross trade",
+    2: "Agressive Buy",
+    3: "Agressive Sell",
+    4: "Auction",
+    5: "Surveillance",
+    6: "Expit",
+    7: "Options Exercise",
+    8: "Over the counter",
+    9: "Derivative Term",
+    10: "Index",
+    11: "BTC",
+}
+
+def _map_trade_type(trade_type: int) -> str:
+    """Mapeia código de trade_type para string legível."""
+    return TRADE_TYPE_MAP.get(trade_type, "Unknown")
+
+def _determine_aggressor(trade_type: int) -> str | None:
+    """Determina quem foi agressora ou se foi leilão."""
+    if trade_type == 2:  # Agressive Buy
+        return "buy"
+    elif trade_type == 3:  # Agressive Sell
+        return "sell"
+    elif trade_type == 4:  # Auction
+        return "auction"
+    return None
+
 def _parse_profit_datetime(date_str: str) -> datetime:
+    """
+    Parse data da DLL que vem no formato DD/MM/YYYY HH:mm:SS.ZZZ em horário de Brasília.
+    Retorna datetime em UTC.
+    """
     try:
         dt_naive = datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S.%f")
     except ValueError:
         dt_naive = datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S")
-    local = dt_naive.astimezone() if dt_naive.tzinfo else dt_naive.replace(tzinfo=datetime.now().astimezone().tzinfo)
-    return local.astimezone(timezone.utc)
+    
+    # Assumir que a data vem em horário de Brasília (UTC-3)
+    if USE_ZONEINFO:
+        # zoneinfo.ZoneInfo (Python 3.9+)
+        tz_brasilia = ZoneInfoClass("America/Sao_Paulo")
+        dt_brasilia = dt_naive.replace(tzinfo=tz_brasilia)
+    else:
+        # pytz.timezone
+        tz_brasilia = pytz.timezone("America/Sao_Paulo")
+        dt_brasilia = tz_brasilia.localize(dt_naive)
+    
+    # Converter para UTC
+    return dt_brasilia.astimezone(timezone.utc)
 
 
 def _day_string(dt: datetime) -> str:
@@ -586,9 +729,104 @@ def _call_get_history_recent(ticker: str, exch: str = "B", minutes: int = 3) -> 
         logging.warning("GetHistoryTrades call error: %s", e)
 
 # -----------------------------------------------------------------------------
+# Função para salvar ticks no Firebase Storage
+# -----------------------------------------------------------------------------
+def _save_ticks_to_storage(ticks: list[dict], doc_id: str, ticker: str, start_date: str, end_date: str, compress: bool = True) -> dict:
+    """
+    Salva ticks como arquivo JSON no Firebase Storage.
+    
+    Args:
+        ticks: Lista de dicionários com dados dos ticks
+        doc_id: ID único do documento (usado no nome do arquivo)
+        ticker: Ticker do ativo
+        start_date: Data inicial (formato DD/MM/YYYY)
+        end_date: Data final (formato DD/MM/YYYY)
+        compress: Se True, comprime o arquivo com gzip
+    
+    Returns:
+        Dicionário com metadados do arquivo salvo:
+        {
+            "storage_path": str,
+            "storage_url": str,
+            "file_size": int,
+            "file_format": str
+        }
+    """
+    tmp_path = None
+    try:
+        logging.info("💾 [STORAGE] Starting upload to Firebase Storage...")
+        logging.info("💾 [STORAGE] Total ticks: %d, compress: %s", len(ticks), compress)
+        
+        # Serializar para JSON (sem indentação para menor tamanho)
+        json_str = json.dumps(ticks, ensure_ascii=False, indent=None)
+        json_size = len(json_str.encode('utf-8'))
+        logging.info("💾 [STORAGE] JSON serialized. Size: %d bytes (%.2f KB, %.2f MB)", 
+                    json_size, json_size / 1024, json_size / (1024 * 1024))
+        
+        # Criar arquivo temporário
+        file_ext = ".json.gz" if compress else ".json"
+        tmp_file = tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix=file_ext)
+        tmp_path = tmp_file.name
+        tmp_file.close()
+        
+        # Escrever dados (comprimir se necessário)
+        if compress:
+            with gzip.open(tmp_path, 'wt', encoding='utf-8') as gz_file:
+                gz_file.write(json_str)
+        else:
+            with open(tmp_path, 'wb') as f:
+                f.write(json_str.encode('utf-8'))
+        
+        file_size = os.path.getsize(tmp_path)
+        compression_ratio = (1 - file_size / json_size) * 100 if json_size > 0 else 0
+        logging.info("💾 [STORAGE] File created. Size: %d bytes (%.2f KB, %.2f MB). Compression: %.1f%%", 
+                    file_size, file_size / 1024, file_size / (1024 * 1024), compression_ratio)
+        
+        # Definir path no Storage
+        storage_path = f"history_ticks/{doc_id}{file_ext}"
+        logging.info("💾 [STORAGE] Storage path: %s", storage_path)
+        
+        # Fazer upload para Storage
+        bucket = storage.bucket()
+        blob = bucket.blob(storage_path)
+        
+        # Upload com content-type apropriado
+        content_type = "application/gzip" if compress else "application/json"
+        logging.info("💾 [STORAGE] Uploading to Storage (content-type: %s)...", content_type)
+        blob.upload_from_filename(tmp_path, content_type=content_type)
+        
+        # Tornar público (para acesso direto via URL)
+        blob.make_public()
+        logging.info("💾 [STORAGE] File made public")
+        
+        # Obter URL pública
+        storage_url = blob.public_url
+        logging.info("💾 [STORAGE] Public URL: %s", storage_url)
+        
+        return {
+            "storage_path": storage_path,
+            "storage_url": storage_url,
+            "file_size": file_size,
+            "file_format": "json.gz" if compress else "json",
+        }
+    except Exception as e:
+        logging.error("❌ [STORAGE] Error saving ticks to Storage: %s", e, exc_info=True)
+        import traceback
+        logging.error("Full traceback: %s", traceback.format_exc())
+        raise
+    finally:
+        # Sempre limpar arquivo temporário
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+                logging.info("💾 [STORAGE] Temporary file cleaned up")
+            except Exception as cleanup_err:
+                logging.warning("⚠️ [STORAGE] Error cleaning up temp file: %s", cleanup_err)
+
+# -----------------------------------------------------------------------------
 # NOVO: Função para requisição síncrona de histórico (para API sob demanda)
 # -----------------------------------------------------------------------------
-def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, timeout_sec: float = 60.0, save_to_firestore: bool = True) -> list[dict]:
+def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, timeout_sec: float = 60.0, save_to_firestore: bool = True) -> tuple[list[dict], dict | None]:
     """
     Executa GetHistoryTrades para um período específico e aguarda coleta dos dados.
     Datas formato 'dd/MM/yyyy'.
@@ -598,7 +836,7 @@ def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, time
     """
     if not hasattr(dll, "GetHistoryTrades"):
         logging.error("DLL GetHistoryTrades not available")
-        return []
+        return [], None
 
     ticker = ticker.upper()
     exchange = "B"  # Padrão B3
@@ -617,7 +855,7 @@ def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, time
             end_dt = datetime.strptime(end_date, "%d/%m/%Y")
         except ValueError as e:
             logging.error("Invalid date format. Expected dd/MM/yyyy, got: %s, %s", start_date, end_date)
-            return []
+            return [], None
         
         local_tz = datetime.now().astimezone().tzinfo or timezone.utc
         start_local = start_dt.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=local_tz)
@@ -635,6 +873,11 @@ def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, time
                 ticks=[],
                 created_at=time.time(),
             )
+            logging.info("📝 Registered history request %s for %s: start_ts=%s (%.2f), end_ts=%s (%.2f)", 
+                        request_id, ticker, 
+                        datetime.fromtimestamp(start_ts, timezone.utc).isoformat(), start_ts,
+                        datetime.fromtimestamp(end_ts, timezone.utc).isoformat(), end_ts)
+            logging.info("📝 Active requests for %s: %s", ticker, list(ticker_requests.keys()))
 
         num_days = (end_dt - start_dt).days + 1
         logging.info("Requesting history for %s from %s to %s (%d days)", ticker, start_date, end_date, num_days)
@@ -660,10 +903,14 @@ def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, time
             logging.info("Requesting day %s for %s (from %s to %s)", _day_string(cur), ticker, day_start_str, day_end_str)
             
             # Chama DLL para este dia específico com horário completo
+            logging.info("🔵 Calling GetHistoryTrades for %s: ticker=%s, exchange=%s, start=%s, end=%s", 
+                        _day_string(cur), ticker, exchange, day_start_str, day_end_str)
             code = get_hist(ticker, exchange, day_start_str, day_end_str)
+            logging.info("🔵 GetHistoryTrades returned code=%d for %s on %s", code, ticker, _day_string(cur))
             if code != 0:
-                logging.warning("GetHistoryTrades failed for %s on %s: code=%s", ticker, _day_string(cur), code)
+                logging.warning("❌ GetHistoryTrades failed for %s on %s: code=%s", ticker, _day_string(cur), code)
             else:
+                logging.info("✅ GetHistoryTrades succeeded for %s on %s. Waiting for callbacks...", ticker, _day_string(cur))
                 days_requested += 1
                 # Espera um pouco para callbacks deste dia chegarem
                 time.sleep(1.5)  # Aumentado de 1.0 para 1.5 segundos
@@ -680,7 +927,7 @@ def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, time
                 ticker_map.pop(request_id, None)
                 if not ticker_map:
                     active_history_requests.pop(ticker, None)
-            return []
+            return [], None
         
         logging.info("All days requested for %s (req %s). Waiting for data collection...", ticker, request_id)
         
@@ -767,17 +1014,18 @@ def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, time
             
         if not active_req:
             logging.warning("No data captured for %s (req %s).", ticker, request_id)
-            return []
+            return [], None
 
         logging.info("History extraction completed. Total ticks: %d (req %s)", len(active_req.ticks), request_id)
         result = list(active_req.ticks)
         logging.info("🟡 request_history_ticks_sync: About to return %d ticks", len(result))
         
-        # Salvar no Firestore antes de retornar (dentro da função para garantir salvamento)
+        # Salvar no Firebase Storage (e metadados no Firestore) antes de retornar
+        storage_info = None
         doc_id = None
         if save_to_firestore and result:
             try:
-                logging.info("💾 [START] Saving %d ticks to Firestore...", len(result))
+                logging.info("💾 [START] Saving %d ticks to Firebase Storage...", len(result))
                 import time as time_module
                 from datetime import datetime as dt_module
                 
@@ -786,44 +1034,54 @@ def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, time
                 doc_id = f"{ticker.upper()}_{start_date.replace('/', '')}_{end_date.replace('/', '')}_{int(time_module.time())}"
                 logging.info("💾 [STEP 1] Created doc_id: %s", doc_id)
                 
+                # Salvar ticks no Firebase Storage
+                logging.info("💾 [STEP 2] Saving ticks to Firebase Storage...")
+                storage_info = _save_ticks_to_storage(result, doc_id, ticker, start_date, end_date, compress=True)
+                logging.info("💾 [STEP 3] Ticks saved to Storage successfully")
+                
                 # Importar firestore aqui para garantir que está disponível
                 from firebase_admin import firestore as firestore_module
                 
-                # Estrutura do documento
+                # Salvar apenas metadados no Firestore Database (sem o array de ticks)
                 doc_data = {
                     "ticker": ticker.upper(),
                     "start_date": start_date,
                     "end_date": end_date,
                     "request_timestamp": request_timestamp.isoformat(),
                     "total_ticks": len(result),
-                    "ticks": result,
+                    "storage_path": storage_info["storage_path"],
+                    "storage_url": storage_info["storage_url"],
+                    "file_size": storage_info["file_size"],
+                    "file_format": storage_info["file_format"],
                     "created_at": firestore_module.SERVER_TIMESTAMP,
                     "saved_at": firestore_module.SERVER_TIMESTAMP,
                 }
-                logging.info("💾 [STEP 2] Created doc_data with %d ticks", len(result))
+                logging.info("💾 [STEP 4] Created doc_data with metadata (no ticks array)")
                 
-                # Salvar no Firestore Database (collection: history_ticks)
-                # Nota: Firestore Database é diferente de Storage (arquivos)
-                logging.info("💾 [STEP 3] Calling Firestore Database set() for collection 'history_ticks'...")
+                # Salvar metadados no Firestore Database (collection: history_ticks)
+                logging.info("💾 [STEP 5] Saving metadata to Firestore Database...")
                 doc_ref = db.collection("history_ticks").document(doc_id)
                 doc_ref.set(doc_data)
-                logging.info("💾 [STEP 4] Firestore Database set() completed successfully")
+                logging.info("💾 [STEP 6] Metadata saved to Firestore Database successfully")
                 
-                logging.info("✅ Saved to Firestore with ID: %s", doc_id)
+                logging.info("✅ Saved to Firebase Storage and Firestore. ID: %s, URL: %s", doc_id, storage_info["storage_url"])
             except Exception as save_err:
-                logging.error("❌ Error saving to Firestore: %s", save_err, exc_info=True)
+                logging.error("❌ Error saving to Firebase Storage/Firestore: %s", save_err, exc_info=True)
                 import traceback
                 logging.error("Full traceback: %s", traceback.format_exc())
                 # Continuar mesmo se falhar o salvamento
+                storage_info = None
+                doc_id = None
         
         # Adicionar doc_id ao resultado para retornar (se salvo com sucesso)
-        if doc_id:
-            logging.info("🟢 request_history_ticks_sync: Returning %d ticks with doc_id=%s", len(result), doc_id)
+        if doc_id and storage_info:
+            logging.info("🟢 request_history_ticks_sync: Returning %d ticks with doc_id=%s, storage_url=%s", 
+                        len(result), doc_id, storage_info["storage_url"])
         else:
             logging.info("🟢 request_history_ticks_sync: Returning %d ticks (not saved)", len(result))
         
         logging.info("🟢 request_history_ticks_sync: FINAL RETURN with %d ticks", len(result))
-        return result
+        return result, storage_info
 
     except Exception as e:
         logging.error("request_history_ticks_sync failed: %s", e, exc_info=True)
@@ -832,7 +1090,7 @@ def request_history_ticks_sync(ticker: str, start_date: str, end_date: str, time
             req_removed = ticker_map.pop(request_id, None)
             if req_removed and not ticker_map:
                 active_history_requests.pop(ticker, None)
-        return []
+        return [], None
 
 
 async def backfill_flusher():

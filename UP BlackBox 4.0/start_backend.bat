@@ -19,9 +19,9 @@ REM Define para quem precisar consumir (ex.: rotas Next.js)
 set "PROFIT_FEED_URL=http://127.0.0.1:%FEED_PORT%"
 
 REM ---------------------------------------------------------------------------
-REM Sobe o backend principal em uma nova janela
+REM Sobe o backend principal em uma nova janela (exposto em todas as interfaces)
 REM ---------------------------------------------------------------------------
-start "UPBB4 API" cmd /k "cd /d %BASE_DIR% & uvicorn main:app --reload --port %MAIN_PORT%"
+start "UPBB4 API" cmd /k "cd /d %BASE_DIR% & uvicorn main:app --reload --host 0.0.0.0 --port %MAIN_PORT%"
 
 REM ---------------------------------------------------------------------------
 REM Sobe o serviço de market data em outra janela
