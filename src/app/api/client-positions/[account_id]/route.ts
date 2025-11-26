@@ -57,11 +57,11 @@ export async function GET(
 
   try {
     const backendUrl = normalizeBackendUrl(
-      process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL
+      process.env.BACKEND_INTERNAL_URL || process.env.BACKEND_URL
     );
 
     if (!backendUrl) {
-      const envs = ['BACKEND_URL', 'NEXT_PUBLIC_BACKEND_URL']
+      const envs = ['BACKEND_INTERNAL_URL', 'BACKEND_URL']
         .map((env) => `${env}=${process.env[env as keyof NodeJS.ProcessEnv] ?? 'undefined'}`)
         .join(' | ');
       const message = `URL do backend não configurada. Verifique variáveis de ambiente. (${envs})`;
