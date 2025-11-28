@@ -56,6 +56,8 @@ export default function BacktestPage() {
   const [paramDistanciaMinimaD, setParamDistanciaMinimaD] = useState<number>(0);
   const [paramHorarioEntradaInicio, setParamHorarioEntradaInicio] = useState<string>("");
   const [paramHorarioEntradaFim, setParamHorarioEntradaFim] = useState<string>("");
+  const [filtroBaseDados, setFiltroBaseDados] = useState<string>("");
+  const [filtroEstrategia, setFiltroEstrategia] = useState<string>("");
 
   async function fetchBacktests() {
     setLoading(true);
@@ -117,8 +119,19 @@ export default function BacktestPage() {
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
   const filteredEstrategias = estrategias.filter(est => est.nome.toLowerCase().includes(estrategiaSearchTerm.toLowerCase()));
 
+  // Resetar paginação quando os filtros mudarem
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filtroBaseDados, filtroEstrategia]);
+
   // Paginação e filtros agora usam backtests reais
-  let filteredBacktests = backtests; // (implementar filtros se desejar)
+  let filteredBacktests = backtests.filter(bt => {
+    const matchBase = filtroBaseDados === "" || 
+      (bt.base_dados && bt.base_dados.toLowerCase().includes(filtroBaseDados.toLowerCase()));
+    const matchEstrategia = filtroEstrategia === "" || 
+      (bt.estrategia && bt.estrategia.toLowerCase().includes(filtroEstrategia.toLowerCase()));
+    return matchBase && matchEstrategia;
+  });
   let backtestsOrdenados = [...filteredBacktests];
   // (implementar ordenação se desejar)
   const totalPages = Math.ceil(backtestsOrdenados.length / 50);
@@ -793,6 +806,35 @@ export default function BacktestPage() {
           </div>
         </div>
       )}
+      {/* Filtros de busca */}
+      <div className="mt-8 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Filtrar por base de dados
+            </label>
+            <input
+              type="text"
+              placeholder="Digite o nome da base de dados..."
+              className="w-full bg-gray-800 border border-gray-700 rounded px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              value={filtroBaseDados}
+              onChange={(e) => setFiltroBaseDados(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Filtrar por estratégia
+            </label>
+            <input
+              type="text"
+              placeholder="Digite o nome da estratégia..."
+              className="w-full bg-gray-800 border border-gray-700 rounded px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              value={filtroEstrategia}
+              onChange={(e) => setFiltroEstrategia(e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
       {/* Tabela de backtests executados */}
       <div className="overflow-x-auto mt-8">
         {loading ? (
