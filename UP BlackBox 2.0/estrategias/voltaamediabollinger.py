@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 import math
 
-def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_profit=0.10, sair_em_z=False, z_saida=0.0, sair_na_media=False, z_somente_fechamento=True):
+def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_profit=0.10, sair_em_z=False, z_saida=0.0, sair_na_media=False, z_somente_fechamento=True, cooldown_t=0, distancia_minima_d=0.0, horario_entrada_inicio=None, horario_entrada_fim=None):
     """
     Estratégia:
     - Compra quando o fechamento cruza abaixo da banda inferior de Bollinger (só se não houver posição aberta).
@@ -16,6 +16,10 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
       sair_na_media: se True, sai quando o preço volta à média de Bollinger
       z_somente_fechamento: se True (padrão), a saída por Z (ou média) é verificada só no fechamento dos candles seguintes à entrada.
                             Se False, permite saída intrabar por Z em todos os candles (além do primeiro).
+      cooldown_t: tempo de cooldown após stop loss (em períodos). Se > 0, impede novas entradas por T períodos após um stop loss.
+      distancia_minima_d: distância mínima da média de Bollinger (em %). Se > 0, exige que a distância entre preço de entrada e média seja >= D% antes de permitir entrada.
+      horario_entrada_inicio: horário inicial da janela permitida para entradas (formato "HH:MM"). Se None, não aplica filtro.
+      horario_entrada_fim: horário final da janela permitida para entradas (formato "HH:MM"). Se None, não aplica filtro.
     """
     df = pd.read_csv(csv_path, sep=',', on_bad_lines='skip')
     df['date'] = pd.to_datetime(df['date'], format='%d/%m/%Y %H:%M')
@@ -30,7 +34,12 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
     has_open = 'open' in df.columns
     has_low = 'low' in df.columns
     has_high = 'high' in df.columns
+    cooldown_until_idx = -1  # Índice até o qual o cooldown está ativo (-1 = nenhum cooldown)
     while i < len(df):
+        # Verificar se estamos em período de cooldown
+        if cooldown_t > 0 and i < cooldown_until_idx:
+            i += 1
+            continue
         # Cálculo do gatilho de entrada no candle i
         preco_gatilho_entrada = df.at[i, 'banda_inferior']
         media_i = df.at[i, 'media']
@@ -62,6 +71,30 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
                     entrada_data = df.at[i, 'date']
                     entrada_preco = float(df.at[i, 'close'])
                     entrada_tipo = 'close'
+
+        # Validar horário de entrada antes de permitir entrada
+        if entrada_idx is not None and horario_entrada_inicio and horario_entrada_fim:
+            try:
+                hora_entrada = entrada_data.time()
+                hora_inicio = datetime.strptime(horario_entrada_inicio, '%H:%M').time()
+                hora_fim = datetime.strptime(horario_entrada_fim, '%H:%M').time()
+                if not (hora_inicio <= hora_entrada <= hora_fim):
+                    # Fora do horário permitido, pular entrada
+                    i += 1
+                    continue
+            except (ValueError, TypeError):
+                # Se houver erro no parsing, não aplicar filtro
+                pass
+
+        # Validar distância mínima da média antes de permitir entrada
+        if entrada_idx is not None and distancia_minima_d > 0:
+            media_entrada = df.at[entrada_idx, 'media']
+            if not pd.isna(media_entrada) and media_entrada > 0:
+                distancia_percent = (media_entrada - entrada_preco) / media_entrada * 100
+                if distancia_percent < distancia_minima_d:
+                    # Distância insuficiente, pular entrada
+                    i += 1
+                    continue
 
         if entrada_idx is None:
             i += 1
@@ -112,6 +145,9 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
             saida_data = df.at[i, 'date']
             if stop_trigger_i:
                 saida_preco = float(stop_price_i)
+                # Ativar cooldown após stop loss
+                if cooldown_t > 0:
+                    cooldown_until_idx = saida_idx + cooldown_t + 1
             elif take_trigger_i:
                 saida_preco = float(take_price_i)
             else:
@@ -131,6 +167,9 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
                     saida_idx = entrada_idx + j
                     saida_data = df.at[saida_idx, 'date']
                     saida_preco = float(stop_price)
+                    # Ativar cooldown após stop loss
+                    if cooldown_t > 0:
+                        cooldown_until_idx = saida_idx + cooldown_t + 1
                     break
                 if max_preco >= take_price:
                     saida_idx = entrada_idx + j
@@ -294,6 +333,33 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
             'z_somente_fechamento': (
                 'Se verdadeiro, a verificação de saída por Z (ou média) nos candles após a entrada ocorre apenas no fechamento.\n'
                 'Se falso, a saída por Z também pode acontecer intrabar (se a máxima do candle tocar a linha alvo).'
+            ),
+            'cooldown_t': (
+                'Tempo de cooldown após stop loss em períodos (T).\n'
+                'Após uma saída por stop loss, a estratégia não abrirá novas operações por T períodos.\n'
+                'Exemplo: T = 5 → após um stop loss, aguarda 5 períodos antes de permitir nova entrada.\n'
+                'Valor 0 desabilita o cooldown (comportamento padrão).'
+            ),
+            'distancia_minima_d': (
+                'Distância mínima da média de Bollinger em percentual (D).\n'
+                'Exige que a distância entre o preço de entrada e a média seja pelo menos D% antes de permitir a entrada.\n'
+                'Exemplo: D = 2 → só entra se a distância entre preço de entrada e média for ≥ 2%.\n'
+                'Valor 0 desabilita o filtro (comportamento padrão).\n'
+                'Cálculo: distância = (média - preço de entrada) / média × 100%'
+            ),
+            'horario_entrada_inicio': (
+                'Horário inicial da janela permitida para entradas (formato "HH:MM").\n'
+                'Define o horário inicial da janela durante a qual as entradas podem ser executadas.\n'
+                'Exemplo: "09:00" → permite entradas a partir das 09:00.\n'
+                'Deixe vazio para desabilitar o filtro (comportamento padrão).\n'
+                'Ambos os campos (início e fim) devem ser preenchidos para o filtro funcionar.'
+            ),
+            'horario_entrada_fim': (
+                'Horário final da janela permitida para entradas (formato "HH:MM").\n'
+                'Define o horário final da janela durante a qual as entradas podem ser executadas.\n'
+                'Exemplo: "17:00" → permite entradas até as 17:00.\n'
+                'Deixe vazio para desabilitar o filtro (comportamento padrão).\n'
+                'Ambos os campos (início e fim) devem ser preenchidos para o filtro funcionar.'
             )
         }
     } 
