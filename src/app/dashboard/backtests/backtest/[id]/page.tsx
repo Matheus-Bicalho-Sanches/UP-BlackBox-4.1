@@ -292,6 +292,9 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
                 <li>
                   Tempo posicionado médio dos trades perdedores: {backtest.metrics?.tempo_medio_perdedores != null ? backtest.metrics.tempo_medio_perdedores.toFixed(2) : '-'}
                 </li>
+                <li>
+                  Drawdown máximo: {backtest.metrics?.max_drawdown_estrategia != null ? (backtest.metrics.max_drawdown_estrategia * 100).toFixed(2) + '%' : '-'}
+                </li>
               </ul>
             </div>
           </div>

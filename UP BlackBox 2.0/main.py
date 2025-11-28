@@ -423,6 +423,7 @@ async def run_backtest(request: Request):
             'tempo_medio_vencedores': resultado.get('tempo_medio_vencedores'),
             'perda_medio_perdedores': resultado.get('perda_medio_perdedores'),
             'tempo_medio_perdedores': resultado.get('tempo_medio_perdedores'),
+            'max_drawdown_estrategia': resultado.get('max_drawdown_estrategia'),
         }
 
         # Salvar só o resumo no Firestore

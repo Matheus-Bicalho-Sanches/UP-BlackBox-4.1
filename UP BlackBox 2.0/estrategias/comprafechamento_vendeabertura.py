@@ -50,6 +50,8 @@ def run_comprafechamento_vendeabertura(csv_path):
         {'data': d.strftime('%Y-%m-%d %H:%M'), 'valor': float(v)}
         for d, v in zip(df['date'], drawdown_ativo)
     ]
+    # Calcular drawdown máximo da estratégia
+    max_drawdown_estrategia = float(drawdown_estrategia.min()) if not drawdown_estrategia.empty else 0.0
     # Cálculo correto: média geométrica dos retornos
     n_operacoes = len(trades)
     if n_operacoes > 0:
@@ -120,5 +122,6 @@ def run_comprafechamento_vendeabertura(csv_path):
         'ganho_medio_vencedores': ganho_medio_vencedores,
         'tempo_medio_vencedores': tempo_medio_vencedores,
         'perda_medio_perdedores': perda_medio_perdedores,
-        'tempo_medio_perdedores': tempo_medio_perdedores
+        'tempo_medio_perdedores': tempo_medio_perdedores,
+        'max_drawdown_estrategia': max_drawdown_estrategia
     } 

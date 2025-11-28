@@ -130,6 +130,9 @@ def run_precoCruzaMedia(csv_path, param1=3, param2=5, stop_loss=-0.05, take_prof
         for d, v in zip(df['date'], drawdown_ativo)
     ]
     
+    # Calcular drawdown máximo da estratégia
+    max_drawdown_estrategia = float(drawdown_estrategia.min()) if not drawdown_estrategia.empty else 0.0
+    
     # 5. CALCULAR ESTATÍSTICAS
     
     n_operacoes = len(trades)
@@ -199,6 +202,7 @@ def run_precoCruzaMedia(csv_path, param1=3, param2=5, stop_loss=-0.05, take_prof
         'ganho_medio_vencedores': ganho_medio_vencedores,
         'tempo_medio_vencedores': tempo_medio_vencedores,
         'perda_medio_perdedores': perda_medio_perdedores,
-        'tempo_medio_perdedores': tempo_medio_perdedores
+        'tempo_medio_perdedores': tempo_medio_perdedores,
+        'max_drawdown_estrategia': max_drawdown_estrategia
     }
 
