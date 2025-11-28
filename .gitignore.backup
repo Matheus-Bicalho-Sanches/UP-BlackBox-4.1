@@ -1,0 +1,152 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+.env.local
+.env.*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# secrets
+secrets/
+
+# local IDE/editor
+.vscode/
+.idea/
+
+# Windows shortcuts
+*.lnk
+
+# Profit DLL logs
+Dll_Profit/Logs/
+Dll_Profit/LOGS_Temp.zip
+Dll_Profit/**/*.zip
+Dll_Profit/**/*.log
+
+# Ignore generated files in Dll_Profit
+Dll_Profit/**/Logs/**
+Dll_Profit/Erro.log
+Dll_Profit/ProfitChart.dat
+Dll_Profit/newagents.dat
+Dll_Profit/bin/Win64/Example/Erro.log
+Dll_Profit/bin/Win64/Example/ProfitChart.dat
+Dll_Profit/bin/Win64/Example/newagents.dat
+
+# Ignore large log files and temporary files
+*.zip
+*.log
+**/Logs/**
+**/Temp/**
+**/*_Temp.*
+results/
+public/backtests/
+
+# Python virtual environments and logs
+**/venv/
+**/venv_*/
+**/__pycache__/
+*.pyc
+*.pyo
+debug_dll.log
+quant_engine.log
+
+# Cursor IDE files
+.cursor/
+
+# Dll_Profit - ignore logs, temp e binários pesados; manter apenas código-fonte
+Dll_Profit/Logs/
+Dll_Profit/Temp/
+Dll_Profit/__pycache__/
+Dll_Profit/Exemplo\ Python/Logs/
+Dll_Profit/Exemplo\ Python/__pycache__/
+Dll_Profit/Erro.log
+Dll_Profit/Exemplo\ Python/Erro.log
+
+# UP BlackBox 2.0 - ignore only heavy/generated files, keep source code
+"UP BlackBox 2.0/venv_bb2/"
+"UP BlackBox 2.0/__pycache__/"
+"UP BlackBox 2.0/.env"
+"UP BlackBox 2.0/secrets/"
+"UP BlackBox 2.0/**/*.log"
+"UP BlackBox 2.0/**/*.zip"
+"UP BlackBox 2.0/**/*.dat"
+"UP BlackBox 2.0/**/*.exe"
+"UP BlackBox 2.0/**/*.dll"
+
+# UP BlackBox 4.0 - similar protection
+"UP BlackBox 4.0/venv/"
+"UP BlackBox 4.0/venv_bb4/"
+"UP BlackBox 4.0/__pycache__/"
+"UP BlackBox 4.0/.env"
+"UP BlackBox 4.0/secrets/"
+"UP BlackBox 4.0/**/*.log"
+"UP BlackBox 4.0/**/*.zip"
+"UP BlackBox 4.0/**/*.dat"
+"UP BlackBox 4.0/**/*.exe"
+"UP BlackBox 4.0/**/*.dll"
+
+# Backend homepage - ignore only node_modules and logs, keep source code
+backendhomepagesiteUP/node_modules/
+backendhomepagesiteUP/.git/
+backendhomepagesiteUP/package-lock.json
+
+# Temporary and generated files
+h -u origin main
+git pull .bat
+otimizacao home.md
+sugestoeshomepage.md
+teste_backtest_manual.py
+
+# Services (Python) environments, caches and logs
+services/**/venv/
+services/**/venv_*/
+services/**/__pycache__/
+services/**/Logs/
+services/**/logs/
+
+# Dll_Profit heavy binaries and data (keep examples' source code only)
+Dll_Profit/**/*.exe
+Dll_Profit/**/*.dll
+Dll_Profit/**/*.dat
+Dll_Profit/**/*.accsd
+Dll_Profit/**/*.broker
+Dll_Profit/bin/**
+Dll_Profit/database/**
+Dll_Profit/MarketHours2/**
+Dll_Profit/roteamento/**
+

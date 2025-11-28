@@ -31,11 +31,10 @@ export default function EquipePage() {
             <div className="max-w-3xl space-y-6">
               <p className="text-sm uppercase tracking-[0.4em] text-cyan-300">Equipe UP</p>
               <h1 className="text-4xl font-semibold text-white md:text-5xl">
-                Pessoas com experiência de mercado, focadas em retornos acima da média
+              Utilizamos IA em modelos quantitativos para identificar padrões e micro-ineficiências nos mercado.
               </h1>
               <p className="text-lg text-slate-200">
-                Equipe de especialistas com governança, processos
-                auditados e a mesma skin in the game dos nossos clientes.
+              Somos uma Equipe Economistas, Administradores e programadores com anos de experiencia de mercado
               </p>
               <div className="flex flex-wrap gap-3">
                 <Link

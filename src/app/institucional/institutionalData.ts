@@ -2,7 +2,7 @@ export const heroData = {
   eyebrow: 'Institucional',
   title: 'UP Gestão: governança, tecnologia e visão de longo prazo',
   subtitle:
-    'Somos uma casa independente de gestão patrimonial que integra pesquisa proprietária, dados, análise fundamentalista e análise quantitativa.',
+    'Somos uma casa independente de gestão patrimonial que integra pesquisa proprietária com análise de dados fundamentalistas e quantitativos',
   stats: [
     { label: 'Patrimônio administrado', value: 'R$ 30 MM' },
     { label: 'Equipe dedicada', value: '6+ especialistas' },

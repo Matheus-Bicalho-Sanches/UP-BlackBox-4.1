@@ -52,6 +52,10 @@ export default function BacktestPage() {
   const [paramSairEmZ, setParamSairEmZ] = useState(false);
   const [paramZSaida, setParamZSaida] = useState<number>(0);
   const [paramZSomenteFechamento, setParamZSomenteFechamento] = useState<boolean>(true);
+  const [paramCooldownT, setParamCooldownT] = useState<number>(0);
+  const [paramDistanciaMinimaD, setParamDistanciaMinimaD] = useState<number>(0);
+  const [paramHorarioEntradaInicio, setParamHorarioEntradaInicio] = useState<string>("");
+  const [paramHorarioEntradaFim, setParamHorarioEntradaFim] = useState<string>("");
 
   async function fetchBacktests() {
     setLoading(true);
@@ -201,6 +205,10 @@ export default function BacktestPage() {
           sair_em_z: paramSairEmZ,
           z_saida: paramSairEmZ ? Number(paramZSaida) : 0,
           z_somente_fechamento: paramZSomenteFechamento,
+          cooldown_t: paramCooldownT,
+          distancia_minima_d: paramDistanciaMinimaD,
+          horario_entrada_inicio: paramHorarioEntradaInicio || undefined,
+          horario_entrada_fim: paramHorarioEntradaFim || undefined,
         };
       } else if (selectedEstrategia.toLowerCase() === "precocruzamedia") {
         body.parametros = {
@@ -248,6 +256,73 @@ export default function BacktestPage() {
     }
   }
 
+  function handleReutilizarBacktest(backtest: any) {
+    // Selecionar base de dados
+    if (backtest.base_dados) {
+      setSelectedBases([backtest.base_dados]);
+    }
+    
+    // Selecionar estratégia
+    if (backtest.estrategia) {
+      setSelectedEstrategia(backtest.estrategia);
+    }
+    
+    // Mapear parâmetros conforme a estratégia
+    if (backtest.parametros) {
+      const params = backtest.parametros;
+      const estrategiaLower = backtest.estrategia?.toLowerCase() || '';
+      
+      if (estrategiaLower === 'voltaamediabollinger') {
+        setParamX(String(params.x || 1));
+        setParamY(params.y || 5);
+        setParamW(params.w ?? null);
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.10) * 100);
+        setParamSairEmZ(params.sair_em_z || false);
+        setParamZSaida(params.z_saida || 0);
+        setParamZSomenteFechamento(params.z_somente_fechamento ?? true);
+        setParamCooldownT(params.cooldown_t || 0);
+        setParamDistanciaMinimaD(params.distancia_minima_d || 0);
+        setParamHorarioEntradaInicio(params.horario_entrada_inicio || '');
+        setParamHorarioEntradaFim(params.horario_entrada_fim || '');
+      } else if (estrategiaLower === 'buyifstockupxpercentage') {
+        setParamX(String((params.x || 0.03) * 100));
+        setParamY(params.y || 5);
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.08) * 100);
+      } else if (estrategiaLower.replace(/[_-]/g, '') === 'vendeaberturacomprafechamento') {
+        setParamDiaSemana(params.dia_semana !== undefined && params.dia_semana !== null ? params.dia_semana : '');
+      } else if (estrategiaLower === 'buysequenciadealtaouqueda') {
+        setParamX(String(params.x || 3));
+        setParamY(params.y || 5);
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.08) * 100);
+      } else if (estrategiaLower === 'operandomomentum') {
+        setParamX(String((params.x || 0.05) * 100));
+        setParamY(params.y || 5);
+        setParamW(params.w ?? 5);
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.08) * 100);
+        setParamDiaSemana(params.dia_semana !== undefined && params.dia_semana !== null ? params.dia_semana : '');
+      } else if (estrategiaLower === 'operandotoposefundos') {
+        setParamModo(params.modo || 'topo');
+        setParamX(String((params.x || 0.10) * 100));
+        setParamY(params.y || 60);
+        setParamW(params.w ?? 10);
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.10) * 100);
+      } else if (estrategiaLower === 'precocruzamedia') {
+        setParamX(String(params.param1 || 3));
+        setParamY(params.param2 || 5);
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.08) * 100);
+      }
+    }
+    
+    // Abrir modal
+    setShowModal(true);
+  }
+
   return (
     <div className="bg-gray-900 min-h-screen rounded-lg shadow p-8 text-white">
       <div className="flex justify-between items-center mb-8">
@@ -262,7 +337,7 @@ export default function BacktestPage() {
       {/* Modal de novo backtest */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50">
-          <div className="bg-white text-gray-900 rounded-lg shadow-lg w-full max-w-6xl p-10 relative">
+          <div className="bg-white text-gray-900 rounded-lg shadow-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto p-10 relative">
             <button
               className="absolute top-2 right-2 text-gray-500 hover:text-gray-800 text-2xl"
               onClick={() => setShowModal(false)}
@@ -599,6 +674,42 @@ export default function BacktestPage() {
                     </span>
                   </div>
                   <div>
+                    <label className="block text-sm font-medium mb-1">T (tempo de cooldown após stop loss)</label>
+                    <input type="number" value={paramCooldownT} onChange={e => setParamCooldownT(Number(e.target.value))} min="0" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Após uma saída por stop loss, a estratégia não abrirá novas operações por T períodos.<br />
+                      <b>Exemplo:</b> T = 5 &rarr; após um stop loss, aguarda 5 períodos antes de permitir nova entrada.<br />
+                      <b>Nota:</b> Valor 0 desabilita o cooldown (comportamento padrão).
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">D (distância mínima da média, %)</label>
+                    <input type="number" value={paramDistanciaMinimaD} onChange={e => setParamDistanciaMinimaD(Number(e.target.value))} min="0" step="0.1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Exige que a distância entre o preço de entrada e a média seja pelo menos D% antes de permitir a entrada.<br />
+                      <b>Exemplo:</b> D = 2 &rarr; só entra se a distância entre preço de entrada e média for ≥ 2%.<br />
+                      <b>Nota:</b> Valor 0 desabilita o filtro (comportamento padrão). Cálculo: distância = (média - preço de entrada) / média × 100%.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Horário de entrada (início)</label>
+                    <input type="time" value={paramHorarioEntradaInicio} onChange={e => setParamHorarioEntradaInicio(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Define o horário inicial da janela permitida para entradas.<br />
+                      <b>Exemplo:</b> 09:00 &rarr; permite entradas a partir das 09:00.<br />
+                      <b>Nota:</b> Deixe vazio para desabilitar o filtro. Ambos os campos (início e fim) devem ser preenchidos para o filtro funcionar.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Horário de entrada (fim)</label>
+                    <input type="time" value={paramHorarioEntradaFim} onChange={e => setParamHorarioEntradaFim(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Define o horário final da janela permitida para entradas.<br />
+                      <b>Exemplo:</b> 17:00 &rarr; permite entradas até as 17:00.<br />
+                      <b>Nota:</b> Deixe vazio para desabilitar o filtro. Ambos os campos (início e fim) devem ser preenchidos para o filtro funcionar.
+                    </span>
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium mb-1">Stop Loss (%)</label>
                     <input type="text" value={paramStopLoss} onChange={e => setParamStopLoss(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
                     <span className="text-xs text-gray-700 block mt-1">
@@ -723,7 +834,7 @@ export default function BacktestPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Retorno por trade</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Tempo médio por trade</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Nº Trades</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Ver Backtest</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -788,11 +899,19 @@ export default function BacktestPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">{bt.metrics?.n_operacoes ?? '-'}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <Link href={`/dashboard/backtests/backtest/${bt.id}`} legacyBehavior>
-                          <a className="bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-1 rounded text-sm font-semibold" target="_blank" rel="noopener noreferrer">
-                            Ver Backtest
-                          </a>
-                        </Link>
+                        <div className="flex gap-2">
+                          <Link href={`/dashboard/backtests/backtest/${bt.id}`} legacyBehavior>
+                            <a className="bg-cyan-600 hover:bg-cyan-700 text-white px-3 py-1 rounded text-sm font-semibold" target="_blank" rel="noopener noreferrer">
+                              Ver Backtest
+                            </a>
+                          </Link>
+                          <button
+                            onClick={() => handleReutilizarBacktest(bt)}
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm font-semibold"
+                          >
+                            Reutilizar
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

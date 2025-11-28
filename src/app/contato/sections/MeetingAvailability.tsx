@@ -8,12 +8,13 @@ type MeetingAvailabilityProps = {
     day: string;
     period: string;
     description: string;
+    whatsappMessage?: string;
   }>;
 };
 
 const MeetingAvailability = ({ slots }: MeetingAvailabilityProps) => {
   return (
-    <section className="bg-slate-50 py-18 md:py-20">
+    <section className="bg-slate-50 py-8 md:py-12">
       <div className="container mx-auto px-4 space-y-10">
         <header className="max-w-3xl space-y-4 text-center md:text-left">
           <p className="text-sm uppercase tracking-[0.3em] text-cyan-600">Reuniões de diagnóstico</p>
@@ -22,7 +23,7 @@ const MeetingAvailability = ({ slots }: MeetingAvailabilityProps) => {
             Escolha o período ideal e nosso time confirma a agenda com link de reunião ou visita presencial.
           </p>
         </header>
-        <div className="grid gap-6 md:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {slots.map((slot) => (
             <MeetingSlotCard key={slot.id} {...slot} />
           ))}

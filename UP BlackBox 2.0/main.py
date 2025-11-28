@@ -362,7 +362,29 @@ async def run_backtest(request: Request):
             if sair_na_media_antigo and not sair_em_z:
                 sair_em_z = True
                 z_saida = 0.0
-            resultado = run_voltaamediabollinger(tmp_path, x, y, w, stop_loss, take_profit, sair_em_z, z_saida, False, z_somente_fechamento)
+            # Parâmetro de cooldown após stop loss
+            try:
+                cooldown_t = int(parametros.get('cooldown_t') or parametros.get('t')) if (parametros.get('cooldown_t') is not None or parametros.get('t') is not None) else 0
+            except Exception:
+                cooldown_t = 0
+            # Parâmetro de distância mínima
+            try:
+                distancia_minima_d = float(parametros.get('distancia_minima_d') or parametros.get('d')) if (parametros.get('distancia_minima_d') is not None or parametros.get('d') is not None) else 0.0
+            except Exception:
+                distancia_minima_d = 0.0
+            # Parâmetros de horário de entrada
+            try:
+                horario_entrada_inicio = parametros.get('horario_entrada_inicio') or parametros.get('horario_inicio')
+                horario_entrada_fim = parametros.get('horario_entrada_fim') or parametros.get('horario_fim')
+                # Validar formato se fornecido
+                if horario_entrada_inicio:
+                    datetime.datetime.strptime(horario_entrada_inicio, '%H:%M')
+                if horario_entrada_fim:
+                    datetime.datetime.strptime(horario_entrada_fim, '%H:%M')
+            except (ValueError, TypeError):
+                horario_entrada_inicio = None
+                horario_entrada_fim = None
+            resultado = run_voltaamediabollinger(tmp_path, x, y, w, stop_loss, take_profit, sair_em_z, z_saida, False, z_somente_fechamento, cooldown_t, distancia_minima_d, horario_entrada_inicio, horario_entrada_fim)
         elif estrategia_nome.lower() == 'precocruzamedia':
             param1 = parametros.get('param1', 3)
             param2 = parametros.get('param2', 5)

@@ -38,6 +38,14 @@ function formatParamLabel(key: string): string {
     stop_loss: 'Stop Loss',
     take_profit: 'Take Profit',
     sair_na_media: 'Sair na média',
+    cooldown_t: 'T (Cooldown)',
+    t: 'T (Cooldown)',
+    distancia_minima_d: 'D (Distância Mínima)',
+    d: 'D (Distância Mínima)',
+    horario_entrada_inicio: 'Horário Entrada Início',
+    horario_inicio: 'Horário Entrada Início',
+    horario_entrada_fim: 'Horário Entrada Fim',
+    horario_fim: 'Horário Entrada Fim',
   };
   return map[key] || key;
 }

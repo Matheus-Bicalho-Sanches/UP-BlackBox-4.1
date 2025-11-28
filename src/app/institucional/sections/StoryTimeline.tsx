@@ -12,7 +12,7 @@ type StoryTimelineProps = {
 
 const StoryTimeline = ({ events }: StoryTimelineProps) => {
   return (
-    <section className="bg-white py-20 md:py-24">
+    <section className="bg-white py-8 md:py-12">
       <div className="container mx-auto px-4 space-y-12">
         <header className="max-w-3xl space-y-4 text-center md:text-left">
           <p className="text-sm uppercase tracking-[0.3em] text-cyan-600">Nossa história</p>

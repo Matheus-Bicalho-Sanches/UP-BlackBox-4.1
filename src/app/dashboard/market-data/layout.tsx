@@ -7,6 +7,7 @@ const tabs = [
   { name: "Acomp. Ativos", href: "/dashboard/market-data/acompativos" },
   { name: "Estratégias Quant", href: "/dashboard/market-data/teste-2" },
   { name: "Monitor de Sinais", href: "/dashboard/market-data/teste-3" },
+  { name: "Requisitar Ticks", href: "/dashboard/market-data/requisitar-ticks" },
 ];
 
 export default function MarketDataLayout({

@@ -128,44 +128,44 @@ export const comparisonItems: ServiceComparisonItem[] = [
 export const onboardingSteps: TimelineStep[] = [
   {
     id: 'diagnostico',
-    title: 'Diagnóstico e assinatura',
+    title: 'Perfil de investidor',
     description:
-      'Reunião inicial para entender objetivos, restrições e estrutura societária. Coleta de documentos e alinhamento de governança.',
-    deliverable: 'Carta de investimento preliminar',
-    timeframe: 'Semana 1',
+      'Reunião inicial para entender objetivos, restrições, necessidade de liquidez e outros fatores.',
+    deliverable: 'Diagnóstico inicial UP',
+    timeframe: 'Passo 1',
   },
   {
     id: 'estrategia',
-    title: 'Desenho da estratégia',
+    title: 'Documentação jurídica',
     description:
-      'Modelagem de cenários, definição de alocações alvo e construção de portfólios com base nos comitês proprietários.',
-    deliverable: 'Plano tático e alocação recomendada',
-    timeframe: 'Semana 2',
+      'Envio do contrato para assinatura, bem como formulários de KYC e outros documentos necessários',
+    deliverable: 'Documentação completa',
+    timeframe: 'Passo 2',
   },
   {
     id: 'implementacao',
-    title: 'Implementação assistida',
+    title: 'Início da gestão',
     description:
-      'Execução das alocações, coordenação com bancos/corretoras e setup de relatórios, com comunicação transparente sobre custos e impostos.',
-    deliverable: 'Carteira implantada e monitor de risco ativo',
-    timeframe: 'Semanas 3-4',
+      'Configuração necessária nas corretoras e conexão das contas ao nosso sistema proprietário',
+    deliverable: 'Carteira implantada',
+    timeframe: 'Passo 3',
   },
   {
     id: 'acompanhamento',
     title: 'Acompanhamento contínuo',
     description:
-      'Comitês de acompanhamento, rebalanceamentos automáticos e relatórios executivos com destaque de risco, performance e próximos passos.',
-    deliverable: 'Relatórios mensais + reuniões estratégicas',
-    timeframe: 'Ciclo contínuo',
+      'Reuniões de acompanhamento, rebalanceamentos periódicos e relatórios mensais detalhados via WhatsApp',
+    deliverable: 'Relatórios mensais + reuniões periódicas',
+    timeframe: 'Acompanhamento contínuo',
   },
 ];
 
 export const differentialItems: DifferentialItem[] = [
   {
     id: 'comites',
-    title: 'Comitês proprietários e skin in the game',
+    title: 'Sistema proprietário e alinhamento de interesse',
     description:
-      'Gestores investem nas mesmas estratégias e participam de comitês dedicados para cada serviço, garantindo alinhamento total.',
+      'Desenvolvemos estratégias únicas usando dados e análise quantitativa. Todos colaboradores da gestora investem nas mesmas estratégias que os clientes.',
   },
   {
     id: 'dados',
@@ -175,9 +175,9 @@ export const differentialItems: DifferentialItem[] = [
   },
   {
     id: 'relatorios',
-    title: 'Relatórios executivos e experiências personalizadas',
+    title: 'Relatórios mensais e atendimento personalizado',
     description:
-      'Material visual sob medida, dashboards exclusivos e reuniões recorrentes com linguagem clara para famílias e conselhos.',
+      'Enviamos relatórios mensais aos clientes. Também temos um canal de atendimento via WhatsApp para qualquer dúvida ou pergunta que surja no dia a dia',
   },
   {
     id: 'compliance',
@@ -209,19 +209,19 @@ export const faqItems: FAQItem[] = [
     id: 'prazo-implementacao',
     question: 'Quanto tempo leva para implementar uma carteira após o diagnóstico?',
     answer:
-      'O processo completo leva de 3 a 4 semanas. Nas primeiras duas semanas definimos a estratégia e alocação; nas semanas seguintes executamos as operações junto às instituições financeiras.',
+      'O processo completo leva de 3 a 4 semanas. Na primeira semana definimos a estratégia e alocação. Nas semanas seguintes fazemos a assinatura da documentação jurídica e configuramos as contas nas corretoras para a carteira administrada.',
   },
   {
     id: 'custos',
     question: 'Quais são os custos envolvidos e como a remuneração é estruturada?',
     answer:
-      'Trabalhamos com taxa de administração alinhada ao serviço escolhido, sem rebates de terceiros. Toda a remuneração é transparente e combinada antes da implementação.',
+      'Trabalhamos com taxa de administração alinhada ao serviço escolhido, sem rebates de terceiros. Toda a remuneração é transparente e combinada antes da implementação dependendo do serviço contratado. Normalmente fica entre 0,6% a 2% ao ano.',
   },
   {
     id: 'custodia',
     question: 'Onde ficam os ativos e como o investidor acompanha o patrimônio?',
     answer:
-      'Os ativos permanecem custodiados nas instituições dos clientes. Oferecemos dashboards proprietários e relatórios executivos para visão consolidada de todas as posições.',
+      'Os ativos permanecem custodiados nas instituições dos clientes. Os clientes conseguem acompanhar as posições em retorno em tempo real diretamente pelos seus respectivos acessos nas corretoras e bancos.',
   },
 ];
 

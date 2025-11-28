@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 
 /**
  * CursorGlow
@@ -11,11 +11,17 @@ import { useEffect, useState, useRef } from 'react';
  * - A cor/raio do gradiente pode ser ajustada via props futuramente
  */
 export default function CursorGlow() {
+  // Toggle para habilitar/desabilitar o rastro do mouse
+  const ENABLE_TRAIL = false;
+  
   // Sem estado individual; utilizamos o array trail para glow atual e rastro
   const [trail, setTrail] = useState<{x:number; y:number; t:number}[]>([]);
   const ttl = 800; // duração da trilha em ms
 
   useEffect(() => {
+    // Se o rastro estiver desabilitado, não faz nada
+    if (!ENABLE_TRAIL) return;
+    
     const start = () => {
       return window.setInterval(() => {
         setTrail(prev => prev.filter(p => Date.now() - p.t < ttl));
@@ -38,10 +44,13 @@ export default function CursorGlow() {
       clearInterval(id);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, []);
+  }, [ttl]);
 
   // atual handleMove: adjust with timestamp
   useEffect(() => {
+    // Se o rastro estiver desabilitado, não registra eventos
+    if (!ENABLE_TRAIL) return;
+    
     // Handler que funciona para PointerEvent e TouchEvent (fallback)
     const handleMove = (ev: PointerEvent | TouchEvent) => {
       let clientX: number | null = null;
@@ -73,6 +82,9 @@ export default function CursorGlow() {
     };
   }, []);
 
+  // Se o rastro estiver desabilitado, não renderiza nada
+  if (!ENABLE_TRAIL) return null;
+  
   // draw
   return (
     <svg

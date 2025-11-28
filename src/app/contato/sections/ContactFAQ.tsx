@@ -12,7 +12,7 @@ type ContactFAQProps = {
 
 const ContactFAQ = ({ items }: ContactFAQProps) => {
   return (
-    <section className="bg-slate-50 py-18 md:py-20">
+    <section className="bg-slate-50 py-8 md:py-12">
       <div className="container mx-auto px-4 space-y-12">
         <header className="max-w-3xl space-y-4 text-center md:text-left">
           <p className="text-sm uppercase tracking-[0.3em] text-cyan-600">Dúvidas frequentes</p>
