@@ -110,7 +110,7 @@ const Footer: FC = () => {
               {/* Copyright */}
               <div className="text-gray-400 text-sm mb-4 md:mb-0">
                 <p className="mb-2">
-                  © {new Date().getFullYear()} UP Carteiras Administradas. Todos os direitos reservados.
+                  © {new Date().getFullYear()} UP Carteiras Administradas. Todos os direitos reservados. CNPJ: 58.450.405/0001-01
                 </p>
               </div>
 
