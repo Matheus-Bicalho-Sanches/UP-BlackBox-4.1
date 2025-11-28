@@ -783,6 +783,43 @@ export default function BacktestPage() {
                   )}
                 </div>
               )}
+              {/* Inputs para PrecoCruzaMedia */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase() === "precocruzamedia" && (
+                <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Param1 (Período da média móvel)</label>
+                    <input type="number" value={paramX} onChange={e => setParamX(e.target.value)} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Quantidade de períodos para o cálculo da média móvel.<br />
+                      <b>Exemplo:</b> 3 &rarr; usa média móvel de 3 períodos.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Param2 (Períodos para saída)</label>
+                    <input type="number" value={paramY} onChange={e => setParamY(Number(e.target.value))} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Quantidade máxima de períodos que a posição ficará aberta, caso não atinja stop ou gain.<br />
+                      <b>Exemplo:</b> 5 &rarr; vende no 5º período após a compra, se não sair antes por stop ou gain.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Stop Loss (%)</label>
+                    <input type="text" value={paramStopLoss} onChange={e => setParamStopLoss(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de perda para encerrar a operação.<br />
+                      <b>Exemplo:</b> -5 &rarr; encerra a operação se cair 5% após a compra.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Take Profit (%)</label>
+                    <input type="number" value={paramTakeProfit} onChange={e => setParamTakeProfit(Number(e.target.value))} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de ganho para encerrar a operação.<br />
+                      <b>Exemplo:</b> 8 &rarr; encerra a operação se subir 8% após a compra.
+                    </span>
+                  </div>
+                </div>
+              )}
               {/* Mensagens de erro/sucesso e botões centralizados */}
               {runError && <div className="text-red-500 text-sm mt-4">{runError}</div>}
               {runSuccess && <div className="text-green-600 text-sm mt-4">{runSuccess}</div>}
