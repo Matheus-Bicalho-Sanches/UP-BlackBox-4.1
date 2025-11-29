@@ -217,6 +217,15 @@ export default function BacktestPage() {
           stop_loss: numStopLoss / 100,
           take_profit: numTakeProfit / 100,
         };
+      } else if (selectedEstrategia.toLowerCase() === "precoacimadamedia") {
+        body.parametros = {
+          x: numX,
+          stop_loss: numStopLoss / 100,
+          take_profit: numTakeProfit / 100,
+          cooldown: paramCooldownT,
+          horario_entrada_inicio: paramHorarioEntradaInicio || undefined,
+          horario_entrada_fim: paramHorarioEntradaFim || undefined,
+        };
       }
       try {
         const res = await fetch("http://localhost:8003/api/run-backtest", {
@@ -316,6 +325,13 @@ export default function BacktestPage() {
         setParamY(params.param2 || 5);
         setParamStopLoss(String((params.stop_loss || -0.05) * 100));
         setParamTakeProfit((params.take_profit || 0.08) * 100);
+      } else if (estrategiaLower === 'precoacimadamedia') {
+        setParamX(String(params.x || 20));
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.08) * 100);
+        setParamCooldownT(params.cooldown || 0);
+        setParamHorarioEntradaInicio(params.horario_entrada_inicio || params.horario_inicio || '');
+        setParamHorarioEntradaFim(params.horario_entrada_fim || params.horario_fim || '');
       }
     }
     
@@ -768,6 +784,62 @@ export default function BacktestPage() {
                       </span>
                     </div>
                   )}
+                </div>
+              )}
+              {/* Inputs para PrecoAcimadaMedia */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase() === "precoacimadamedia" && (
+                <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">X (períodos da média móvel)</label>
+                    <input type="number" value={paramX} onChange={e => setParamX(e.target.value)} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Quantidade de períodos para o cálculo da média móvel aritmética.<br />
+                      <b>Exemplo:</b> X = 20 → usa média móvel de 20 períodos.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Stop Loss (%)</label>
+                    <input type="text" value={paramStopLoss} onChange={e => setParamStopLoss(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de perda para encerrar a operação.<br />
+                      <b>Exemplo:</b> -5 → encerra a operação se cair 5% após a compra.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Take Profit (%)</label>
+                    <input type="number" value={paramTakeProfit} onChange={e => setParamTakeProfit(Number(e.target.value))} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de ganho para encerrar a operação.<br />
+                      <b>Exemplo:</b> 8 → encerra a operação se subir 8% após a compra.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Cooldown (períodos)</label>
+                    <input type="number" value={paramCooldownT} onChange={e => setParamCooldownT(Number(e.target.value))} min="0" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Períodos de espera após uma saída antes de permitir nova entrada.<br />
+                      <b>Exemplo:</b> Cooldown = 5 → após uma saída, aguarda 5 períodos antes de permitir nova entrada.<br />
+                      <b>Nota:</b> Valor 0 desabilita o cooldown (comportamento padrão). Evita comprar/vender em sequência quando o preço está muito próximo da média.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Horário de entrada (início)</label>
+                    <input type="time" value={paramHorarioEntradaInicio} onChange={e => setParamHorarioEntradaInicio(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Define o horário inicial da janela permitida para entradas.<br />
+                      <b>Exemplo:</b> 09:00 → permite entradas a partir das 09:00.<br />
+                      <b>Nota:</b> Deixe vazio para desabilitar o filtro. Ambos os campos (início e fim) devem ser preenchidos para o filtro funcionar.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Horário de entrada (fim)</label>
+                    <input type="time" value={paramHorarioEntradaFim} onChange={e => setParamHorarioEntradaFim(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Define o horário final da janela permitida para entradas.<br />
+                      <b>Exemplo:</b> 17:00 → permite entradas até as 17:00.<br />
+                      <b>Nota:</b> Deixe vazio para desabilitar o filtro. Ambos os campos (início e fim) devem ser preenchidos para o filtro funcionar.
+                    </span>
+                  </div>
                 </div>
               )}
               {/* Mensagens de erro/sucesso e botões centralizados */}
