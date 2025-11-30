@@ -386,11 +386,11 @@ async def run_backtest(request: Request):
                 horario_entrada_fim = None
             resultado = run_voltaamediabollinger(tmp_path, x, y, w, stop_loss, take_profit, sair_em_z, z_saida, False, z_somente_fechamento, cooldown_t, distancia_minima_d, horario_entrada_inicio, horario_entrada_fim)
         elif estrategia_nome.lower() == 'precocruzamedia':
-            param1 = parametros.get('param1', 3)
-            param2 = parametros.get('param2', 5)
+            x = parametros.get('x', 3)
+            w = parametros.get('w', 5)
             stop_loss = parametros.get('stop_loss', -0.05)
             take_profit = parametros.get('take_profit', 0.08)
-            resultado = run_precoCruzaMedia(tmp_path, param1, param2, stop_loss, take_profit)
+            resultado = run_precoCruzaMedia(tmp_path, x, w, stop_loss, take_profit)
         else:
             return {"error": "Estratégia não implementada"}
 

@@ -225,8 +225,8 @@ export default function BacktestPage() {
         };
       } else if (selectedEstrategia.toLowerCase() === "precocruzamedia") {
         body.parametros = {
-          param1: numX,
-          param2: numY,
+          x: numX,
+          w: numY,
           stop_loss: numStopLoss / 100,
           take_profit: numTakeProfit / 100,
         };
@@ -325,8 +325,8 @@ export default function BacktestPage() {
         setParamStopLoss(String((params.stop_loss || -0.05) * 100));
         setParamTakeProfit((params.take_profit || 0.10) * 100);
       } else if (estrategiaLower === 'precocruzamedia') {
-        setParamX(String(params.param1 || 3));
-        setParamY(params.param2 || 5);
+        setParamX(String(params.x || 3));
+        setParamY(params.w || 5);
         setParamStopLoss(String((params.stop_loss || -0.05) * 100));
         setParamTakeProfit((params.take_profit || 0.08) * 100);
       }
@@ -787,7 +787,7 @@ export default function BacktestPage() {
               {selectedEstrategia && selectedEstrategia.toLowerCase() === "precocruzamedia" && (
                 <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Param1 (Período da média móvel)</label>
+                    <label className="block text-sm font-medium mb-1">X (períodos da média móvel)</label>
                     <input type="number" value={paramX} onChange={e => setParamX(e.target.value)} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
                     <span className="text-xs text-gray-700 block mt-1">
                       <b>O que é?</b> Quantidade de períodos para o cálculo da média móvel.<br />
@@ -795,7 +795,7 @@ export default function BacktestPage() {
                     </span>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">Param2 (Períodos para saída)</label>
+                    <label className="block text-sm font-medium mb-1">W (tempo máximo da operação)</label>
                     <input type="number" value={paramY} onChange={e => setParamY(Number(e.target.value))} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
                     <span className="text-xs text-gray-700 block mt-1">
                       <b>O que é?</b> Quantidade máxima de períodos que a posição ficará aberta, caso não atinja stop ou gain.<br />
