@@ -56,6 +56,8 @@ export default function BacktestPage() {
   const [paramDistanciaMinimaD, setParamDistanciaMinimaD] = useState<number>(0);
   const [paramHorarioEntradaInicio, setParamHorarioEntradaInicio] = useState<string>("");
   const [paramHorarioEntradaFim, setParamHorarioEntradaFim] = useState<string>("");
+  const [paramMomentumAlta, setParamMomentumAlta] = useState<string>("0");
+  const [paramTempoMomentum, setParamTempoMomentum] = useState<number>(0);
 
   async function fetchBacktests() {
     setLoading(true);
@@ -218,6 +220,8 @@ export default function BacktestPage() {
           take_profit: numTakeProfit / 100,
         };
       } else if (selectedEstrategia.toLowerCase() === "precoacimadamedia") {
+        let numMomentumAlta = Number(paramMomentumAlta);
+        if (isNaN(numMomentumAlta)) numMomentumAlta = 0;
         body.parametros = {
           x: numX,
           stop_loss: numStopLoss / 100,
@@ -225,6 +229,8 @@ export default function BacktestPage() {
           cooldown: paramCooldownT,
           horario_entrada_inicio: paramHorarioEntradaInicio || undefined,
           horario_entrada_fim: paramHorarioEntradaFim || undefined,
+          momentum_alta_percent: numMomentumAlta / 100,
+          tempo_momentum: paramTempoMomentum,
         };
       }
       try {
@@ -332,6 +338,8 @@ export default function BacktestPage() {
         setParamCooldownT(params.cooldown || 0);
         setParamHorarioEntradaInicio(params.horario_entrada_inicio || params.horario_inicio || '');
         setParamHorarioEntradaFim(params.horario_entrada_fim || params.horario_fim || '');
+        setParamMomentumAlta(String((params.momentum_alta_percent || 0) * 100));
+        setParamTempoMomentum(params.tempo_momentum || 0);
       }
     }
     
@@ -838,6 +846,24 @@ export default function BacktestPage() {
                       <b>O que é?</b> Define o horário final da janela permitida para entradas.<br />
                       <b>Exemplo:</b> 17:00 → permite entradas até as 17:00.<br />
                       <b>Nota:</b> Deixe vazio para desabilitar o filtro. Ambos os campos (início e fim) devem ser preenchidos para o filtro funcionar.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Momentum de alta (%)</label>
+                    <input type="number" value={paramMomentumAlta} onChange={e => setParamMomentumAlta(e.target.value)} min="0" step="0.01" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Percentual mínimo que a média móvel deve ter subido para permitir entrada.<br />
+                      <b>Exemplo:</b> 2 → só permite entrada se a média atual estiver pelo menos 2% acima da média de W períodos atrás.<br />
+                      <b>Nota:</b> Valor 0 desabilita o filtro (comportamento padrão). Garante que o ativo está em tendência de alta.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Tempo para cálculo de Momentum (períodos)</label>
+                    <input type="number" value={paramTempoMomentum} onChange={e => setParamTempoMomentum(Number(e.target.value))} min="0" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Quantidade de períodos para olhar para trás no cálculo de momentum.<br />
+                      <b>Exemplo:</b> 5 → compara a média atual com a média de 5 períodos atrás.<br />
+                      <b>Nota:</b> Valor 0 desabilita o filtro (comportamento padrão). Ambos os campos (momentum e tempo) devem ser > 0 para o filtro funcionar.
                     </span>
                   </div>
                 </div>
