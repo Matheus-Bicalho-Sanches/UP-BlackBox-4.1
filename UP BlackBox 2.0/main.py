@@ -18,6 +18,7 @@ from estrategias.operandomomentum import run_operandomomentum
 from estrategias.operandotoposefundos import run_operandotoposefundos
 from estrategias.voltaamediabollinger import run_voltaamediabollinger
 from estrategias.precoCruzaMedia import run_precoCruzaMedia
+from estrategias.precoAcimadaMedia import run_precoAcimadaMedia
 from firebase_admin import firestore
 from fastapi.responses import JSONResponse
 import math
@@ -386,11 +387,41 @@ async def run_backtest(request: Request):
                 horario_entrada_fim = None
             resultado = run_voltaamediabollinger(tmp_path, x, y, w, stop_loss, take_profit, sair_em_z, z_saida, False, z_somente_fechamento, cooldown_t, distancia_minima_d, horario_entrada_inicio, horario_entrada_fim)
         elif estrategia_nome.lower() == 'precocruzamedia':
-            x = parametros.get('x', 3)
-            w = parametros.get('w', 5)
+            param1 = parametros.get('param1', 3)
+            param2 = parametros.get('param2', 5)
             stop_loss = parametros.get('stop_loss', -0.05)
             take_profit = parametros.get('take_profit', 0.08)
-            resultado = run_precoCruzaMedia(tmp_path, x, w, stop_loss, take_profit)
+            resultado = run_precoCruzaMedia(tmp_path, param1, param2, stop_loss, take_profit)
+        elif estrategia_nome.lower() == 'precoacimadamedia':
+            try:
+                x = int(parametros.get('x')) if parametros.get('x') is not None and str(parametros.get('x')).strip() != '' else 20
+            except Exception:
+                x = 20
+            try:
+                stop_loss = float(parametros.get('stop_loss')) if parametros.get('stop_loss') is not None and str(parametros.get('stop_loss')).strip() != '' else -0.05
+            except Exception:
+                stop_loss = -0.05
+            try:
+                take_profit = float(parametros.get('take_profit')) if parametros.get('take_profit') is not None and str(parametros.get('take_profit')).strip() != '' else 0.08
+            except Exception:
+                take_profit = 0.08
+            try:
+                cooldown = int(parametros.get('cooldown')) if parametros.get('cooldown') is not None and str(parametros.get('cooldown')).strip() != '' else 0
+            except Exception:
+                cooldown = 0
+            # Parâmetros de horário de entrada
+            try:
+                horario_entrada_inicio = parametros.get('horario_entrada_inicio') or parametros.get('horario_inicio')
+                horario_entrada_fim = parametros.get('horario_entrada_fim') or parametros.get('horario_fim')
+                # Validar formato se fornecido
+                if horario_entrada_inicio:
+                    datetime.datetime.strptime(horario_entrada_inicio, '%H:%M')
+                if horario_entrada_fim:
+                    datetime.datetime.strptime(horario_entrada_fim, '%H:%M')
+            except (ValueError, TypeError):
+                horario_entrada_inicio = None
+                horario_entrada_fim = None
+            resultado = run_precoAcimadaMedia(tmp_path, x, stop_loss, take_profit, cooldown, horario_entrada_inicio, horario_entrada_fim)
         else:
             return {"error": "Estratégia não implementada"}
 
@@ -423,7 +454,6 @@ async def run_backtest(request: Request):
             'tempo_medio_vencedores': resultado.get('tempo_medio_vencedores'),
             'perda_medio_perdedores': resultado.get('perda_medio_perdedores'),
             'tempo_medio_perdedores': resultado.get('tempo_medio_perdedores'),
-            'max_drawdown_estrategia': resultado.get('max_drawdown_estrategia'),
         }
 
         # Salvar só o resumo no Firestore

@@ -56,8 +56,6 @@ export default function BacktestPage() {
   const [paramDistanciaMinimaD, setParamDistanciaMinimaD] = useState<number>(0);
   const [paramHorarioEntradaInicio, setParamHorarioEntradaInicio] = useState<string>("");
   const [paramHorarioEntradaFim, setParamHorarioEntradaFim] = useState<string>("");
-  const [filtroBaseDados, setFiltroBaseDados] = useState<string>("");
-  const [filtroEstrategia, setFiltroEstrategia] = useState<string>("");
 
   async function fetchBacktests() {
     setLoading(true);
@@ -119,19 +117,8 @@ export default function BacktestPage() {
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }));
   const filteredEstrategias = estrategias.filter(est => est.nome.toLowerCase().includes(estrategiaSearchTerm.toLowerCase()));
 
-  // Resetar paginação quando os filtros mudarem
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filtroBaseDados, filtroEstrategia]);
-
   // Paginação e filtros agora usam backtests reais
-  let filteredBacktests = backtests.filter(bt => {
-    const matchBase = filtroBaseDados === "" || 
-      (bt.base_dados && bt.base_dados.toLowerCase().includes(filtroBaseDados.toLowerCase()));
-    const matchEstrategia = filtroEstrategia === "" || 
-      (bt.estrategia && bt.estrategia.toLowerCase().includes(filtroEstrategia.toLowerCase()));
-    return matchBase && matchEstrategia;
-  });
+  let filteredBacktests = backtests; // (implementar filtros se desejar)
   let backtestsOrdenados = [...filteredBacktests];
   // (implementar ordenação se desejar)
   const totalPages = Math.ceil(backtestsOrdenados.length / 50);
@@ -225,10 +212,19 @@ export default function BacktestPage() {
         };
       } else if (selectedEstrategia.toLowerCase() === "precocruzamedia") {
         body.parametros = {
-          x: numX,
-          w: numY,
+          param1: numX,
+          param2: numY,
           stop_loss: numStopLoss / 100,
           take_profit: numTakeProfit / 100,
+        };
+      } else if (selectedEstrategia.toLowerCase() === "precoacimadamedia") {
+        body.parametros = {
+          x: numX,
+          stop_loss: numStopLoss / 100,
+          take_profit: numTakeProfit / 100,
+          cooldown: paramCooldownT,
+          horario_entrada_inicio: paramHorarioEntradaInicio || undefined,
+          horario_entrada_fim: paramHorarioEntradaFim || undefined,
         };
       }
       try {
@@ -325,10 +321,17 @@ export default function BacktestPage() {
         setParamStopLoss(String((params.stop_loss || -0.05) * 100));
         setParamTakeProfit((params.take_profit || 0.10) * 100);
       } else if (estrategiaLower === 'precocruzamedia') {
-        setParamX(String(params.x || 3));
-        setParamY(params.w || 5);
+        setParamX(String(params.param1 || 3));
+        setParamY(params.param2 || 5);
         setParamStopLoss(String((params.stop_loss || -0.05) * 100));
         setParamTakeProfit((params.take_profit || 0.08) * 100);
+      } else if (estrategiaLower === 'precoacimadamedia') {
+        setParamX(String(params.x || 20));
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.08) * 100);
+        setParamCooldownT(params.cooldown || 0);
+        setParamHorarioEntradaInicio(params.horario_entrada_inicio || params.horario_inicio || '');
+        setParamHorarioEntradaFim(params.horario_entrada_fim || params.horario_fim || '');
       }
     }
     
@@ -783,23 +786,15 @@ export default function BacktestPage() {
                   )}
                 </div>
               )}
-              {/* Inputs para PrecoCruzaMedia */}
-              {selectedEstrategia && selectedEstrategia.toLowerCase() === "precocruzamedia" && (
+              {/* Inputs para PrecoAcimadaMedia */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase() === "precoacimadamedia" && (
                 <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
                   <div>
                     <label className="block text-sm font-medium mb-1">X (períodos da média móvel)</label>
                     <input type="number" value={paramX} onChange={e => setParamX(e.target.value)} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
                     <span className="text-xs text-gray-700 block mt-1">
-                      <b>O que é?</b> Quantidade de períodos para o cálculo da média móvel.<br />
-                      <b>Exemplo:</b> 3 &rarr; usa média móvel de 3 períodos.
-                    </span>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">W (tempo máximo da operação)</label>
-                    <input type="number" value={paramY} onChange={e => setParamY(Number(e.target.value))} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
-                    <span className="text-xs text-gray-700 block mt-1">
-                      <b>O que é?</b> Quantidade máxima de períodos que a posição ficará aberta, caso não atinja stop ou gain.<br />
-                      <b>Exemplo:</b> 5 &rarr; vende no 5º período após a compra, se não sair antes por stop ou gain.
+                      <b>O que é?</b> Quantidade de períodos para o cálculo da média móvel aritmética.<br />
+                      <b>Exemplo:</b> X = 20 → usa média móvel de 20 períodos.
                     </span>
                   </div>
                   <div>
@@ -807,7 +802,7 @@ export default function BacktestPage() {
                     <input type="text" value={paramStopLoss} onChange={e => setParamStopLoss(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
                     <span className="text-xs text-gray-700 block mt-1">
                       <b>O que é?</b> Limite de perda para encerrar a operação.<br />
-                      <b>Exemplo:</b> -5 &rarr; encerra a operação se cair 5% após a compra.
+                      <b>Exemplo:</b> -5 → encerra a operação se cair 5% após a compra.
                     </span>
                   </div>
                   <div>
@@ -815,7 +810,34 @@ export default function BacktestPage() {
                     <input type="number" value={paramTakeProfit} onChange={e => setParamTakeProfit(Number(e.target.value))} className="w-full border border-gray-300 rounded px-3 py-2" />
                     <span className="text-xs text-gray-700 block mt-1">
                       <b>O que é?</b> Limite de ganho para encerrar a operação.<br />
-                      <b>Exemplo:</b> 8 &rarr; encerra a operação se subir 8% após a compra.
+                      <b>Exemplo:</b> 8 → encerra a operação se subir 8% após a compra.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Cooldown (períodos)</label>
+                    <input type="number" value={paramCooldownT} onChange={e => setParamCooldownT(Number(e.target.value))} min="0" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Períodos de espera após uma saída antes de permitir nova entrada.<br />
+                      <b>Exemplo:</b> Cooldown = 5 → após uma saída, aguarda 5 períodos antes de permitir nova entrada.<br />
+                      <b>Nota:</b> Valor 0 desabilita o cooldown (comportamento padrão). Evita comprar/vender em sequência quando o preço está muito próximo da média.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Horário de entrada (início)</label>
+                    <input type="time" value={paramHorarioEntradaInicio} onChange={e => setParamHorarioEntradaInicio(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Define o horário inicial da janela permitida para entradas.<br />
+                      <b>Exemplo:</b> 09:00 → permite entradas a partir das 09:00.<br />
+                      <b>Nota:</b> Deixe vazio para desabilitar o filtro. Ambos os campos (início e fim) devem ser preenchidos para o filtro funcionar.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Horário de entrada (fim)</label>
+                    <input type="time" value={paramHorarioEntradaFim} onChange={e => setParamHorarioEntradaFim(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Define o horário final da janela permitida para entradas.<br />
+                      <b>Exemplo:</b> 17:00 → permite entradas até as 17:00.<br />
+                      <b>Nota:</b> Deixe vazio para desabilitar o filtro. Ambos os campos (início e fim) devem ser preenchidos para o filtro funcionar.
                     </span>
                   </div>
                 </div>
@@ -843,35 +865,6 @@ export default function BacktestPage() {
           </div>
         </div>
       )}
-      {/* Filtros de busca */}
-      <div className="mt-8 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Filtrar por base de dados
-            </label>
-            <input
-              type="text"
-              placeholder="Digite o nome da base de dados..."
-              className="w-full bg-gray-800 border border-gray-700 rounded px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              value={filtroBaseDados}
-              onChange={(e) => setFiltroBaseDados(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">
-              Filtrar por estratégia
-            </label>
-            <input
-              type="text"
-              placeholder="Digite o nome da estratégia..."
-              className="w-full bg-gray-800 border border-gray-700 rounded px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              value={filtroEstrategia}
-              onChange={(e) => setFiltroEstrategia(e.target.value)}
-            />
-          </div>
-        </div>
-      </div>
       {/* Tabela de backtests executados */}
       <div className="overflow-x-auto mt-8">
         {loading ? (
