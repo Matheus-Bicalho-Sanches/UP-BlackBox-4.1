@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 import math
 
-def run_precoAcimadaMedia(csv_path, x=20, stop_loss=-0.05, take_profit=0.08, cooldown=0, horario_entrada_inicio=None, horario_entrada_fim=None):
+def run_precoAcimadaMedia(csv_path, x=20, stop_loss=-0.05, take_profit=0.08, cooldown=0, horario_entrada_inicio=None, horario_entrada_fim=None, momentum_alta_percent=0, tempo_momentum=0):
     """
     Estratégia que compra quando o preço está acima da média móvel e mantém a posição enquanto o preço permanecer acima.
     
@@ -13,6 +13,8 @@ def run_precoAcimadaMedia(csv_path, x=20, stop_loss=-0.05, take_profit=0.08, coo
       cooldown: Períodos de espera após uma saída antes de permitir nova entrada (padrão: 0)
       horario_entrada_inicio: Horário inicial da janela permitida para entradas (formato "HH:MM"). Se None, não aplica filtro.
       horario_entrada_fim: Horário final da janela permitida para entradas (formato "HH:MM"). Se None, não aplica filtro.
+      momentum_alta_percent: Percentual mínimo que a média deve ter subido para permitir entrada (ex: 0.02 para 2%). Se 0, desabilita o filtro.
+      tempo_momentum: Quantidade de períodos para olhar para trás no cálculo de momentum (ex: 5). Se 0, desabilita o filtro.
     
     Retorna:
       Dicionário com todos os dados necessários para o backtest
@@ -66,6 +68,21 @@ def run_precoAcimadaMedia(csv_path, x=20, stop_loss=-0.05, take_profit=0.08, coo
                 entrada_idx = i
                 entrada_data = df.at[i, 'date']
                 entrada_preco = float(df.at[i, 'close'])
+                
+                # Validar filtro de momentum de alta (se ativado)
+                if tempo_momentum > 0 and momentum_alta_percent > 0:
+                    # Verificar se há dados suficientes
+                    if i >= tempo_momentum:
+                        media_atual = df.at[i, 'media']
+                        media_passada = df.at[i - tempo_momentum, 'media']
+                        
+                        # Verificar se ambas as médias são válidas
+                        if not pd.isna(media_atual) and not pd.isna(media_passada) and media_passada > 0:
+                            # Verificar se a média subiu pelo menos o percentual exigido
+                            if media_atual < media_passada * (1 + momentum_alta_percent):
+                                # Não passou no filtro de momentum, pular entrada
+                                i += 1
+                                continue
                 
                 # Validar horário de entrada antes de permitir entrada
                 if horario_entrada_inicio and horario_entrada_fim:

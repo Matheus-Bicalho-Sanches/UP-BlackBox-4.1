@@ -421,7 +421,16 @@ async def run_backtest(request: Request):
             except (ValueError, TypeError):
                 horario_entrada_inicio = None
                 horario_entrada_fim = None
-            resultado = run_precoAcimadaMedia(tmp_path, x, stop_loss, take_profit, cooldown, horario_entrada_inicio, horario_entrada_fim)
+            # Parâmetros de momentum de alta
+            try:
+                momentum_alta_percent = float(parametros.get('momentum_alta_percent')) if parametros.get('momentum_alta_percent') is not None and str(parametros.get('momentum_alta_percent')).strip() != '' else 0.0
+            except Exception:
+                momentum_alta_percent = 0.0
+            try:
+                tempo_momentum = int(parametros.get('tempo_momentum')) if parametros.get('tempo_momentum') is not None and str(parametros.get('tempo_momentum')).strip() != '' else 0
+            except Exception:
+                tempo_momentum = 0
+            resultado = run_precoAcimadaMedia(tmp_path, x, stop_loss, take_profit, cooldown, horario_entrada_inicio, horario_entrada_fim, momentum_alta_percent, tempo_momentum)
         else:
             return {"error": "Estratégia não implementada"}
 
