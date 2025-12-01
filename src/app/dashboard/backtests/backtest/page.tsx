@@ -236,6 +236,17 @@ export default function BacktestPage() {
           stop_loss: numStopLoss / 100,
           take_profit: numTakeProfit / 100,
         };
+      } else if (selectedEstrategia.toLowerCase() === "predictcandle") {
+        // Y e W são digitados em percentual (ex: -3 e -1 para quedas de 3% a 1%)
+        // Sempre dividir por 100 para converter para decimal
+        const wValue = paramW !== null && paramW !== undefined ? paramW / 100 : 0.10;
+        body.parametros = {
+          y: numX / 100,  // Y é a variação mínima no candle anterior (%)
+          w: wValue,      // W é a variação máxima no candle anterior (%)
+          x: numY,        // X é o número de candles para manter
+          stop_loss: numStopLoss / 100,
+          take_profit: numTakeProfit / 100,
+        };
       } else if (selectedEstrategia.toLowerCase() === "precoacimadamedia") {
         let numMomentumAlta = Number(paramMomentumAlta);
         if (isNaN(numMomentumAlta)) numMomentumAlta = 0;
@@ -348,6 +359,14 @@ export default function BacktestPage() {
       } else if (estrategiaLower === 'precocruzamedia') {
         setParamX(String(params.param1 || 3));
         setParamY(params.param2 || 5);
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.08) * 100);
+      } else if (estrategiaLower === 'predictcandle') {
+        setParamX(String((params.y || 0.02) * 100));  // Y é a variação mínima (%)
+        // W é salvo como decimal no backend, multiplicar por 100 para exibir como percentual
+        const wParam = params.w !== undefined && params.w !== null ? params.w : 0.10;
+        setParamW(wParam * 100);  // W é a variação máxima (%)
+        setParamY(params.x || 1);  // X é o número de candles
         setParamStopLoss(String((params.stop_loss || -0.05) * 100));
         setParamTakeProfit((params.take_profit || 0.08) * 100);
       } else if (estrategiaLower === 'precoacimadamedia') {
@@ -837,6 +856,88 @@ export default function BacktestPage() {
                       </span>
                     </div>
                   )}
+                </div>
+              )}
+              {/* Inputs para PrecoCruzaMedia */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase() === "precocruzamedia" && (
+                <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">X (períodos da média móvel)</label>
+                    <input type="number" value={paramX} onChange={e => setParamX(e.target.value)} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Quantidade de períodos para o cálculo da média móvel.<br />
+                      <b>Exemplo:</b> X = 3 → usa média móvel de 3 períodos.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Y (períodos para saída)</label>
+                    <input type="number" value={paramY} onChange={e => setParamY(Number(e.target.value))} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Número máximo de períodos que a posição ficará aberta, caso não atinja stop ou gain.<br />
+                      <b>Exemplo:</b> Y = 5 → vende no 5º período após a compra, se não sair antes por stop ou gain.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Stop Loss (%)</label>
+                    <input type="text" value={paramStopLoss} onChange={e => setParamStopLoss(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de perda para encerrar a operação.<br />
+                      <b>Exemplo:</b> -5 → encerra a operação se cair 5% após a compra.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Take Profit (%)</label>
+                    <input type="number" value={paramTakeProfit} onChange={e => setParamTakeProfit(Number(e.target.value))} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de ganho para encerrar a operação.<br />
+                      <b>Exemplo:</b> 8 → encerra a operação se subir 8% após a compra.
+                    </span>
+                  </div>
+                </div>
+              )}
+              {/* Inputs para PredictCandle */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase() === "predictcandle" && (
+                <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Y (variação mínima no candle anterior, %)</label>
+                    <input type="number" value={paramX} onChange={e => setParamX(e.target.value)} step="0.01" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Percentual mínimo de variação que o candle anterior deve ter tido para gerar o sinal de compra.<br />
+                      <b>Exemplo:</b> Y = 2 → só compra se o candle anterior teve variação de 2% ou mais. Y pode ser negativo (ex: -5 para quedas).
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">W (variação máxima no candle anterior, %)</label>
+                    <input type="number" value={paramW ?? 10} onChange={e => setParamW(Number(e.target.value))} step="0.01" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Percentual máximo de variação que o candle anterior deve ter tido para gerar o sinal de compra.<br />
+                      <b>Exemplo:</b> W = 10 → só compra se o candle anterior teve variação de até 10%. A estratégia compra quando a variação está entre Y e W (inclusivo).
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">X (períodos para saída)</label>
+                    <input type="number" value={paramY} onChange={e => setParamY(Number(e.target.value))} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Número máximo de candles que a posição ficará aberta, caso não atinja stop ou gain.<br />
+                      <b>Exemplo:</b> X = 1 → vende no fechamento do mesmo candle. X = 5 → pode manter por até 5 candles.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Stop Loss (%)</label>
+                    <input type="text" value={paramStopLoss} onChange={e => setParamStopLoss(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de perda para encerrar a operação.<br />
+                      <b>Exemplo:</b> -5 → encerra a operação se cair 5% após a compra.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Take Profit (%)</label>
+                    <input type="number" value={paramTakeProfit} onChange={e => setParamTakeProfit(Number(e.target.value))} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de ganho para encerrar a operação.<br />
+                      <b>Exemplo:</b> 8 → encerra a operação se subir 8% após a compra.
+                    </span>
+                  </div>
                 </div>
               )}
               {/* Inputs para PrecoAcimadaMedia */}

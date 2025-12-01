@@ -292,6 +292,17 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
                 <li>
                   Tempo posicionado médio dos trades perdedores: {backtest.metrics?.tempo_medio_perdedores != null ? backtest.metrics.tempo_medio_perdedores.toFixed(2) : '-'}
                 </li>
+                <li>
+                  Drawdown máximo: {(() => {
+                    if (!backtest.drawdown_estrategia || !Array.isArray(backtest.drawdown_estrategia)) return '-';
+                    const drawdowns = backtest.drawdown_estrategia
+                      .map((item: EquityPoint) => typeof item.valor === 'number' ? item.valor : null)
+                      .filter((v: number | null) => v != null && v < 0) as number[];
+                    if (drawdowns.length === 0) return '-';
+                    const maxDrawdown = Math.min(...drawdowns);
+                    return (maxDrawdown * 100).toFixed(2) + '%';
+                  })()}
+                </li>
               </ul>
             </div>
           </div>

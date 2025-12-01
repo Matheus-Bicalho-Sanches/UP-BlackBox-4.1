@@ -19,6 +19,7 @@ from estrategias.operandotoposefundos import run_operandotoposefundos
 from estrategias.voltaamediabollinger import run_voltaamediabollinger
 from estrategias.precoCruzaMedia import run_precoCruzaMedia
 from estrategias.precoAcimadaMedia import run_precoAcimadaMedia
+from estrategias.predictCandle import run_predictCandle
 from firebase_admin import firestore
 from fastapi.responses import JSONResponse
 import math
@@ -433,6 +434,28 @@ async def run_backtest(request: Request):
             except Exception:
                 tempo_momentum = 0
             resultado = run_precoAcimadaMedia(tmp_path, x, stop_loss, take_profit, cooldown, horario_entrada_inicio, horario_entrada_fim, momentum_alta_percent, tempo_momentum)
+        elif estrategia_nome.lower() == 'predictcandle':
+            try:
+                y = float(parametros.get('y')) if parametros.get('y') is not None and str(parametros.get('y')).strip() != '' else 2.0
+            except Exception:
+                y = 2.0
+            try:
+                w = float(parametros.get('w')) if parametros.get('w') is not None and str(parametros.get('w')).strip() != '' else 10.0
+            except Exception:
+                w = 10.0
+            try:
+                x = int(parametros.get('x')) if parametros.get('x') is not None and str(parametros.get('x')).strip() != '' else 1
+            except Exception:
+                x = 1
+            try:
+                stop_loss = float(parametros.get('stop_loss')) if parametros.get('stop_loss') is not None and str(parametros.get('stop_loss')).strip() != '' else -0.05
+            except Exception:
+                stop_loss = -0.05
+            try:
+                take_profit = float(parametros.get('take_profit')) if parametros.get('take_profit') is not None and str(parametros.get('take_profit')).strip() != '' else 0.08
+            except Exception:
+                take_profit = 0.08
+            resultado = run_predictCandle(tmp_path, y, w, x, stop_loss, take_profit)
         else:
             return {"error": "Estratégia não implementada"}
 
