@@ -58,6 +58,8 @@ export default function BacktestPage() {
   const [paramHorarioEntradaFim, setParamHorarioEntradaFim] = useState<string>("");
   const [paramMomentumAlta, setParamMomentumAlta] = useState<string>("0");
   const [paramTempoMomentum, setParamTempoMomentum] = useState<number>(0);
+  const [filterBaseDados, setFilterBaseDados] = useState<string>("");
+  const [filterEstrategia, setFilterEstrategia] = useState<string>("");
 
   async function fetchBacktests() {
     setLoading(true);
@@ -120,11 +122,22 @@ export default function BacktestPage() {
   const filteredEstrategias = estrategias.filter(est => est.nome.toLowerCase().includes(estrategiaSearchTerm.toLowerCase()));
 
   // Paginação e filtros agora usam backtests reais
-  let filteredBacktests = backtests; // (implementar filtros se desejar)
+  let filteredBacktests = backtests.filter(bt => {
+    const matchBase = !filterBaseDados || 
+      (bt.base_dados && bt.base_dados.toLowerCase().includes(filterBaseDados.toLowerCase()));
+    const matchEstrategia = !filterEstrategia || 
+      (bt.estrategia && bt.estrategia.toLowerCase().includes(filterEstrategia.toLowerCase()));
+    return matchBase && matchEstrategia;
+  });
   let backtestsOrdenados = [...filteredBacktests];
   // (implementar ordenação se desejar)
   const totalPages = Math.ceil(backtestsOrdenados.length / 50);
   const paginatedBacktests = backtestsOrdenados.slice((currentPage - 1) * 50, currentPage * 50);
+
+  // Resetar página quando os filtros mudarem
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterBaseDados, filterEstrategia]);
 
   async function handleRunBacktest(e: React.FormEvent) {
     e.preventDefault();
@@ -899,6 +912,50 @@ export default function BacktestPage() {
           <div className="text-red-500">{error}</div>
         ) : (
           <div>
+            {/* Filtros de pesquisa */}
+            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Pesquisar por Base de Dados
+                </label>
+                <input
+                  type="text"
+                  placeholder="Digite o nome da base de dados..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  value={filterBaseDados}
+                  onChange={e => setFilterBaseDados(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Pesquisar por Estratégia
+                </label>
+                <input
+                  type="text"
+                  placeholder="Digite o nome da estratégia..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  value={filterEstrategia}
+                  onChange={e => setFilterEstrategia(e.target.value)}
+                />
+              </div>
+            </div>
+            {/* Informação sobre resultados filtrados */}
+            {(filterBaseDados || filterEstrategia) && (
+              <div className="mb-4 text-sm text-gray-400">
+                Mostrando {filteredBacktests.length} de {backtests.length} backtest(s)
+                {(filterBaseDados || filterEstrategia) && (
+                  <button
+                    onClick={() => {
+                      setFilterBaseDados("");
+                      setFilterEstrategia("");
+                    }}
+                    className="ml-2 text-cyan-400 hover:text-cyan-300 underline"
+                  >
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
+            )}
             <div className="flex items-center gap-4 mb-4">
               <button
                 className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-semibold disabled:opacity-50"
