@@ -177,6 +177,10 @@ export default function BacktestPage() {
         if (paramDiaSemana !== "" && paramDiaSemana !== null && paramDiaSemana !== undefined) {
           body.parametros = { dia_semana: Number(paramDiaSemana) };
         }
+      } else if (selectedEstrategia.toLowerCase() === "comprafechamento_vendeabertura") {
+        if (paramDiaSemana !== "" && paramDiaSemana !== null && paramDiaSemana !== undefined) {
+          body.parametros = { dia_semana: Number(paramDiaSemana) };
+        }
       } else if (selectedEstrategia.toLowerCase() === "buysequenciadealtaouqueda") {
         body.parametros = {
           x: numX,
@@ -320,6 +324,8 @@ export default function BacktestPage() {
         setParamTakeProfit((params.take_profit || 0.08) * 100);
       } else if (estrategiaLower.replace(/[_-]/g, '') === 'vendeaberturacomprafechamento') {
         setParamDiaSemana(params.dia_semana !== undefined && params.dia_semana !== null ? params.dia_semana : '');
+      } else if (estrategiaLower === 'comprafechamento_vendeabertura') {
+        setParamDiaSemana(params.dia_semana !== undefined && params.dia_semana !== null ? params.dia_semana : '');
       } else if (estrategiaLower === 'buysequenciadealtaouqueda') {
         setParamX(String(params.x || 3));
         setParamY(params.y || 5);
@@ -462,8 +468,34 @@ export default function BacktestPage() {
                   )}
                 </div>
               </div>
-              {/* Inputs de parâmetros para Buyifstockupxpercentage */}
+              {/* Inputs de parâmetros para VendeAbertura_CompraFechamento */}
               {selectedEstrategia && selectedEstrategia.toLowerCase().replace(/[_-]/g, '') === "vendeaberturacomprafechamento" && (
+                <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium mb-1">Dia da semana (opcional)</label>
+                    <select
+                      className="w-full border border-gray-300 rounded px-3 py-2"
+                      value={paramDiaSemana}
+                      onChange={e => {
+                        const v = e.target.value;
+                        setParamDiaSemana(v === '' ? '' : Number(v));
+                      }}
+                    >
+                      <option value="">Todos os dias</option>
+                      <option value={0}>Segunda-feira</option>
+                      <option value={1}>Terça-feira</option>
+                      <option value={2}>Quarta-feira</option>
+                      <option value={3}>Quinta-feira</option>
+                      <option value={4}>Sexta-feira</option>
+                    </select>
+                    <span className="text-xs text-gray-700 block mt-1">
+                      Se selecionado, a operação só ocorrerá quando a entrada for nesse dia da semana.
+                    </span>
+                  </div>
+                </div>
+              )}
+              {/* Inputs de parâmetros para CompraFechamento_VendeAbertura */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase() === "comprafechamento_vendeabertura" && (
                 <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
                   <div className="col-span-2">
                     <label className="block text-sm font-medium mb-1">Dia da semana (opcional)</label>

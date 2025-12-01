@@ -241,7 +241,9 @@ async def run_backtest(request: Request):
     try:
         # Executar a estratégia e obter resultado
         if estrategia_nome.lower() == 'comprafechamento_vendeabertura':
-            resultado = run_comprafechamento_vendeabertura(tmp_path)
+            # Novo parâmetro opcional: dia_semana (0=Seg, 1=Ter, 2=Qua, 3=Qui, 4=Sex)
+            dia_semana = parametros.get('dia_semana')
+            resultado = run_comprafechamento_vendeabertura(tmp_path, dia_semana=dia_semana)
         
         elif estrategia_nome.lower().replace('_', '').replace('-', '') == 'vendeaberturacomprafechamento':
             # Novo parâmetro opcional: dia_semana (0=Seg, 1=Ter, 2=Qua, 3=Qui, 4=Sex)
