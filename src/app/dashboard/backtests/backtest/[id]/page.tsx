@@ -135,14 +135,40 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
       const html2canvas = (await import("html2canvas")).default;
       const { jsPDF } = await import("jspdf");
       const element = exportRef.current;
+      
+      // Aguardar renderização completa dos gráficos ResponsiveContainer
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      // Garantir que o container não tenha overflow que corte conteúdo
+      const originalOverflow = element.style.overflow;
+      element.style.overflow = 'visible';
+      
+      // Calcular dimensões precisas
+      const width = element.offsetWidth || element.scrollWidth;
+      const height = element.offsetHeight || element.scrollHeight;
+      
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
-        backgroundColor: null,
+        backgroundColor: '#111827',
         logging: false,
+        width: width,
+        height: height,
         windowWidth: element.scrollWidth,
         windowHeight: element.scrollHeight,
+        scrollX: 0,
+        scrollY: 0,
+        onclone: (clonedDoc) => {
+          // Garantir que todos os elementos SVG dos gráficos estejam visíveis
+          const clonedElement = clonedDoc.querySelector('[data-export-ref]') || clonedDoc.body;
+          if (clonedElement) {
+            (clonedElement as HTMLElement).style.overflow = 'visible';
+          }
+        },
       });
+      
+      // Restaurar overflow original
+      element.style.overflow = originalOverflow;
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -220,7 +246,7 @@ export default function BacktestDetailPage({ params }: { params: { id: string } 
               <FiDownload size={26} />
             </button>
           </div>
-          <div ref={exportRef}>
+          <div ref={exportRef} data-export-ref className="bg-gray-900 text-white p-8" style={{ overflow: 'visible' }}>
           {/* Parâmetros e Estatísticas em duas colunas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
             {/* Parâmetros */}
