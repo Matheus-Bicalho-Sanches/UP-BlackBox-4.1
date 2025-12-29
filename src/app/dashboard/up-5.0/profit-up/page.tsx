@@ -1,0 +1,192 @@
+"use client";
+
+import { useState, useMemo } from "react";
+import AssetTabs from "@/components/profit-up/AssetTabs";
+import ProfitCandlestickChart from "@/components/profit-up/ProfitCandlestickChart";
+import ProfitVolumeChart from "@/components/profit-up/ProfitVolumeChart";
+import OrderBook from "@/components/profit-up/OrderBook";
+import TradeHistory from "@/components/profit-up/TradeHistory";
+import BrokerPositionChart from "@/components/profit-up/BrokerPositionChart";
+import {
+  generateMockAssets,
+  generateMockCandles,
+  generateMockOrderBook,
+  generateMockTrades,
+  generateMockBrokerPositions,
+  Asset,
+} from "@/lib/profit-up/mockData";
+import { LogicalRange } from "lightweight-charts";
+
+export default function ProfitUpPage() {
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("1min");
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [range, setRange] = useState<LogicalRange | null>(null);
+
+  // Gerar assets fictícios
+  const allAssets = useMemo(() => generateMockAssets(), []);
+  
+  // Selecionar primeiro asset por padrão
+  const activeAsset = selectedAsset || allAssets.find(a => a.period === selectedPeriod) || allAssets[0];
+  
+  // Gerar dados baseado no asset selecionado
+  const candles = useMemo(() => {
+    if (!activeAsset) return [];
+    const timeframeMap: Record<string, string> = {
+      "1min": "1m",
+      "5Min": "5m",
+      "60min": "60m",
+      "1D": "1d",
+    };
+    const timeframe = timeframeMap[activeAsset.period] || "5m";
+    return generateMockCandles(activeAsset.code, timeframe, 200);
+  }, [activeAsset]);
+
+  const orderBook = useMemo(() => {
+    if (!activeAsset) return [];
+    return generateMockOrderBook(activeAsset.code, activeAsset.lastPrice);
+  }, [activeAsset]);
+
+  const trades = useMemo(() => {
+    if (!activeAsset) return [];
+    return generateMockTrades(activeAsset.code, 100);
+  }, [activeAsset]);
+
+  const brokerPositions = useMemo(() => {
+    if (!activeAsset) return [];
+    return generateMockBrokerPositions(activeAsset.code);
+  }, [activeAsset]);
+
+  // Filtrar assets por período selecionado
+  const filteredAssets = useMemo(() => {
+    return allAssets.filter(a => a.period === selectedPeriod);
+  }, [allAssets, selectedPeriod]);
+
+  return (
+    <div className="space-y-4">
+      {/* Top Bar - Asset Tabs and Period Selector */}
+      <div className="flex items-center space-x-4">
+        <div className="flex-1">
+          <AssetTabs
+            assets={filteredAssets}
+            activeAsset={activeAsset}
+            onAssetSelect={(asset) => {
+              setSelectedAsset(asset);
+              setRange(null); // Reset range when changing asset
+            }}
+          />
+        </div>
+        <div className="flex items-center space-x-2">
+          <label className="text-gray-300 text-sm">Período:</label>
+          <select
+            value={selectedPeriod}
+            onChange={(e) => {
+              setSelectedPeriod(e.target.value);
+              setSelectedAsset(null); // Reset selected asset when changing period
+              setRange(null);
+            }}
+            className="px-4 py-2 rounded bg-gray-800 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          >
+            <option value="1min">1 Min</option>
+            <option value="5Min">5 Min</option>
+            <option value="60min">60 Min</option>
+            <option value="1D">1 Dia</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-12 gap-4">
+        {/* Left Column - Charts */}
+        <div className="col-span-7 space-y-4">
+          {/* Candlestick Chart */}
+          <div className="bg-gray-800 rounded-lg p-4">
+            <div className="mb-2">
+              <h2 className="text-xl font-bold text-white">
+                {activeAsset?.code} {activeAsset?.period}
+              </h2>
+              <div className="text-sm text-gray-300 space-y-1 mt-2">
+                <div className="flex space-x-4">
+                  <span>
+                    Abr: <span className="font-mono text-white">{activeAsset?.open.toFixed(3)}</span>
+                  </span>
+                  <span>
+                    Máx: <span className="font-mono text-white">{activeAsset?.max.toFixed(3)}</span>
+                  </span>
+                  <span>
+                    Mín: <span className="font-mono text-white">{activeAsset?.min.toFixed(3)}</span>
+                  </span>
+                  <span>
+                    Fch: <span className="font-mono text-white">{activeAsset?.close.toFixed(3)}</span>
+                  </span>
+                </div>
+                <div className="flex space-x-4 text-xs">
+                  <span>
+                    V: <span className={`font-mono ${activeAsset && activeAsset.variation >= 0 ? "text-green-400" : "text-red-400"}`}>
+                      {activeAsset && activeAsset.variation >= 0 ? "+" : ""}
+                      {activeAsset?.variation.toFixed(2)}%
+                    </span>
+                  </span>
+                  <span>
+                    A: <span className="font-mono text-white">{activeAsset?.lastPrice.toFixed(3)}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <ProfitCandlestickChart
+              candles={candles}
+              onRangeChange={setRange}
+              syncRange={range}
+              height={400}
+            />
+          </div>
+
+          {/* Volume Chart */}
+          <div className="bg-gray-800 rounded-lg p-4">
+            <div className="mb-2">
+              <h3 className="text-sm font-semibold text-gray-300">Volume Financeiro</h3>
+              <div className="text-xs text-gray-400 mt-1">
+                {candles.reduce((sum, c) => sum + (c.vf || 0), 0).toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                  minimumFractionDigits: 2,
+                })}
+              </div>
+            </div>
+            <ProfitVolumeChart candles={candles} syncRange={range} />
+          </div>
+        </div>
+
+        {/* Right Column - Order Book and Trade History */}
+        <div className="col-span-5 space-y-4">
+          {/* Order Book */}
+          <div className="h-[500px]">
+            <OrderBook
+              book={orderBook}
+              asset={activeAsset?.code || ""}
+              lastPrice={activeAsset?.lastPrice || 0}
+              variation={activeAsset?.variation || 0}
+              volume={activeAsset?.volume || 0}
+              trades={activeAsset?.trades || 0}
+            />
+          </div>
+
+          {/* Trade History */}
+          <div className="h-[500px]">
+            <TradeHistory
+              trades={trades}
+              asset={activeAsset?.code || ""}
+              lastPrice={activeAsset?.lastPrice || 0}
+              variation={activeAsset?.variation || 0}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Section - Broker Positions */}
+      <BrokerPositionChart
+        positions={brokerPositions}
+        asset={activeAsset?.code || ""}
+      />
+    </div>
+  );
+}
