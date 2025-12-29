@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { formatPrice, formatPercentage } from "@/lib/profit-up/formatNumber";
 import { Trade } from "@/lib/profit-up/mockData";
 
 interface TradeHistoryProps {
@@ -38,11 +39,11 @@ export default function TradeHistory({
           <h3 className="text-lg font-bold text-white">{asset}</h3>
           <span className={`text-sm font-mono ${variation >= 0 ? "text-green-400" : "text-red-400"}`}>
             {variation >= 0 ? "+" : ""}
-            {variation.toFixed(2)}%
+            {formatPercentage(variation)}
           </span>
         </div>
         <div className="text-sm text-gray-300">
-          <div>Último: <span className="font-mono text-white">{lastPrice.toFixed(3)}</span></div>
+          <div>Último: <span className="font-mono text-white">{formatPrice(lastPrice)}</span></div>
         </div>
         
         {/* Volume Distribution Bar */}
@@ -88,7 +89,7 @@ export default function TradeHistory({
                 <tr key={idx} className="border-b border-gray-700/50 hover:bg-gray-700/30">
                   <td className="p-2 text-gray-400">{trade.timestamp}</td>
                   <td className="p-2 text-blue-300">{trade.buyer}</td>
-                  <td className="p-2 text-right text-white">{trade.price.toFixed(3)}</td>
+                  <td className="p-2 text-right text-white">{formatPrice(trade.price)}</td>
                   <td className="p-2 text-right text-white">{trade.quantity}</td>
                   <td className="p-2 text-red-300">{trade.seller}</td>
                   <td className={`p-2 text-center ${aggressorColor} rounded`}>

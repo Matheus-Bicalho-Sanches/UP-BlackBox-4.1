@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { createChart, ISeriesApi, Time, LineSeries, LineSeriesPartialOptions } from "lightweight-charts";
 import { BrokerPosition } from "@/lib/profit-up/mockData";
+import { formatPrice, formatPercentage } from "@/lib/profit-up/formatNumber";
 
 interface BrokerPositionChartProps {
   positions: BrokerPosition[];
@@ -126,12 +127,12 @@ export default function BrokerPositionChart({ positions, asset }: BrokerPosition
                       />
                       <span>{position.broker}</span>
                     </div>
-                    <div className="text-right font-mono">{position.percentage.toFixed(2)}%</div>
+                    <div className="text-right font-mono">{formatPercentage(position.percentage)}</div>
                     <div className="text-right font-mono">
-                      {(position.financialVolume / 1000000).toFixed(2)}M
+                      {formatPrice(position.financialVolume / 1000000)}M
                     </div>
                     <div className="text-right font-mono">{position.quantityVolume.toLocaleString()}</div>
-                    <div className="text-right font-mono">{position.averagePrice.toFixed(3)}</div>
+                    <div className="text-right font-mono">{formatPrice(position.averagePrice)}</div>
                   </div>
                 );
               })}

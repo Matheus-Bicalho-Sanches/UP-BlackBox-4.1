@@ -17,6 +17,7 @@ import { useRealtimeProfitCandles } from "@/hooks/useRealtimeProfitCandles";
 import { LogicalRange } from "lightweight-charts";
 import { db } from "@/config/firebase";
 import { collection, query, orderBy, onSnapshot } from "firebase/firestore";
+import { formatPrice, formatPercentage } from "@/lib/profit-up/formatNumber";
 
 interface Subscription {
   id: string;
@@ -212,27 +213,27 @@ export default function ProfitUpPage() {
               <div className="text-sm text-gray-300 space-y-1 mt-2">
                 <div className="flex space-x-4">
                   <span>
-                    Abr: <span className="font-mono text-white">{activeAsset?.open.toFixed(3)}</span>
+                    Abr: <span className="font-mono text-white">{activeAsset ? formatPrice(activeAsset.open) : "0,00"}</span>
                   </span>
                   <span>
-                    Máx: <span className="font-mono text-white">{activeAsset?.max.toFixed(3)}</span>
+                    Máx: <span className="font-mono text-white">{activeAsset ? formatPrice(activeAsset.max) : "0,00"}</span>
                   </span>
                   <span>
-                    Mín: <span className="font-mono text-white">{activeAsset?.min.toFixed(3)}</span>
+                    Mín: <span className="font-mono text-white">{activeAsset ? formatPrice(activeAsset.min) : "0,00"}</span>
                   </span>
                   <span>
-                    Fch: <span className="font-mono text-white">{activeAsset?.close.toFixed(3)}</span>
+                    Fch: <span className="font-mono text-white">{activeAsset ? formatPrice(activeAsset.close) : "0,00"}</span>
                   </span>
                 </div>
                 <div className="flex space-x-4 text-xs">
                   <span>
                     V: <span className={`font-mono ${activeAsset && activeAsset.variation >= 0 ? "text-green-400" : "text-red-400"}`}>
                       {activeAsset && activeAsset.variation >= 0 ? "+" : ""}
-                      {activeAsset?.variation.toFixed(2)}%
+                      {activeAsset ? formatPercentage(activeAsset.variation) : "0,00%"}
                     </span>
                   </span>
                   <span>
-                    A: <span className="font-mono text-white">{activeAsset?.lastPrice.toFixed(3)}</span>
+                    A: <span className="font-mono text-white">{activeAsset ? formatPrice(activeAsset.lastPrice) : "0,00"}</span>
                   </span>
                 </div>
               </div>

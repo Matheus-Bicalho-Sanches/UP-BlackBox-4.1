@@ -1,6 +1,7 @@
 "use client";
 
 import { OrderBookEntry } from "@/lib/profit-up/mockData";
+import { formatPrice, formatPercentage } from "@/lib/profit-up/formatNumber";
 
 interface OrderBookProps {
   book: OrderBookEntry[];
@@ -41,11 +42,11 @@ export default function OrderBook({
           <h3 className="text-lg font-bold text-white">{asset}</h3>
           <span className={`text-sm font-mono ${variation >= 0 ? "text-green-400" : "text-red-400"}`}>
             {variation >= 0 ? "+" : ""}
-            {variation.toFixed(2)}%
+            {formatPercentage(variation)}
           </span>
         </div>
         <div className="text-sm text-gray-300 space-y-1">
-          <div>Último: <span className="font-mono text-white">{lastPrice.toFixed(3)}</span></div>
+          <div>Último: <span className="font-mono text-white">{formatPrice(lastPrice)}</span></div>
           <div className="flex space-x-4 text-xs">
             <span>Volume: <span className="font-mono">{volume.toFixed(2)}B</span></span>
             <span>Negócios: <span className="font-mono">{trades.toLocaleString()}</span></span>
@@ -91,7 +92,7 @@ export default function OrderBook({
                 }`}>
                   {buyOrder ? (
                     <div>
-                      <div className="font-semibold">{buyOrder.price.toFixed(3)}</div>
+                      <div className="font-semibold">{formatPrice(buyOrder.price)}</div>
                       <div className="text-xs opacity-75">
                         {buyOrder.buyOffers} ofert / {buyOrder.buyQuantity.toLocaleString()}
                       </div>
@@ -109,7 +110,7 @@ export default function OrderBook({
                 }`}>
                   {sellOrder ? (
                     <div>
-                      <div className="font-semibold">{sellOrder.price.toFixed(3)}</div>
+                      <div className="font-semibold">{formatPrice(sellOrder.price)}</div>
                       <div className="text-xs opacity-75">
                         {sellOrder.sellQuantity.toLocaleString()} / {sellOrder.sellOffers} ofert
                       </div>

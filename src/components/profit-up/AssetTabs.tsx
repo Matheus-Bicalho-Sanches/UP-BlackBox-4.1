@@ -1,6 +1,7 @@
 "use client";
 
 import { Asset } from "@/lib/profit-up/mockData";
+import { formatPercentage } from "@/lib/profit-up/formatNumber";
 
 interface AssetTabsProps {
   assets: Asset[];
@@ -31,7 +32,7 @@ export default function AssetTabs({ assets, activeAsset, onAssetSelect }: AssetT
                 <span className="text-xs opacity-75">{asset.period}</span>
                 <span className={`text-xs font-mono ${variationColor}`}>
                   {asset.variation >= 0 ? "+" : ""}
-                  {asset.variation.toFixed(2)}%
+                  {formatPercentage(asset.variation)}
                 </span>
               </div>
             </button>
