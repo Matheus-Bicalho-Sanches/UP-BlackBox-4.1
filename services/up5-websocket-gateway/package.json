@@ -1,0 +1,16 @@
+{
+  "name": "up5-websocket-gateway",
+  "version": "1.0.0",
+  "description": "WebSocket gateway para streaming de candles em tempo real",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "nats": "^2.20.0"
+  }
+}
+

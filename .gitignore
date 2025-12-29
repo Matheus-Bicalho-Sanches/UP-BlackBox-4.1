@@ -150,3 +150,38 @@ Dll_Profit/database/**
 Dll_Profit/MarketHours2/**
 Dll_Profit/roteamento/**
 
+# Node modules (anywhere in the project)
+**/node_modules/
+
+# .NET build outputs (bin and obj directories)
+**/bin/
+**/obj/
+
+# .NET compiled files
+**/*.dll
+**/*.exe
+**/*.pdb
+**/*.cache
+**/*.deps.json
+**/*.runtimeconfig.json
+**/*.sourcelink.json
+**/*.assets.cache
+**/*.AssemblyInfo.cs
+**/*.AssemblyInfoInputs.cache
+**/*.GeneratedMSBuildEditorConfig.editorconfig
+**/*.GlobalUsings.g.cs
+**/*.csproj.AssemblyReference.cache
+**/*.csproj.CoreCompileInputs.cache
+**/*.csproj.FileListAbsolute.txt
+**/*.genruntimeconfig.cache
+**/*.csproj.nuget.dgspec.json
+**/*.csproj.nuget.g.props
+**/*.csproj.nuget.g.targets
+**/project.assets.json
+**/project.nuget.cache
+**/apphost.exe
+**/ref/
+**/refint/
+**/.NETCoreApp,Version=*.AssemblyAttributes.cs
+**/*.Up2Date
+
