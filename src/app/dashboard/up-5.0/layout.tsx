@@ -11,6 +11,7 @@ const tabs = [
   { name: "Caixa", href: "/dashboard/up-5.0/caixa" },
   { name: "Boleta", href: "/dashboard/up-5.0/boleta" },
   { name: "Backtest", href: "/dashboard/up-5.0/backtest" },
+  { name: "Acompanhamento", href: "/dashboard/up-5.0/acompanhamento" },
   { name: "Logs", href: "/dashboard/up-5.0/logs" },
 ];
 
