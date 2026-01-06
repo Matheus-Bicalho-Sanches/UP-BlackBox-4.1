@@ -24,3 +24,7 @@ Este é o backend em FastAPI para a nova versão do sistema UP BlackBox.
 
 ---
 Se tiver dúvidas, só pedir ajuda! 
+
+---
+
+Pùsh deploy/prod Vini 06/01/26
