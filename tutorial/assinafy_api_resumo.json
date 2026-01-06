@@ -1,0 +1,711 @@
+{
+  "fonte": {
+    "docs_url": "https://api.assinafy.com.br/v1/docs",
+    "api_versao": "v1",
+    "gerado_em": "2026-01-05",
+    "observacoes": [
+      "Este é um resumo (não é a documentação completa).",
+      "Valide endpoints críticos e campos obrigatórios na documentação oficial antes de ir para produção.",
+      "Alguns exemplos na documentação exibem hosts de API diferentes (staging/legado) e alguns trechos aparentam pequenas inconsistências de método/rota. Use os exemplos de cURL como referência primária e confirme com o suporte quando necessário."
+    ]
+  },
+  "visao_geral": {
+    "descricao": "API RESTful para integração com a plataforma Assinafy (documentos, assinaturas, templates, signatários, usuários, workspaces e webhooks).",
+    "padrao_requisicao_resposta": {
+      "formato_padrao": "JSON",
+      "formatos_suportados": [
+        "JSON",
+        "XML"
+      ]
+    },
+    "envelope_resposta": {
+      "status": "int (reflete o HTTP status code)",
+      "message": "string",
+      "data": "object|array"
+    },
+    "verbos_http": {
+      "GET": "recuperar dados",
+      "POST": "criar",
+      "PUT": "atualizar",
+      "DELETE": "remover"
+    }
+  },
+  "autenticacao": {
+    "metodos": {
+      "api_key": {
+        "tipo": "chave fixa (permanente)",
+        "header": "X-Api-Key",
+        "exemplo": "X-Api-Key: <API_KEY>",
+        "observacoes": [
+          "Indicada para integrações de servidor (backend).",
+          "Evite embutir a chave no código-fonte ou expô-la no front-end."
+        ]
+      },
+      "access_token": {
+        "tipo": "token de acesso (Bearer)",
+        "header": "Authorization",
+        "formato": "Bearer <ACCESS_TOKEN>",
+        "observacoes": [
+          "Usado em diversos endpoints como alternativa ao X-Api-Key.",
+          "Na documentação, o access token é citado como um JWT com expiração (~1 hora) obtido via login (rota de login não detalhada neste resumo)."
+        ]
+      }
+    },
+    "autorizacao_para_fluxos_de_signatario": {
+      "query_param": "signer-access-code",
+      "descricao": "Alguns endpoints de signatário e assinatura aceitam o código de acesso do signatário via query string.",
+      "exemplos": [
+        "/signers/self?signer-access-code=<SIGNER_ACCESS_CODE>",
+        "/sign?signer-access-code=<SIGNER_ACCESS_CODE>",
+        "/documents/<documentId>/assignments/<assignmentId>/reject?signer-access-code=<SIGNER_ACCESS_CODE>"
+      ]
+    }
+  },
+  "paginacao_busca_ordenacao": {
+    "query_params_comuns": {
+      "search": "termo de busca (matching parcial, varia por endpoint)",
+      "page": "número da página (ex.: 1)",
+      "per-page": "quantidade por página (máximo 100)",
+      "sort": "ordenação (ex.: name, -created_at)"
+    },
+    "headers_de_resposta": {
+      "X-Pagination-Current-Page": "página atual retornada",
+      "X-Pagination-Total-Count": "total de registros",
+      "X-Pagination-Page-Count": "total de páginas",
+      "X-Pagination-Per-Page": "quantidade por página"
+    }
+  },
+  "ambientes": {
+    "app": {
+      "sandbox": "https://app-staging.assinafy.com.br",
+      "producao": "https://app.assinafy.com.br"
+    },
+    "api": {
+      "base_url_producao": "https://api.assinafy.com.br/v1",
+      "hosts_staging_que_aparecem_em_exemplos": [
+        "https://api-staging.assinafy.com.br/v1",
+        "https://api.main.stage.assinafy.com.br/v1 (exemplo/legado em snippet de PHP)"
+      ]
+    }
+  },
+  "erros": {
+    "formato_exemplo": {
+      "status": 400,
+      "message": "Mensagem de erro (ex.: atributo inválido ou ausente).",
+      "data": []
+    },
+    "http_status_codes_mencionados": [
+      {
+        "code": 400,
+        "tipo": "Bad Request"
+      },
+      {
+        "code": 401,
+        "tipo": "Unauthorized"
+      },
+      {
+        "code": 403,
+        "tipo": "Forbidden"
+      },
+      {
+        "code": 404,
+        "tipo": "Not Found"
+      },
+      {
+        "code": 429,
+        "tipo": "Too Many Requests"
+      },
+      {
+        "code": 500,
+        "tipo": "Internal Server Error"
+      }
+    ]
+  },
+  "postman": {
+    "disponivel": true,
+    "descricao": "Há uma collection pública no Postman para explorar os endpoints da Assinafy (ver seção 'Postman Collection' na doc)."
+  },
+  "fluxos_recomendados": {
+    "integracao_basica_com_api_key": [
+      "Criar uma conta de usuário no ambiente sandbox (app-staging) durante o desenvolvimento.",
+      "Gerar uma API Key em 'My Account' > aba 'API'.",
+      "Obter o Workspace Account ID em 'My Account' > aba 'Workspaces'.",
+      "Upload do documento (POST /accounts/:account_id/documents).",
+      "Criar signatários (POST /accounts/:account_id/signers).",
+      "Solicitar assinatura (POST /documents/:document_id/assignments) usando 'virtual' (sem campos) ou 'collect' (com campos/posicionamento).",
+      "Acompanhar status e baixar artefatos do documento (original/certificated/certificate-page/bundle).",
+      "Configurar webhooks para receber eventos de status e ações de signatários."
+    ],
+    "assinatura_virtual": {
+      "quando_usar": "Quando não há campos a preencher; o fluxo é 'virtual'.",
+      "passos": [
+        "Criar assignment com method=virtual e signer_ids.",
+        "Assinafy envia convite por e-mail (com mensagem opcional).",
+        "Acompanhar progresso via endpoints de documento/assignment e/ou webhooks."
+      ]
+    },
+    "assinatura_collect_com_campos": {
+      "quando_usar": "Quando é necessário coletar valores em campos (texto, CPF, data etc.).",
+      "passos": [
+        "Criar assignment com method=collect e entries por página com fields (signer_id, field_id, display_settings).",
+        "Signatário acessa a experiência de assinatura via fluxo do signatário (GET /sign com signer-access-code).",
+        "Signatário envia valores (POST de assinatura/valores) e conclui.",
+        "Baixar documento certificado ao final."
+      ],
+      "observacao": "Na doc há menções a /sign (GET/POST) e também a /documents/:documentId/assignments/:assignmentId para ação de assinatura; valide qual rota aplicar no seu cenário."
+    },
+    "templates_para_documentos": [
+      "Criar um template a partir de arquivo (POST /accounts/{account_id}/templates).",
+      "Definir/atualizar campos do template (PUT /accounts/{account_id}/templates/{template_id}/fields).",
+      "Criar roles do template (POST /accounts/{account_id}/templates/{template_id}/roles) para signers/copy receivers (o role 'Editor' é criado automaticamente).",
+      "Gerar um documento a partir do template (POST /accounts/{account_id}/templates/{template_id}/documents) informando signers com role_id e, opcionalmente, valores de editor_fields."
+    ]
+  },
+  "recursos": {
+    "document": {
+      "descricao": "Gestão de documentos (criar/upload, listar, consultar, baixar, excluir).",
+      "status_possiveis": [
+        "uploading",
+        "uploaded",
+        "metadata_processing",
+        "metadata_ready",
+        "expired",
+        "certificating",
+        "certificated",
+        "rejected_by_signer"
+      ],
+      "endpoints_principais": [
+        {
+          "metodo": "POST",
+          "path": "/accounts/:account_id/documents",
+          "descricao": "Upload e criação de documento (multipart/form-data com file).",
+          "auth": [
+            "X-Api-Key",
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "multipart/form-data"
+        },
+        {
+          "metodo": "POST",
+          "path": "/accounts/{account_id}/templates/{template_id}/documents",
+          "descricao": "Criar documento a partir de template (informar signers com role_id e, opcionalmente, editor_fields).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "DELETE",
+          "path": "/documents/:documentId",
+          "descricao": "Excluir documento pelo ID.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "GET",
+          "path": "/documents/:document_id/download/:artifact_name",
+          "descricao": "Baixar artefato do documento (original, certificated, certificate-page, bundle).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "GET",
+          "path": "/documents/:document_id/thumbnail",
+          "descricao": "Baixar thumbnail do documento (JPEG).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "GET",
+          "path": "/documents/:document_id/pages/:page_id/download",
+          "descricao": "Baixar página do documento (JPEG).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        }
+      ],
+      "observacoes": [
+        "A resposta de documento normalmente inclui 'assignment', 'artifacts' e 'pages'."
+      ]
+    },
+    "template": {
+      "descricao": "Gestão de templates (criar/upload, listar, consultar, atualizar, duplicar, excluir e baixar páginas).",
+      "status_possiveis": [
+        "uploading",
+        "uploaded",
+        "processing",
+        "ready",
+        "failed"
+      ],
+      "endpoints_principais": [
+        {
+          "metodo": "GET",
+          "path": "/accounts/{account_id}/templates",
+          "descricao": "Listar templates do workspace (filtros: status, search; sort: name, updated_at).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "POST",
+          "path": "/accounts/{account_id}/templates",
+          "descricao": "Criar template a partir de arquivo enviado (multipart/form-data).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "multipart/form-data"
+        },
+        {
+          "metodo": "GET",
+          "path": "/accounts/{account_id}/templates/{template_id}",
+          "descricao": "Obter template por ID.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "PUT",
+          "path": "/accounts/{account_id}/templates/{template_id}",
+          "descricao": "Atualizar dados do template (message, document_name, name).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "POST",
+          "path": "/accounts/{account_id}/templates/{template_id}",
+          "descricao": "Duplicar template (body opcional: name).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "DELETE",
+          "path": "/accounts/{account_id}/templates/{template_id}",
+          "descricao": "Excluir template.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "PUT",
+          "path": "/accounts/{account_id}/templates/{template_id}/fields",
+          "descricao": "Atualizar campos/posicionamento do template.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "GET",
+          "path": "/accounts/{account_id}/templates/{template_id}/pages/{page_id}/download",
+          "descricao": "Baixar página do template como JPEG.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        }
+      ]
+    },
+    "template_role": {
+      "descricao": "Gestão de roles em template (para associar campos a um papel: Editor/Signer/CopyReceiver).",
+      "assignment_types": [
+        "Editor",
+        "Signer",
+        "CopyReceiver"
+      ],
+      "regras": [
+        "O role 'Editor' é gerado automaticamente ao criar o template e não pode ser criado/atualizado/excluído manualmente."
+      ],
+      "endpoints_principais": [
+        {
+          "metodo": "POST",
+          "path": "/accounts/{account_id}/templates/{template_id}/roles",
+          "descricao": "Criar role no template (name, assignment_type).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "PUT",
+          "path": "/accounts/{account_id}/templates/{template_id}/roles/{role_id}",
+          "descricao": "Atualizar role do template (name, assignment_type).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "DELETE",
+          "path": "/accounts/{account_id}/templates/{template_id}/roles/{role_id}",
+          "descricao": "Excluir role do template.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "GET",
+          "path": "/template-role-assignment-types",
+          "descricao": "Listar tipos de assignment disponíveis para roles.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        }
+      ],
+      "observacoes": [
+        "A documentação mostra 'PUT' no exemplo de atualização, mas há um trecho com rota marcada como POST; prefira o método exibido no cURL (PUT)."
+      ]
+    },
+    "assignment": {
+      "descricao": "Solicitação de assinatura para um documento (convite a signers; métodos virtual ou collect).",
+      "metodos_de_assinatura": [
+        "virtual",
+        "collect"
+      ],
+      "endpoints_principais": [
+        {
+          "metodo": "POST",
+          "path": "/documents/:documentId/assignments",
+          "descricao": "Criar assignment. Use method=virtual (sem campos) ou method=collect (com entries/fields).",
+          "auth": [
+            "X-Api-Key",
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "PUT",
+          "path": "/documents/:documentId/assignments/:assignmentId/reset-expiration",
+          "descricao": "Redefinir expiração (expires_at ISO8601; null = sem expiração).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "GET",
+          "path": "/sign?signer-access-code=:signer_access_code",
+          "descricao": "Obter dados de assinatura para o signatário (fluxo collect).",
+          "auth": [
+            "signer-access-code (query)"
+          ]
+        },
+        {
+          "metodo": "PUT",
+          "path": "/documents/:documentId/assignments/:assignmentId/reject?signer-access-code=:accessCode",
+          "descricao": "Signatário recusa (decline_reason obrigatório).",
+          "auth": [
+            "signer-access-code (query)"
+          ],
+          "content_type": "application/json"
+        }
+      ],
+      "observacoes": [
+        "Para o fluxo collect, a doc também apresenta um POST de assinatura/valores no contexto de /sign; valide a rota exata conforme seu caso."
+      ]
+    },
+    "signer": {
+      "descricao": "Gestão de signers (criar, listar, consultar) e ações do signatário (aceitar termos, verificar e-mail, upload de assinatura).",
+      "endpoints_principais": [
+        {
+          "metodo": "POST",
+          "path": "/accounts/:account_id/signers",
+          "descricao": "Criar signer (full_name, email).",
+          "auth": [
+            "X-Api-Key",
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "GET",
+          "path": "/signers/self?signer-access-code=:signer_access_code",
+          "descricao": "Obter dados do signer a partir do signer-access-code.",
+          "auth": [
+            "signer-access-code (query)"
+          ]
+        },
+        {
+          "metodo": "PUT",
+          "path": "/signers/accept-terms?signer-access-code=:signer_access_code",
+          "descricao": "Signer aceita termos de uso (marca has_accepted_terms).",
+          "auth": [
+            "signer-access-code (query)"
+          ]
+        },
+        {
+          "metodo": "POST",
+          "path": "/verify",
+          "descricao": "Verificar e-mail do signer (email + code).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "POST",
+          "path": "/signature?signer-access-code=:signer_access_code&type=:type",
+          "descricao": "Upload de imagem de assinatura ou rubrica do signer (Content-Type image/png|jpeg; type=signature|initial).",
+          "auth": [
+            "signer-access-code (query)"
+          ],
+          "content_type": "image/png|image/jpeg"
+        },
+        {
+          "metodo": "GET",
+          "path": "/signature/:type?signer-access-code=:signer_access_code",
+          "descricao": "Download da assinatura/rubrica do signer (type=signature|initial).",
+          "auth": [
+            "signer-access-code (query)"
+          ]
+        }
+      ]
+    },
+    "signer_documents": {
+      "descricao": "Endpoints para o signatário listar/baixar documentos e recusar em lote.",
+      "endpoints_principais": [
+        {
+          "metodo": "GET",
+          "path": "/signers/:signer_id/documents?signer-access-code=:signer_access_code",
+          "descricao": "Listar documentos do signer (filtros: status, method, search; sort: name, updated_at).",
+          "auth": [
+            "Authorization: Bearer <token> (opcional)",
+            "signer-access-code (query)"
+          ]
+        },
+        {
+          "metodo": "GET",
+          "path": "/signers/:signer_id/documents/:document_id/download/:artifact_name?signer-access-code=:signer_access_code",
+          "descricao": "Baixar artefato de documento do ponto de vista do signer (original, certificated, certificate-page, bundle).",
+          "auth": [
+            "signer-access-code (query)"
+          ]
+        },
+        {
+          "metodo": "PUT",
+          "path": "/signers/documents/decline-multiple?signer-access-code=:signer_access_code",
+          "descricao": "Recusar múltiplos documentos (document_ids[], decline_reason).",
+          "auth": [
+            "signer-access-code (query)"
+          ],
+          "content_type": "application/json"
+        }
+      ]
+    },
+    "field_definition": {
+      "descricao": "Definição e validação de campos (tipos como cpf, email, texto, número, data etc.).",
+      "endpoints_principais": [
+        {
+          "metodo": "POST",
+          "path": "/accounts/:accountId/fields",
+          "descricao": "Criar definição de campo (type, name; opcional regex, is_required, is_active).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "GET",
+          "path": "/accounts/:accountId/fields",
+          "descricao": "Listar definições de campos (params: include_inactive, include_standard).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "DELETE",
+          "path": "/accounts/:account_id/fields/:field_id",
+          "descricao": "Excluir definição de campo (não permitido se já usado em documento).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "POST",
+          "path": "/accounts/:accountId/fields/:field_id/validate",
+          "descricao": "Validar um valor contra a definição (value). Pode usar Authorization (usuário) ou signer-access-code (signer).",
+          "auth": [
+            "Authorization: Bearer <token> (usuário)",
+            "signer-access-code (query) (signer)"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "POST",
+          "path": "/accounts/:accountId/fields/validate-multiple",
+          "descricao": "Validar múltiplos valores em lote (array de {field_id, value}). Pode usar Authorization ou signer-access-code.",
+          "auth": [
+            "Authorization: Bearer <token> (usuário)",
+            "signer-access-code (query) (signer)"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "GET",
+          "path": "/field-types",
+          "descricao": "Listar tipos possíveis de campos.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        }
+      ],
+      "notas": [
+        "Ao incluir campos padrão (include_standard=true), tipos como signature/initial/signatureDate também podem aparecer."
+      ]
+    },
+    "user": {
+      "descricao": "Gestão de conta de usuário (criação, perfil, verificação de e-mail).",
+      "endpoints_principais": [
+        {
+          "metodo": "POST",
+          "path": "/users",
+          "descricao": "Criar conta de usuário (name, email, password, terms, etc.).",
+          "auth": [],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "GET",
+          "path": "/users/self",
+          "descricao": "Obter dados do usuário autenticado (inclui accounts/workspaces associados).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "PUT",
+          "path": "/users/self",
+          "descricao": "Atualizar perfil do usuário.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "PUT",
+          "path": "/users/request-email-verification",
+          "descricao": "Solicitar envio de código de verificação de e-mail.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "PUT",
+          "path": "/users/verify-email",
+          "descricao": "Confirmar verificação de e-mail (email + code).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        }
+      ],
+      "notas": [
+        "Após o e-mail ser validado, ele não pode mais ser atualizado (observação da doc)."
+      ]
+    },
+    "user_invitation": {
+      "descricao": "Convites de usuários para um workspace (seção 'User Invitation').",
+      "endpoints_principais": [
+        {
+          "metodo": "ver_doc",
+          "path": "ver seção 'User Invitation' (rotas variam por account/workspace)",
+          "descricao": "A documentação inclui endpoints para criar/listar/gerir convites de usuários no workspace.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        }
+      ]
+    },
+    "authorization": {
+      "descricao": "Atribuição de papéis (roles) de usuários em um workspace (seção 'Authorization').",
+      "endpoints_principais": [
+        {
+          "metodo": "ver_doc",
+          "path": "ver seção 'Authorization'",
+          "descricao": "A documentação inclui endpoints para listar autorizações e atribuir/remover roles em um account/workspace.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        }
+      ]
+    },
+    "workspace": {
+      "descricao": "Gestão de workspaces (accounts): listar e consultar.",
+      "endpoints_principais": [
+        {
+          "metodo": "GET",
+          "path": "/accounts",
+          "descricao": "Listar workspaces do usuário autenticado.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "GET",
+          "path": "/accounts/:account_id",
+          "descricao": "Obter detalhes de um workspace por ID.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "GET",
+          "path": "/accounts/:account_id/user",
+          "descricao": "Obter informações do usuário dentro do workspace.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        }
+      ]
+    },
+    "webhooks": {
+      "descricao": "Configuração de webhooks por workspace e listagem de tipos de eventos.",
+      "endpoints_principais": [
+        {
+          "metodo": "GET",
+          "path": "/webhooks/event-types",
+          "descricao": "Listar tipos de eventos de webhooks disponíveis.",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ]
+        },
+        {
+          "metodo": "PUT",
+          "path": "/accounts/{account_id}/webhooks/subscriptions",
+          "descricao": "Atualizar inscrições de webhooks (url, subscriptions[], is_active).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        },
+        {
+          "metodo": "PUT",
+          "path": "/accounts/{account_id}/webhooks/inactivate",
+          "descricao": "Inativar webhooks do workspace (desativação de subscriptions).",
+          "auth": [
+            "Authorization: Bearer <token>"
+          ],
+          "content_type": "application/json"
+        }
+      ],
+      "event_types_exemplos": [
+        "document_prepared",
+        "document_metadata_ready",
+        "document_ready",
+        "document_uploaded",
+        "signature_requested",
+        "signer_created",
+        "signer_email_verified",
+        "signer_signed_document",
+        "signer_rejected_document",
+        "signer_viewed_document",
+        "document_processing_failed"
+      ]
+    }
+  }
+}
