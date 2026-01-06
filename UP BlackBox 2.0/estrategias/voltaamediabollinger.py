@@ -232,6 +232,8 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
         {'data': d.strftime('%Y-%m-%d %H:%M'), 'valor': float(v)}
         for d, v in zip(df['date'], drawdown_ativo)
     ]
+    # Calcular drawdown máximo da estratégia
+    max_drawdown_estrategia = float(drawdown_estrategia.min()) if not drawdown_estrategia.empty else 0.0
     n_operacoes = len(trades)
     retorno_total_estrategia = float(df['equity_estrategia'].iloc[-1]) - 1 if not df.empty else 0
     if n_operacoes > 0:
@@ -298,6 +300,7 @@ def run_voltaamediabollinger(csv_path, x=20, y=2, w=10, stop_loss=-0.05, take_pr
         'tempo_medio_vencedores': tempo_medio_vencedores,
         'perda_medio_perdedores': perda_medio_perdedores,
         'tempo_medio_perdedores': tempo_medio_perdedores,
+        'max_drawdown_estrategia': max_drawdown_estrategia,
         'parametros_detalhados': {
             'descricao': (
                 'Compra quando o fechamento cruza abaixo da banda inferior de Bollinger. '

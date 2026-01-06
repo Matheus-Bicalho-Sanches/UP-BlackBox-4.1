@@ -92,6 +92,8 @@ def run_buysequenciadealtaouqueda(csv_path, x=3, y=5, stop_loss=-0.05, take_prof
         {'data': d.strftime('%Y-%m-%d %H:%M'), 'valor': float(v)}
         for d, v in zip(df['date'], drawdown_ativo)
     ]
+    # Calcular drawdown máximo da estratégia
+    max_drawdown_estrategia = float(drawdown_estrategia.min()) if not drawdown_estrategia.empty else 0.0
     n_operacoes = len(trades)
     retorno_total_estrategia = float(df['equity_estrategia'].iloc[-1]) - 1 if not df.empty else 0
     # Cálculo correto: média geométrica dos retornos
@@ -160,5 +162,6 @@ def run_buysequenciadealtaouqueda(csv_path, x=3, y=5, stop_loss=-0.05, take_prof
         'ganho_medio_vencedores': ganho_medio_vencedores,
         'tempo_medio_vencedores': tempo_medio_vencedores,
         'perda_medio_perdedores': perda_medio_perdedores,
-        'tempo_medio_perdedores': tempo_medio_perdedores
+        'tempo_medio_perdedores': tempo_medio_perdedores,
+        'max_drawdown_estrategia': max_drawdown_estrategia
     } 

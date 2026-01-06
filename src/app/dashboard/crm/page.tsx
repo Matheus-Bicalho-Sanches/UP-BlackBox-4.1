@@ -34,7 +34,7 @@ export default function CRMPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'lead' | 'client'>('lead');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'createdAt' | 'lastContact' | 'nextContact'>('nextContact');
+  const [sortBy, setSortBy] = useState<'name' | 'createdAt' | 'lastContact' | 'nextContact'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [error, setError] = useState('');
   const [editingCell, setEditingCell] = useState<EditingCell>({ contactId: '', field: null });
@@ -271,7 +271,15 @@ export default function CRMPage() {
     })
     .sort((a, b) => {
       // Ordenação por campo
-      if (sortBy === 'lastContact') {
+      if (sortBy === 'name') {
+        const nameA = (a.name || '').toLowerCase();
+        const nameB = (b.name || '').toLowerCase();
+        if (sortOrder === 'asc') {
+          return nameA.localeCompare(nameB, 'pt-BR');
+        } else {
+          return nameB.localeCompare(nameA, 'pt-BR');
+        }
+      } else if (sortBy === 'lastContact') {
         const dateA = a.lastContact ? new Date(a.lastContact).getTime() : 0;
         const dateB = b.lastContact ? new Date(b.lastContact).getTime() : 0;
         return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
@@ -296,7 +304,7 @@ export default function CRMPage() {
   }
 
   return (
-    <div className="w-[95%] mx-auto">
+    <div className="w-[95%] mx-auto pt-6 pb-0">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-white">CRM</h1>
         <Link
@@ -312,6 +320,41 @@ export default function CRMPage() {
           {error}
         </div>
       )}
+
+      {/* Cards com estatísticas */}
+      <div className="mb-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
+          <h3 className="text-gray-400 text-sm">Total de Contatos</h3>
+          <p className="text-2xl font-bold text-white">{contacts.length}</p>
+        </div>
+        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
+          <h3 className="text-gray-400 text-sm">Leads Ativos</h3>
+          <p className="text-2xl font-bold text-white">
+            {contacts.filter(c => c.status !== 'perdido' && c.status !== 'convertido').length}
+          </p>
+        </div>
+        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
+          <h3 className="text-gray-400 text-sm">Taxa de Conversão</h3>
+          <p className="text-2xl font-bold text-white">
+            {contacts.length > 0 
+              ? Math.round((contacts.filter(c => c.status === 'convertido').length / contacts.length) * 100) 
+              : 0}%
+          </p>
+        </div>
+        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
+          <h3 className="text-gray-400 text-sm">Contatos Recentes</h3>
+          <p className="text-2xl font-bold text-white">
+            {contacts.filter(c => {
+              if (!c.lastContact) return false;
+              const lastContact = new Date(c.lastContact);
+              const today = new Date();
+              const diffTime = Math.abs(today.getTime() - lastContact.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              return diffDays <= 7;
+            }).length}
+          </p>
+        </div>
+      </div>
 
       <div className="mb-6 flex flex-col gap-4">
         {/* Filtros principais */}
@@ -390,9 +433,10 @@ export default function CRMPage() {
             <select 
               id="sort-by"
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'createdAt' | 'lastContact' | 'nextContact')}
+              onChange={(e) => setSortBy(e.target.value as 'name' | 'createdAt' | 'lastContact' | 'nextContact')}
               className="px-3 py-1.5 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
             >
+              <option value="name">Nome</option>
               <option value="createdAt">Data de criação</option>
               <option value="lastContact">Último contato</option>
               <option value="nextContact">Próximo contato</option>
@@ -425,55 +469,57 @@ export default function CRMPage() {
         </div>
       </div>
 
-      <div className="bg-gray-800 rounded-lg shadow">
+      <div className="bg-gray-800 rounded-lg shadow mb-0">
         {filteredAndSortedContacts.length === 0 ? (
           <div className="p-6 text-center text-gray-400">
             {contacts.length === 0 ? 'Nenhum contato cadastrado.' : 'Nenhum contato encontrado.'}
           </div>
         ) : (
-          <div className="overflow-x-hidden">
+          <div className="overflow-hidden">
             <table className="w-full table-fixed">
               <thead>
-                <tr className="text-left border-b border-gray-700">
-                  <th className="px-3 py-3 text-gray-300 w-[20%]">Nome</th>
-                  <th className="px-3 py-3 text-gray-300 w-[14%]">Status</th>
-                  <th className="px-3 py-3 text-gray-300 w-[14%]">Contato</th>
-                  <th className="px-3 py-3 text-gray-300 w-[13%]">Último Contato</th>
-                  <th className="px-3 py-3 text-gray-300 w-[13%]">Próximo Contato</th>
-                  <th className="px-3 py-3 text-gray-300 w-[11%]">Origem</th>
-                  <th className="px-3 py-3 text-gray-300 w-[15%]">Observações</th>
+                <tr className="border-b border-gray-700">
+                  <th className="px-3 py-3 text-gray-300 w-[20%] text-left">Nome</th>
+                  <th className="px-3 py-3 text-gray-300 w-[14%] text-center">Status</th>
+                  <th className="px-3 py-3 text-gray-300 w-[14%] text-center">Contato</th>
+                  <th className="px-3 py-3 text-gray-300 w-[13%] text-center">Último Contato</th>
+                  <th className="px-3 py-3 text-gray-300 w-[13%] text-center">Próximo Contato</th>
+                  <th className="px-3 py-3 text-gray-300 w-[11%] text-left">Origem</th>
+                  <th className="px-3 py-3 text-gray-300 w-[15%] text-left">Observações</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredAndSortedContacts.map((contact) => (
+                {filteredAndSortedContacts.map((contact, index) => {
+                  const isLastRow = index === filteredAndSortedContacts.length - 1;
+                  return (
                   <tr
                     key={contact.id}
                     onClick={() => router.push(`/dashboard/crm/${contact.id}`)}
-                    className="border-b border-gray-700 hover:bg-gray-700/50 cursor-pointer"
+                    className={`${!isLastRow ? 'border-b border-gray-700' : ''} hover:bg-gray-700/50 cursor-pointer`}
                   >
-                    <td className="px-3 py-4 text-white">
+                    <td className={`px-3 ${isLastRow ? 'pt-4 pb-3' : 'py-4'} text-white`}>
                       <div className="truncate font-medium">{contact.name}</div>
                       <div className="truncate text-xs text-gray-400">{contact.email || 'Email não informado'}</div>
                     </td>
-                    <td className="px-3 py-4">
+                    <td className={`px-3 ${isLastRow ? 'pt-4 pb-3' : 'py-4'} text-center`}>
                       <span className={`px-2 py-1 rounded-full text-xs text-white ${getStatusColor(contact.status)}`}>
                         {contact.status.charAt(0).toUpperCase() + contact.status.slice(1)}
                       </span>
                     </td>
-                    <td className="px-3 py-4 text-white">
+                    <td className={`px-3 ${isLastRow ? 'pt-4 pb-3' : 'py-4'} text-white text-center`}>
                       <button
                         onClick={(e) => {
                           e.stopPropagation(); // Evita clique na linha
                           copyPhoneNumber(contact.phone, contact.id);
                         }}
-                        className={`truncate block text-left w-full transition-colors ${
+                        className={`truncate block text-center w-full transition-colors ${
                           copiedPhone === contact.id 
                             ? 'text-green-400' 
                             : 'text-cyan-500 hover:text-cyan-400'
                         }`}
                         title={copiedPhone === contact.id ? 'Número copiado!' : 'Clique para copiar o número'}
                       >
-                        <div className="flex items-center">
+                        <div className="flex items-center justify-center">
                           <span>{formatPhoneNumber(contact.phone)}</span>
                           {copiedPhone === contact.id ? (
                             <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -488,10 +534,10 @@ export default function CRMPage() {
                       </button>
                     </td>
                     <td 
-                      className="px-3 py-4 text-white truncate relative"
+                      className={`px-3 ${isLastRow ? 'pt-4 pb-3' : 'py-4'} text-white truncate relative text-center`}
                       onClick={(e) => handleDateCellClick(e, contact.id, 'lastContact')}
                     >
-                      <div className="flex items-center group cursor-pointer">
+                      <div className="flex items-center justify-center group cursor-pointer">
                         <span>{formatDate(contact.lastContact)}</span>
                         <svg 
                           className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 text-cyan-500" 
@@ -519,10 +565,10 @@ export default function CRMPage() {
                       )}
                     </td>
                     <td 
-                      className="px-3 py-4 text-white truncate relative"
+                      className={`px-3 ${isLastRow ? 'pt-4 pb-3' : 'py-4'} text-white truncate relative text-center`}
                       onClick={(e) => handleDateCellClick(e, contact.id, 'nextContact')}
                     >
-                      <div className="flex items-center group cursor-pointer">
+                      <div className="flex items-center justify-center group cursor-pointer">
                         <span>{formatDate(contact.nextContact)}</span>
                         <svg 
                           className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 text-cyan-500" 
@@ -549,10 +595,10 @@ export default function CRMPage() {
                         />
                       )}
                     </td>
-                    <td className="px-3 py-4 text-white truncate">
+                    <td className={`px-3 ${isLastRow ? 'pt-4 pb-3' : 'py-4'} text-white truncate`}>
                       {contact.source || 'Não informado'}
                     </td>
-                    <td className="px-3 py-4 text-white">
+                    <td className={`px-3 ${isLastRow ? 'pt-4 pb-3' : 'py-4'} text-white`}>
                       {contact.notes ? (
                         <div className="relative group max-w-full">
                           <div className="truncate">
@@ -569,46 +615,12 @@ export default function CRMPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
-      </div>
-
-      {/* Cards com estatísticas */}
-      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
-          <h3 className="text-gray-400 text-sm">Total de Contatos</h3>
-          <p className="text-2xl font-bold text-white">{contacts.length}</p>
-        </div>
-        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
-          <h3 className="text-gray-400 text-sm">Leads Ativos</h3>
-          <p className="text-2xl font-bold text-white">
-            {contacts.filter(c => c.status !== 'perdido' && c.status !== 'convertido').length}
-          </p>
-        </div>
-        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
-          <h3 className="text-gray-400 text-sm">Taxa de Conversão</h3>
-          <p className="text-2xl font-bold text-white">
-            {contacts.length > 0 
-              ? Math.round((contacts.filter(c => c.status === 'convertido').length / contacts.length) * 100) 
-              : 0}%
-          </p>
-        </div>
-        <div className="bg-gray-800 p-4 rounded-lg border border-gray-700">
-          <h3 className="text-gray-400 text-sm">Contatos Recentes</h3>
-          <p className="text-2xl font-bold text-white">
-            {contacts.filter(c => {
-              if (!c.lastContact) return false;
-              const lastContact = new Date(c.lastContact);
-              const today = new Date();
-              const diffTime = Math.abs(today.getTime() - lastContact.getTime());
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-              return diffDays <= 7;
-            }).length}
-          </p>
-        </div>
       </div>
     </div>
   );

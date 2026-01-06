@@ -91,6 +91,9 @@ def run_vendeabertura_comprafechamento(csv_path, dia_semana=None):
         for d, v in zip(df['date'], drawdown_ativo)
     ]
     
+    # Calcular drawdown máximo da estratégia
+    max_drawdown_estrategia = float(drawdown_estrategia.min()) if not drawdown_estrategia.empty else 0.0
+    
     # Cálculo correto: média geométrica dos retornos
     n_operacoes = len(trades)
     retorno_total_estrategia = float(df['equity_estrategia'].iloc[-1]) - 1 if not df.empty else 0
@@ -146,6 +149,7 @@ def run_vendeabertura_comprafechamento(csv_path, dia_semana=None):
         'tempo_medio_vencedores': tempo_medio_vencedores,
         'perda_medio_perdedores': perda_medio_perdedores,
         'tempo_medio_perdedores': tempo_medio_perdedores,
+        'max_drawdown_estrategia': max_drawdown_estrategia,
         'parametros_detalhados': {
             'dia_semana': 'Dia da semana permitido para iniciar a operação (0=Seg, 1=Ter, 2=Qua, 3=Qui, 4=Sex).'
         }

@@ -3,3 +3,5 @@ uvicorn
 pydantic
 # Para integração com DLL
 firebase-admin
+# Para carregar variáveis de ambiente
+python-dotenv

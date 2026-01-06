@@ -13,24 +13,11 @@ def criar_estrategia():
     
     # Inicializar Firebase Admin usando o mesmo método do projeto
     try:
-        # Se já estiver inicializado, não faz nada
-        firebase_admin.get_app()
-    except ValueError:
-        # Se não estiver inicializado, inicializa usando as variáveis de ambiente
-        try:
-            from firebase_admin_init import db
-            print("✅ Firebase inicializado usando variáveis de ambiente")
-        except Exception as e:
-            print(f"❌ Erro ao inicializar Firebase: {e}")
-            print("   Verifique se o arquivo .env está configurado corretamente")
-            return False
-        return True
-    
-    # Conectar ao Firestore
-    try:
-        db = firestore.client()
+        from firebase_admin_init import db
+        print("✅ Firebase inicializado usando variáveis de ambiente")
     except Exception as e:
-        print(f"❌ Erro ao conectar ao Firestore: {e}")
+        print(f"❌ Erro ao inicializar Firebase: {e}")
+        print("   Verifique se o arquivo .env está configurado corretamente")
         return False
     
     # Dados da estratégia

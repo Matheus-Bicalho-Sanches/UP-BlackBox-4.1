@@ -138,6 +138,8 @@ def run_operandomomentum(csv_path, x=0.05, y=5, w=5, stop_loss=-0.05, take_profi
         {'data': d.strftime('%Y-%m-%d %H:%M'), 'valor': float(v)}
         for d, v in zip(df['date'], drawdown_ativo)
     ]
+    # Calcular drawdown máximo da estratégia
+    max_drawdown_estrategia = float(drawdown_estrategia.min()) if not drawdown_estrategia.empty else 0.0
     n_operacoes = len(trades)
     retorno_total_estrategia = float(df['equity_estrategia'].iloc[-1]) - 1 if not df.empty else 0
     # Cálculo correto: média geométrica dos retornos
@@ -206,6 +208,7 @@ def run_operandomomentum(csv_path, x=0.05, y=5, w=5, stop_loss=-0.05, take_profi
         'tempo_medio_vencedores': tempo_medio_vencedores,
         'perda_medio_perdedores': perda_medio_perdedores,
         'tempo_medio_perdedores': tempo_medio_perdedores,
+        'max_drawdown_estrategia': max_drawdown_estrategia,
         'parametros_detalhados': {
             'x': f"Percentual de variação nos últimos y períodos para gerar o sinal de compra. Positivo = alta, negativo = queda. Ex: x=0.05 (5%) compra se subir 5% ou mais; x=-0.03 (-3%) compra se cair 3% ou mais.",
             'y': "Quantidade de períodos (dias) para calcular a variação percentual.",
