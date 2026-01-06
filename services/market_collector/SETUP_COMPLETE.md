@@ -109,3 +109,5 @@ test_nats_subscribe.bat
 - Logs são exibidos no console (configurável via appsettings.json)
 
 
+
+

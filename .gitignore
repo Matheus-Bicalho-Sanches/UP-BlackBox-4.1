@@ -138,6 +138,10 @@ services/**/venv_*/
 services/**/__pycache__/
 services/**/Logs/
 services/**/logs/
+# Services - ignore generated .dat files and other binaries
+services/**/*.dat
+services/**/*.swp
+services/**/*.swo
 
 # Dll_Profit heavy binaries and data (keep examples' source code only)
 Dll_Profit/**/*.exe
@@ -184,4 +188,20 @@ Dll_Profit/roteamento/**
 **/refint/
 **/.NETCoreApp,Version=*.AssemblyAttributes.cs
 **/*.Up2Date
+
+# Vim swap files
+*.swp
+*.swo
+*~
+
+# Services data files (generated at runtime)
+services/**/ProfitChart.dat
+services/**/newagents.dat
+services/**/HadesSSLServerAddr3.dat
+services/**/InfoSSLServerAddr3.dat
+services/**/ReplayServerAddr3.dat
+services/**/ServerAddr6.dat
+services/**/holidays.dat
+services/**/timezone2.dat
+services/**/MarketHours2/**
 

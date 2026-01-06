@@ -24,3 +24,5 @@ echo NATS Server parado com sucesso!
 pause
 
 
+
+
