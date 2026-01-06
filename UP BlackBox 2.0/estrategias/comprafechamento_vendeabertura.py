@@ -2,15 +2,25 @@ import pandas as pd
 from datetime import datetime
 import math
 
-def run_comprafechamento_vendeabertura(csv_path):
+def run_comprafechamento_vendeabertura(csv_path, dia_semana=None):
     # Lê o CSV
     df = pd.read_csv(csv_path, sep=',', on_bad_lines='skip')
     df['date'] = pd.to_datetime(df['date'], format='%d/%m/%Y %H:%M')
     df = df.sort_values('date').reset_index(drop=True)
+    # Dia da semana: Monday=0 ... Sunday=6
+    df['weekday'] = df['date'].dt.weekday
     # Estratégia: compra no fechamento, vende na abertura do dia seguinte
     # Calcula o retorno da estratégia
     df['retorno_estrategia'] = (df['open'].shift(-1) - df['close']) / df['close']
     df['retorno_estrategia'] = df['retorno_estrategia'].fillna(0)
+    # Se um dia da semana for especificado, zera retornos nos demais dias para não contar operação
+    if dia_semana is not None:
+        try:
+            dia_semana_int = int(dia_semana)
+        except Exception:
+            dia_semana_int = None
+        if dia_semana_int is not None:
+            df.loc[df['weekday'] != dia_semana_int, 'retorno_estrategia'] = 0
     df['equity_estrategia'] = (1 + df['retorno_estrategia']).cumprod()
     equity_curve_estrategia = [
         {'data': d.strftime('%Y-%m-%d %H:%M'), 'valor': float(v)}
@@ -19,6 +29,13 @@ def run_comprafechamento_vendeabertura(csv_path):
     # Histórico de trades
     trades = []
     for i in range(len(df) - 1):
+        if dia_semana is not None:
+            try:
+                dia_semana_int = int(dia_semana)
+            except Exception:
+                dia_semana_int = None
+            if dia_semana_int is not None and int(df.at[i, 'weekday']) != dia_semana_int:
+                continue
         entrada_data = df.at[i, 'date']
         entrada_preco = df.at[i, 'close']
         saida_data = df.at[i + 1, 'date']
@@ -50,8 +67,6 @@ def run_comprafechamento_vendeabertura(csv_path):
         {'data': d.strftime('%Y-%m-%d %H:%M'), 'valor': float(v)}
         for d, v in zip(df['date'], drawdown_ativo)
     ]
-    # Calcular drawdown máximo da estratégia
-    max_drawdown_estrategia = float(drawdown_estrategia.min()) if not drawdown_estrategia.empty else 0.0
     # Cálculo correto: média geométrica dos retornos
     n_operacoes = len(trades)
     if n_operacoes > 0:
@@ -110,7 +125,7 @@ def run_comprafechamento_vendeabertura(csv_path):
         'equity_curve_ativo': equity_curve_ativo,
         'drawdown_estrategia': drawdown_curve_estrategia,
         'drawdown_ativo': drawdown_curve_ativo,
-        'n_operacoes': len(df) - 1,
+        'n_operacoes': n_operacoes,
         'retorno_total_estrategia': float(df['equity_estrategia'].iloc[-1]) - 1 if not df.empty else 0,
         'retorno_total_ativo': float(df['equity_ativo'].iloc[-1]) - 1 if not df.empty else 0,
         'retorno_por_trade': retorno_por_trade,
@@ -123,5 +138,7 @@ def run_comprafechamento_vendeabertura(csv_path):
         'tempo_medio_vencedores': tempo_medio_vencedores,
         'perda_medio_perdedores': perda_medio_perdedores,
         'tempo_medio_perdedores': tempo_medio_perdedores,
-        'max_drawdown_estrategia': max_drawdown_estrategia
+        'parametros_detalhados': {
+            'dia_semana': 'Dia da semana permitido para iniciar a operação (0=Seg, 1=Ter, 2=Qua, 3=Qui, 4=Sex).'
+        }
     } 

@@ -123,14 +123,21 @@ export default function BacktestPage() {
 
   // Paginação e filtros agora usam backtests reais
   let filteredBacktests = backtests.filter(bt => {
-    const baseMatch = !filterBaseDados || (bt.base_dados && bt.base_dados.toLowerCase().includes(filterBaseDados.toLowerCase()));
-    const estrategiaMatch = !filterEstrategia || (bt.estrategia && bt.estrategia.toLowerCase().includes(filterEstrategia.toLowerCase()));
-    return baseMatch && estrategiaMatch;
+    const matchBase = !filterBaseDados || 
+      (bt.base_dados && bt.base_dados.toLowerCase().includes(filterBaseDados.toLowerCase()));
+    const matchEstrategia = !filterEstrategia || 
+      (bt.estrategia && bt.estrategia.toLowerCase().includes(filterEstrategia.toLowerCase()));
+    return matchBase && matchEstrategia;
   });
   let backtestsOrdenados = [...filteredBacktests];
   // (implementar ordenação se desejar)
   const totalPages = Math.ceil(backtestsOrdenados.length / 50);
   const paginatedBacktests = backtestsOrdenados.slice((currentPage - 1) * 50, currentPage * 50);
+
+  // Resetar página quando os filtros mudarem
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterBaseDados, filterEstrategia]);
 
   async function handleRunBacktest(e: React.FormEvent) {
     e.preventDefault();
@@ -167,6 +174,10 @@ export default function BacktestPage() {
           take_profit: Math.abs(numTakeProfit) / 100
         };
       } else if (selectedEstrategia.toLowerCase().replace(/[_-]/g, '') === "vendeaberturacomprafechamento") {
+        if (paramDiaSemana !== "" && paramDiaSemana !== null && paramDiaSemana !== undefined) {
+          body.parametros = { dia_semana: Number(paramDiaSemana) };
+        }
+      } else if (selectedEstrategia.toLowerCase() === "comprafechamento_vendeabertura") {
         if (paramDiaSemana !== "" && paramDiaSemana !== null && paramDiaSemana !== undefined) {
           body.parametros = { dia_semana: Number(paramDiaSemana) };
         }
@@ -222,6 +233,17 @@ export default function BacktestPage() {
         body.parametros = {
           param1: numX,
           param2: numY,
+          stop_loss: numStopLoss / 100,
+          take_profit: numTakeProfit / 100,
+        };
+      } else if (selectedEstrategia.toLowerCase() === "predictcandle") {
+        // Y e W são digitados em percentual (ex: -3 e -1 para quedas de 3% a 1%)
+        // Sempre dividir por 100 para converter para decimal
+        const wValue = paramW !== null && paramW !== undefined ? paramW / 100 : 0.10;
+        body.parametros = {
+          y: numX / 100,  // Y é a variação mínima no candle anterior (%)
+          w: wValue,      // W é a variação máxima no candle anterior (%)
+          x: numY,        // X é o número de candles para manter
           stop_loss: numStopLoss / 100,
           take_profit: numTakeProfit / 100,
         };
@@ -313,6 +335,8 @@ export default function BacktestPage() {
         setParamTakeProfit((params.take_profit || 0.08) * 100);
       } else if (estrategiaLower.replace(/[_-]/g, '') === 'vendeaberturacomprafechamento') {
         setParamDiaSemana(params.dia_semana !== undefined && params.dia_semana !== null ? params.dia_semana : '');
+      } else if (estrategiaLower === 'comprafechamento_vendeabertura') {
+        setParamDiaSemana(params.dia_semana !== undefined && params.dia_semana !== null ? params.dia_semana : '');
       } else if (estrategiaLower === 'buysequenciadealtaouqueda') {
         setParamX(String(params.x || 3));
         setParamY(params.y || 5);
@@ -335,6 +359,14 @@ export default function BacktestPage() {
       } else if (estrategiaLower === 'precocruzamedia') {
         setParamX(String(params.param1 || 3));
         setParamY(params.param2 || 5);
+        setParamStopLoss(String((params.stop_loss || -0.05) * 100));
+        setParamTakeProfit((params.take_profit || 0.08) * 100);
+      } else if (estrategiaLower === 'predictcandle') {
+        setParamX(String((params.y || 0.02) * 100));  // Y é a variação mínima (%)
+        // W é salvo como decimal no backend, multiplicar por 100 para exibir como percentual
+        const wParam = params.w !== undefined && params.w !== null ? params.w : 0.10;
+        setParamW(wParam * 100);  // W é a variação máxima (%)
+        setParamY(params.x || 1);  // X é o número de candles
         setParamStopLoss(String((params.stop_loss || -0.05) * 100));
         setParamTakeProfit((params.take_profit || 0.08) * 100);
       } else if (estrategiaLower === 'precoacimadamedia') {
@@ -455,8 +487,34 @@ export default function BacktestPage() {
                   )}
                 </div>
               </div>
-              {/* Inputs de parâmetros para Buyifstockupxpercentage */}
+              {/* Inputs de parâmetros para VendeAbertura_CompraFechamento */}
               {selectedEstrategia && selectedEstrategia.toLowerCase().replace(/[_-]/g, '') === "vendeaberturacomprafechamento" && (
+                <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium mb-1">Dia da semana (opcional)</label>
+                    <select
+                      className="w-full border border-gray-300 rounded px-3 py-2"
+                      value={paramDiaSemana}
+                      onChange={e => {
+                        const v = e.target.value;
+                        setParamDiaSemana(v === '' ? '' : Number(v));
+                      }}
+                    >
+                      <option value="">Todos os dias</option>
+                      <option value={0}>Segunda-feira</option>
+                      <option value={1}>Terça-feira</option>
+                      <option value={2}>Quarta-feira</option>
+                      <option value={3}>Quinta-feira</option>
+                      <option value={4}>Sexta-feira</option>
+                    </select>
+                    <span className="text-xs text-gray-700 block mt-1">
+                      Se selecionado, a operação só ocorrerá quando a entrada for nesse dia da semana.
+                    </span>
+                  </div>
+                </div>
+              )}
+              {/* Inputs de parâmetros para CompraFechamento_VendeAbertura */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase() === "comprafechamento_vendeabertura" && (
                 <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
                   <div className="col-span-2">
                     <label className="block text-sm font-medium mb-1">Dia da semana (opcional)</label>
@@ -800,6 +858,88 @@ export default function BacktestPage() {
                   )}
                 </div>
               )}
+              {/* Inputs para PrecoCruzaMedia */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase() === "precocruzamedia" && (
+                <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">X (períodos da média móvel)</label>
+                    <input type="number" value={paramX} onChange={e => setParamX(e.target.value)} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Quantidade de períodos para o cálculo da média móvel.<br />
+                      <b>Exemplo:</b> X = 3 → usa média móvel de 3 períodos.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Y (períodos para saída)</label>
+                    <input type="number" value={paramY} onChange={e => setParamY(Number(e.target.value))} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Número máximo de períodos que a posição ficará aberta, caso não atinja stop ou gain.<br />
+                      <b>Exemplo:</b> Y = 5 → vende no 5º período após a compra, se não sair antes por stop ou gain.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Stop Loss (%)</label>
+                    <input type="text" value={paramStopLoss} onChange={e => setParamStopLoss(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de perda para encerrar a operação.<br />
+                      <b>Exemplo:</b> -5 → encerra a operação se cair 5% após a compra.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Take Profit (%)</label>
+                    <input type="number" value={paramTakeProfit} onChange={e => setParamTakeProfit(Number(e.target.value))} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de ganho para encerrar a operação.<br />
+                      <b>Exemplo:</b> 8 → encerra a operação se subir 8% após a compra.
+                    </span>
+                  </div>
+                </div>
+              )}
+              {/* Inputs para PredictCandle */}
+              {selectedEstrategia && selectedEstrategia.toLowerCase() === "predictcandle" && (
+                <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Y (variação mínima no candle anterior, %)</label>
+                    <input type="number" value={paramX} onChange={e => setParamX(e.target.value)} step="0.01" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Percentual mínimo de variação que o candle anterior deve ter tido para gerar o sinal de compra.<br />
+                      <b>Exemplo:</b> Y = 2 → só compra se o candle anterior teve variação de 2% ou mais. Y pode ser negativo (ex: -5 para quedas).
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">W (variação máxima no candle anterior, %)</label>
+                    <input type="number" value={paramW ?? 10} onChange={e => setParamW(Number(e.target.value))} step="0.01" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Percentual máximo de variação que o candle anterior deve ter tido para gerar o sinal de compra.<br />
+                      <b>Exemplo:</b> W = 10 → só compra se o candle anterior teve variação de até 10%. A estratégia compra quando a variação está entre Y e W (inclusivo).
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">X (períodos para saída)</label>
+                    <input type="number" value={paramY} onChange={e => setParamY(Number(e.target.value))} min="1" className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Número máximo de candles que a posição ficará aberta, caso não atinja stop ou gain.<br />
+                      <b>Exemplo:</b> X = 1 → vende no fechamento do mesmo candle. X = 5 → pode manter por até 5 candles.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Stop Loss (%)</label>
+                    <input type="text" value={paramStopLoss} onChange={e => setParamStopLoss(e.target.value)} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de perda para encerrar a operação.<br />
+                      <b>Exemplo:</b> -5 → encerra a operação se cair 5% após a compra.
+                    </span>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Take Profit (%)</label>
+                    <input type="number" value={paramTakeProfit} onChange={e => setParamTakeProfit(Number(e.target.value))} className="w-full border border-gray-300 rounded px-3 py-2" />
+                    <span className="text-xs text-gray-700 block mt-1">
+                      <b>O que é?</b> Limite de ganho para encerrar a operação.<br />
+                      <b>Exemplo:</b> 8 → encerra a operação se subir 8% após a compra.
+                    </span>
+                  </div>
+                </div>
+              )}
               {/* Inputs para PrecoAcimadaMedia */}
               {selectedEstrategia && selectedEstrategia.toLowerCase() === "precoacimadamedia" && (
                 <div className="grid grid-cols-2 gap-4 mt-8 mb-4 bg-cyan-50 p-4 rounded">
@@ -897,95 +1037,6 @@ export default function BacktestPage() {
           </div>
         </div>
       )}
-      {/* Filtros de pesquisa */}
-      <div className="mt-8 mb-6">
-        <div className="flex flex-col sm:flex-row gap-4 mb-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="Pesquisar por base de dados..."
-              value={filterBaseDados}
-              onChange={(e) => {
-                setFilterBaseDados(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 pl-10"
-            />
-            <svg
-              className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-            {filterBaseDados && (
-              <button
-                onClick={() => {
-                  setFilterBaseDados('');
-                  setCurrentPage(1);
-                }}
-                className="absolute right-3 top-2.5 w-5 h-5 text-gray-400 hover:text-white transition-colors"
-              >
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-          </div>
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="Pesquisar por estratégia..."
-              value={filterEstrategia}
-              onChange={(e) => {
-                setFilterEstrategia(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500 pl-10"
-            />
-            <svg
-              className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-            {filterEstrategia && (
-              <button
-                onClick={() => {
-                  setFilterEstrategia('');
-                  setCurrentPage(1);
-                }}
-                className="absolute right-3 top-2.5 w-5 h-5 text-gray-400 hover:text-white transition-colors"
-              >
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            )}
-          </div>
-        </div>
-        {(filterBaseDados || filterEstrategia) && (
-          <div className="text-xs text-gray-400">
-            {filteredBacktests.length} de {backtests.length} backtest(s) encontrado(s)
-          </div>
-        )}
-      </div>
-
       {/* Tabela de backtests executados */}
       <div className="overflow-x-auto mt-8">
         {loading ? (
@@ -994,6 +1045,50 @@ export default function BacktestPage() {
           <div className="text-red-500">{error}</div>
         ) : (
           <div>
+            {/* Filtros de pesquisa */}
+            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Pesquisar por Base de Dados
+                </label>
+                <input
+                  type="text"
+                  placeholder="Digite o nome da base de dados..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  value={filterBaseDados}
+                  onChange={e => setFilterBaseDados(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Pesquisar por Estratégia
+                </label>
+                <input
+                  type="text"
+                  placeholder="Digite o nome da estratégia..."
+                  className="w-full bg-gray-800 border border-gray-700 rounded px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  value={filterEstrategia}
+                  onChange={e => setFilterEstrategia(e.target.value)}
+                />
+              </div>
+            </div>
+            {/* Informação sobre resultados filtrados */}
+            {(filterBaseDados || filterEstrategia) && (
+              <div className="mb-4 text-sm text-gray-400">
+                Mostrando {filteredBacktests.length} de {backtests.length} backtest(s)
+                {(filterBaseDados || filterEstrategia) && (
+                  <button
+                    onClick={() => {
+                      setFilterBaseDados("");
+                      setFilterEstrategia("");
+                    }}
+                    className="ml-2 text-cyan-400 hover:text-cyan-300 underline"
+                  >
+                    Limpar filtros
+                  </button>
+                )}
+              </div>
+            )}
             <div className="flex items-center gap-4 mb-4">
               <button
                 className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-semibold disabled:opacity-50"

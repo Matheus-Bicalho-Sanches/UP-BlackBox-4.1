@@ -138,6 +138,10 @@ services/**/venv_*/
 services/**/__pycache__/
 services/**/Logs/
 services/**/logs/
+# Services - ignore generated .dat files and other binaries
+services/**/*.dat
+services/**/*.swp
+services/**/*.swo
 
 # Dll_Profit heavy binaries and data (keep examples' source code only)
 Dll_Profit/**/*.exe
@@ -149,4 +153,55 @@ Dll_Profit/bin/**
 Dll_Profit/database/**
 Dll_Profit/MarketHours2/**
 Dll_Profit/roteamento/**
+
+# Node modules (anywhere in the project)
+**/node_modules/
+
+# .NET build outputs (bin and obj directories)
+**/bin/
+**/obj/
+
+# .NET compiled files
+**/*.dll
+**/*.exe
+**/*.pdb
+**/*.cache
+**/*.deps.json
+**/*.runtimeconfig.json
+**/*.sourcelink.json
+**/*.assets.cache
+**/*.AssemblyInfo.cs
+**/*.AssemblyInfoInputs.cache
+**/*.GeneratedMSBuildEditorConfig.editorconfig
+**/*.GlobalUsings.g.cs
+**/*.csproj.AssemblyReference.cache
+**/*.csproj.CoreCompileInputs.cache
+**/*.csproj.FileListAbsolute.txt
+**/*.genruntimeconfig.cache
+**/*.csproj.nuget.dgspec.json
+**/*.csproj.nuget.g.props
+**/*.csproj.nuget.g.targets
+**/project.assets.json
+**/project.nuget.cache
+**/apphost.exe
+**/ref/
+**/refint/
+**/.NETCoreApp,Version=*.AssemblyAttributes.cs
+**/*.Up2Date
+
+# Vim swap files
+*.swp
+*.swo
+*~
+
+# Services data files (generated at runtime)
+services/**/ProfitChart.dat
+services/**/newagents.dat
+services/**/HadesSSLServerAddr3.dat
+services/**/InfoSSLServerAddr3.dat
+services/**/ReplayServerAddr3.dat
+services/**/ServerAddr6.dat
+services/**/holidays.dat
+services/**/timezone2.dat
+services/**/MarketHours2/**
 
