@@ -3,6 +3,8 @@ import { useState, useEffect } from "react";
 import app, { db } from "@/config/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { v4 as uuidv4 } from 'uuid';
+import { trackedFetch } from '@/lib/firebaseHelpers';
+import FirestoreMonitorWidget from '@/components/FirestoreMonitorWidget';
 import AccountSelector from "@/components/AccountSelector";
 
 /**
@@ -91,13 +93,13 @@ export default function BoletasPage() {
   useEffect(() => {
     async function fetchAccounts() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+        const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`, 'fetchAccounts');
         const data = await res.json();
         if (res.ok && data.accounts && data.accounts.length > 0) {
           let fetchedAccounts = data.accounts;
           // Buscar nomes de clientes no contasDll
           try {
-            const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+            const contasDllRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`, 'fetchAccounts_contasDll');
             if (contasDllRes.ok) {
               const contasDllData = await contasDllRes.json();
               const contasDll:any[] = contasDllData.contas || [];
@@ -130,7 +132,7 @@ export default function BoletasPage() {
     // fetch strategies
     async function fetchStrategies() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`);
+        const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`, 'fetchStrategies');
         if (res.ok) {
           const data = await res.json();
           setStrategies(data.strategies || []);
@@ -157,7 +159,7 @@ export default function BoletasPage() {
     // if strategy selected, fetch allocations summary
     if (value.startsWith('strategy:')) {
       const sid = value.replace('strategy:', '');
-      fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${sid}`)
+      trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${sid}`, 'handleAccountChange_allocations')
         .then(res=>res.json())
         .then(data=>{
            setAllocSummary(data.allocations||[]);
@@ -181,7 +183,7 @@ export default function BoletasPage() {
     }
     if (value.startsWith('strategy:')) {
       const sid = value.replace('strategy:', '');
-      fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${sid}`)
+      trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${sid}`, 'handleIcebergAccountChange_allocations')
         .then(res=>res.json())
         .then(data=>setIceAllocSummary(data.allocations||[]))
         .catch(()=>setIceAllocSummary([]));
@@ -196,7 +198,7 @@ export default function BoletasPage() {
       if (selectedAccount.startsWith('strategy:')) {
         const strategyId = selectedAccount.replace('strategy:', '');
         const orderPayload = { account_id: 'MASTER', strategy_id: strategyId, ticker, quantity, price, side, exchange };
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, {
+        const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, 'handleOrder_strategy', {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(orderPayload),
@@ -222,14 +224,14 @@ export default function BoletasPage() {
         // Gerar um master_batch_id único
         const master_batch_id = uuidv4();
         // Buscar Valor Investido de cada conta na coleção contasDLL
-        const contasSnap = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+        const contasSnap = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`, 'handleOrder_master_accounts');
         const contasData = await contasSnap.json();
         const contas = contasData.accounts || [];
         // Buscar os valores investidos de cada conta
         let contasDll: any[] = [];
         let contasDllLog = '';
         try {
-          const contasDllSnap = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+          const contasDllSnap = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`, 'handleOrder_master_contasDll');
           if (contasDllSnap.ok) {
             const contasDllData = await contasDllSnap.json();
             contasDll = contasDllData.contas || [];
@@ -243,7 +245,7 @@ export default function BoletasPage() {
         // Mapear por AccountID
         const valorInvestidoMap: Record<string, number> = {};
         for (const c of contasDll) {
-          valorInvestidoMap[c.AccountID] = Number(c["Valor Investido"] || 0);
+           valorInvestidoMap[c.AccountID] = Number(c["Valor Investido"] || 0);
         }
         // Ordenar contas pelo valor investido decrescente para priorizar maiores
         contas.sort((a:any,b:any)=>{
@@ -270,7 +272,7 @@ export default function BoletasPage() {
           // Incluir master_batch_id e master_base_qty no payload
           const orderPayload = { account_id: acc.AccountID, broker_id: acc.BrokerID, ticker, quantity: quantidadeEnviada, price, side, exchange, master_batch_id, master_base_qty: quantity };
           try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, {
+            const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, `handleOrder_master_account_${acc.AccountID}`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(orderPayload),
@@ -296,7 +298,7 @@ export default function BoletasPage() {
         if (selectedStrategy) {
           orderPayload.strategy_id = selectedStrategy;
         }
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, {
+        const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/order`, 'handleOrder_individual', {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(orderPayload),
@@ -363,7 +365,7 @@ export default function BoletasPage() {
           payload.strategy_id = icebergStrategy;
         }
       }
-      const res = await fetch(endpoint, {
+      const res = await trackedFetch(endpoint, 'handleIcebergOrder', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -399,7 +401,7 @@ export default function BoletasPage() {
         payload.lote = Number(closeLote);
         payload.group_size = Number(closeGroupSize);
       }
-      const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/close_master_batch`, {
+      const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/close_master_batch`, 'handleCloseBatch', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -853,6 +855,7 @@ export default function BoletasPage() {
           {closeLog && <pre style={{ whiteSpace: 'pre-wrap', color: '#fff', marginTop: 12 }}>{closeLog}</pre>}
         </div>
       </div>
+      <FirestoreMonitorWidget />
     </div>
   );
 } 

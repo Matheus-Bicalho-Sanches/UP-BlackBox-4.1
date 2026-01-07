@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { db } from "@/config/firebase";
-import { collection, query, where, getDocs, orderBy, limit as limitFn, onSnapshot } from "firebase/firestore";
+import { collection, query, where, orderBy, limit as limitFn } from "firebase/firestore";
 import type { Unsubscribe } from "firebase/firestore";
+import { trackedGetDocs, trackedOnSnapshot, trackedFetch } from '@/lib/firebaseHelpers';
+import FirestoreMonitorWidget from '@/components/FirestoreMonitorWidget';
 import { getAuth } from "firebase/auth";
 import { FiChevronDown, FiChevronRight, FiEdit2, FiTrash2, FiRefreshCcw } from 'react-icons/fi';
 import React from "react";
@@ -97,7 +99,7 @@ function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMa
       if (useStrategyAllocations) {
         // Usar alocações da estratégia específica
         const strategyId = strategyIds[0];
-        const allocRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`);
+        const allocRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`, 'buscarValoresAtualizados_allocations');
         if (allocRes.ok) {
           const allocData = await allocRes.json();
           for (const alloc of allocData.allocations || []) {
@@ -106,7 +108,7 @@ function EditBatchModal({ isOpen, onClose, onSave, batchOrders, valorInvestidoMa
         }
       } else {
         // Usar valores totais das contas (Master Global)
-        const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+        const contasDllRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`, 'buscarValoresAtualizados_contasDll');
         if (contasDllRes.ok) {
           const contasDllData = await contasDllRes.json();
           for (const c of contasDllData.contas || []) {
@@ -359,13 +361,13 @@ export default function OrdensPage() {
   useEffect(() => {
     async function fetchAccounts() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+        const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`, 'fetchAccounts');
         const data = await res.json();
         if (res.ok && data.accounts && data.accounts.length > 0) {
           let fetchedAccounts = data.accounts;
           // Buscar nomes dos clientes no contasDll
           try {
-            const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+            const contasDllRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`, 'fetchAccounts_contasDll');
             if (contasDllRes.ok) {
               const contasDllData = await contasDllRes.json();
               const contasDll: any[] = contasDllData.contas || [];
@@ -397,7 +399,7 @@ export default function OrdensPage() {
 
     async function fetchStrategies() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`);
+        const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`, 'fetchStrategies');
         if (res.ok) {
           const data = await res.json();
           setStrategies(data.strategies || []);
@@ -422,7 +424,7 @@ export default function OrdensPage() {
   // Função para buscar informações da iceberg
   const fetchIcebergInfo = async (icebergId: string) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/iceberg_info/${icebergId}`);
+      const response = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/iceberg_info/${icebergId}`, 'fetchIcebergInfo');
       const data = await response.json();
       return data.success ? data.iceberg : null;
     } catch (error) {
@@ -434,7 +436,7 @@ export default function OrdensPage() {
   useEffect(() => {
     async function fetchValores() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+        const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`, 'fetchValores');
         if (res.ok) {
           const data = await res.json();
           const map: Record<string, number> = {};
@@ -453,7 +455,7 @@ export default function OrdensPage() {
     try {
       if (strategyId) {
         // Buscar alocações da estratégia específica
-        const allocRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`);
+        const allocRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`, 'fetchValoresForStrategy_allocations');
         if (allocRes.ok) {
           const allocData = await allocRes.json();
           const valorMap: Record<string, number> = {};
@@ -467,7 +469,7 @@ export default function OrdensPage() {
       }
       
       // Fallback: buscar de contasDll (Master Global)
-      const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+      const contasDllRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`, 'fetchValoresForStrategy_contasDll');
       if (contasDllRes.ok) {
         const contasDllData = await contasDllRes.json();
         const contasDll: any[] = contasDllData.contas || [];
@@ -560,7 +562,7 @@ export default function OrdensPage() {
     try {
       setLoading(true);
       const q = buildOrdersQuery();
-      listenerRef.current = onSnapshot(q, (snapshot) => {
+      listenerRef.current = trackedOnSnapshot('ordensDLL', q, (snapshot) => {
         const docs = snapshot.docs.map(d => d.data());
         // Ordenar localmente por data decrescente (garante consistência caso datas variem entre campos)
         const sorted = [...docs].sort((a: any, b: any) => {
@@ -580,7 +582,7 @@ export default function OrdensPage() {
         setLog('Erro no listener em tempo real: ' + (err.message || JSON.stringify(err)));
         setIsLive(false);
         setLoading(false);
-      });
+      }, 'ordersListener');
     } catch (err: any) {
       console.error('Falha ao anexar listener:', err);
       setLog('Falha ao anexar listener: ' + (err.message || JSON.stringify(err)));
@@ -626,7 +628,7 @@ export default function OrdensPage() {
           orderBy('createdAt', 'desc'), 
           limitFn(limit)
         );
-        const snap = await getDocs(q);
+        const snap = await trackedGetDocs('ordensDLL', q, 'handleListOrders_strategy');
         const list = snap.docs.map(d=>d.data());
         const filtered = applyFilters(list);
         setOrders(filtered);
@@ -647,7 +649,7 @@ export default function OrdensPage() {
           orderBy("LastUpdate", "desc"), 
           limitFn(limit)
         );
-        const qs = await getDocs(qMaster);
+        const qs = await trackedGetDocs('ordensDLL', qMaster, 'handleListOrders_master');
         fetchedOrders = qs.docs.map(d=>d.data());
         
         // Ordenar por LastUpdate decrescente
@@ -661,7 +663,7 @@ export default function OrdensPage() {
       } else if (selectedAccount.startsWith('strategy:')) {
         const strategyId = selectedAccount.replace('strategy:','');
         // buscar alocações
-        const allocRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`);
+        const allocRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`, 'handleListOrders_strategy_allocations');
         const allocData = await allocRes.json();
         const accIds:string[] = (allocData.allocations||[]).map((a:any)=>a.account_id);
         if(accIds.length===0){ setLog('Nenhuma alocação para estratégia'); setLoading(false); return; }
@@ -674,7 +676,7 @@ export default function OrdensPage() {
           orderBy('LastUpdate', 'desc'),
           limitFn(limit)
         );
-        const snap= await getDocs(q);
+        const snap= await trackedGetDocs('ordensDLL', q, 'handleListOrders_strategy_orders');
         fetchedOrders = snap.docs.map(d=>d.data());
         fetchedOrders.sort((a,b)=>{
           const da=parseDate(a); const dbt=parseDate(b); if(!da||!dbt) return 0; return dbt.getTime()-da.getTime();
@@ -689,7 +691,7 @@ export default function OrdensPage() {
           orderBy("LastUpdate", "desc"),
           limitFn(limit)
         );
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await trackedGetDocs('ordensDLL', q, 'handleListOrders_account');
         fetchedOrders = querySnapshot.docs.map(doc => {
           const data = doc.data();
           console.log("Ordem encontrada:", data);
@@ -1287,6 +1289,7 @@ export default function OrdensPage() {
         }}
         batchOrders={deleteBatch?.orders}
       />
+      <FirestoreMonitorWidget />
     </div>
   );
 } 

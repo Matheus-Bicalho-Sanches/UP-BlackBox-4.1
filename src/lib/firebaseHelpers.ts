@@ -3,7 +3,7 @@
  * Inclui tracking automático de reads para monitoramento de custos
  */
 
-import { collection, getDocs, query, QueryConstraint, CollectionReference, Query } from 'firebase/firestore';
+import { collection, getDocs, query, QueryConstraint, CollectionReference, Query, onSnapshot } from 'firebase/firestore';
 import { FirestoreMonitor } from './firestoreMonitor';
 
 /**
@@ -36,6 +36,36 @@ export async function trackedGetDocs(
     console.error(`❌ [${context}] Erro ao buscar ${collectionName}:`, error);
     throw error;
   }
+}
+
+/**
+ * Wrapper para onSnapshot que rastreia automaticamente os reads em tempo real
+ * @param collectionName Nome da coleção para tracking
+ * @param queryRef Query ou CollectionReference do Firestore
+ * @param onNext Callback para o próximo snapshot
+ * @param onError Callback opcional para erro
+ * @param context Contexto da chamada
+ * @returns Função de unsubscribe
+ */
+export function trackedOnSnapshot(
+  collectionName: string,
+  queryRef: Query | CollectionReference,
+  onNext: (snapshot: any) => void,
+  onError?: (error: any) => void,
+  context: string = 'unknown'
+) {
+  return onSnapshot(
+    queryRef,
+    (snapshot) => {
+      // Rastrear reads a cada atualização
+      FirestoreMonitor.trackRead(collectionName, snapshot.size, `${context} (realtime)`);
+      onNext(snapshot);
+    },
+    (error) => {
+      console.error(`❌ [${context}] Erro no listener ${collectionName}:`, error);
+      if (onError) onError(error);
+    }
+  );
 }
 
 /**
