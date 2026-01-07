@@ -2,7 +2,9 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, getDocs, getDoc, setDoc, updateDoc, doc, serverTimestamp, collection as fbCollection, query, where, Timestamp, addDoc } from "firebase/firestore";
+import { getFirestore, collection, setDoc, updateDoc, doc, serverTimestamp, collection as fbCollection, query, where, Timestamp, addDoc } from "firebase/firestore";
+import { trackedGetDocs, trackedFetch } from '@/lib/firebaseHelpers';
+import FirestoreMonitorWidget from '@/components/FirestoreMonitorWidget';
 import { FiEdit2, FiHelpCircle, FiDollarSign } from "react-icons/fi";
 
 const firebaseConfig = {
@@ -314,7 +316,7 @@ export default function SaldoPage() {
         // Busca clientes
         // OTIMIZAÇÃO FASE 1: Query de ordens otimizada para buscar apenas dados dos últimos 6 dias
         // Isso reduz drasticamente o tempo de carregamento e custos do Firebase
-        const querySnapshot = await getDocs(collection(db, "contasDll"));
+        const querySnapshot = await trackedGetDocs('contasDll', collection(db, "contasDll"), 'loadSaldos_contas');
         const lista: any[] = [];
         querySnapshot.forEach((docSnap) => {
           lista.push({ ...docSnap.data(), _id: docSnap.id });
@@ -361,7 +363,7 @@ export default function SaldoPage() {
           where("TradedQuantity", ">", 0) // Apenas ordens que foram executadas (total ou parcialmente)
         );
         
-        const ordensSnap = await getDocs(qOrdens);
+        const ordensSnap = await trackedGetDocs('ordensDLL', qOrdens, 'loadSaldos_ordens');
         const ordensAll = ordensSnap.docs.map(doc => doc.data());
         
         console.log(`[SALDO] Encontradas ${ordensAll.length} ordens executadas nos últimos 6 dias`);
@@ -417,7 +419,7 @@ export default function SaldoPage() {
         // ---- Carregar posição em LFTS11 (com ajustes manuais) ----
         try {
           const qLfts = query(collection(db, "posicoesDLL"), where("ticker", "==", "LFTS11"));
-          const snapLfts = await getDocs(qLfts);
+          const snapLfts = await trackedGetDocs('posicoesDLL', qLfts, 'loadSaldos_lfts');
           const map: Record<string, number> = {};
           const positions: Record<string, { quantity: number; avgPrice: number }> = {};
           let totalValor = 0;
@@ -903,7 +905,7 @@ export default function SaldoPage() {
       
       // 5. Recarregar dados dos clientes (chama o useEffect)
       setLoading(true);
-      const querySnapshot = await getDocs(collection(db, "contasDll"));
+      const querySnapshot = await trackedGetDocs('contasDll', collection(db, "contasDll"), 'handleAtualizarSaldos');
       const lista: any[] = [];
       querySnapshot.forEach((docSnap) => {
         lista.push({ ...docSnap.data(), _id: docSnap.id });
@@ -1501,6 +1503,7 @@ export default function SaldoPage() {
         values={editValues}
         setValues={setEditValues}
       />
+      <FirestoreMonitorWidget />
     </div>
   );
 } 

@@ -1,8 +1,10 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { db } from "@/config/firebase";
-import { collection, query, where, getDocs, setDoc, doc, onSnapshot } from "firebase/firestore";
+import { collection, query, where, setDoc, doc } from "firebase/firestore";
 import type { Unsubscribe } from "firebase/firestore";
+import { trackedGetDocs, trackedOnSnapshot, trackedFetch } from '@/lib/firebaseHelpers';
+import FirestoreMonitorWidget from '@/components/FirestoreMonitorWidget';
 import { FiChevronDown, FiChevronRight, FiEdit2 } from "react-icons/fi";
 import AccountSelector from "@/components/AccountSelector";
 
@@ -108,13 +110,13 @@ export default function PosicoesPage() {
   useEffect(() => {
     async function fetchAccounts() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`);
+        const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/accounts`, 'fetchAccounts');
         const data = await res.json();
         if (res.ok && data.accounts && data.accounts.length > 0) {
           let fetchedAccounts = data.accounts;
           // Buscar nomes dos clientes na coleção contasDll
           try {
-            const contasDllRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`);
+            const contasDllRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/contasDll`, 'fetchAccounts_contasDll');
             if (contasDllRes.ok) {
               const contasDllData = await contasDllRes.json();
               const contasDll: any[] = contasDllData.contas || [];
@@ -148,7 +150,7 @@ export default function PosicoesPage() {
     // fetch strategies
     async function fetchStrategies() {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`);
+        const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/strategies`, 'fetchStrategies');
         if (res.ok) {
           const data = await res.json();
           setStrategies(data.strategies || []);
@@ -222,14 +224,14 @@ export default function PosicoesPage() {
     setAccountLiveMap(prev => ({ ...prev, [accountId]: false }));
     // posicoes calculadas da conta
     const qPos = query(collection(db, 'posicoesDLL'), where('account_id', '==', accountId));
-    const uPos = onSnapshot(qPos, (snap) => {
+    const uPos = trackedOnSnapshot('posicoesDLL', qPos, (snap) => {
       const list = snap.docs.map(d => d.data());
       accountCalcRef.current.set(accountId, list);
       recomputeAccountPositions(accountId);
       setAccountLiveMap(prev => ({ ...prev, [accountId]: true }));
     }, (err) => {
       console.error('onSnapshot conta expandida posicoesDLL error:', err);
-    });
+    }, 'accountPosListener');
     accountPosUnsubsRef.current.set(accountId, uPos);
     // ajustes manuais da conta na estratégia
     const qAdj = query(
@@ -237,13 +239,13 @@ export default function PosicoesPage() {
       where('strategy_id', '==', strategyId),
       where('account_id', '==', accountId)
     );
-    const uAdj = onSnapshot(qAdj, (snap) => {
+    const uAdj = trackedOnSnapshot('posicoesAjusteManual', qAdj, (snap) => {
       const list = snap.docs.map(d => d.data());
       accountAjustesRef.current.set(accountId, list);
       recomputeAccountPositions(accountId);
     }, (err) => {
       console.error('onSnapshot conta expandida ajustes error:', err);
-    });
+    }, 'accountAdjListener');
     accountAdjUnsubsRef.current.set(accountId, uAdj);
   };
 
@@ -274,7 +276,7 @@ export default function PosicoesPage() {
     setLoading(true);
     try {
       if (selectedAccount === 'MASTER') {
-        const unsub = onSnapshot(collection(db, 'posicoesDLL'), (snap) => {
+        const unsub = trackedOnSnapshot('posicoesDLL', collection(db, 'posicoesDLL'), (snap) => {
           const all = snap.docs.map(d => d.data());
           const consolidated = consolidarMaster(all);
           setPositions(consolidated);
@@ -286,7 +288,7 @@ export default function PosicoesPage() {
           setLog('Erro no listener MASTER: ' + (err.message || JSON.stringify(err)));
           setIsLive(false);
           setLoading(false);
-        });
+        }, 'masterPositionsListener');
         positionsUnsubsRef.current = [unsub];
         return;
       }
@@ -294,7 +296,7 @@ export default function PosicoesPage() {
       if (typeof selectedAccount === 'string' && selectedAccount.startsWith('strategy:')) {
         const strategyId = selectedAccount.replace('strategy:', '');
         // Buscar contas alocadas
-        const allocRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`);
+        const allocRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`, 'fetchAllocations');
         const allocData = await allocRes.json();
         const accIds: string[] = (allocData.allocations || []).map((a: any) => a.account_id);
 
@@ -321,7 +323,7 @@ export default function PosicoesPage() {
         const unsubs: Unsubscribe[] = [];
         chunks.forEach((chunk, idx) => {
           const q = query(collection(db, 'posicoesDLL'), where('account_id', 'in', chunk));
-          const u = onSnapshot(q, (snap) => {
+          const u = trackedOnSnapshot('posicoesDLL', q, (snap) => {
             strategyChunkDataRef.current[idx] = snap.docs.map(d => d.data());
             recomputeStrategyPositions();
             setLoading(false);
@@ -329,13 +331,14 @@ export default function PosicoesPage() {
             console.error('onSnapshot estratégia posicoesDLL error:', err);
             setLog('Erro no listener de posições da estratégia: ' + (err.message || JSON.stringify(err)));
             setLoading(false);
-          });
+          }, `strategyChunkListener_${idx}`);
           unsubs.push(u);
         });
         positionsUnsubsRef.current = unsubs;
 
         // Listener para ajustes manuais da estratégia
-        ajustesUnsubRef.current = onSnapshot(
+        ajustesUnsubRef.current = trackedOnSnapshot(
+          'posicoesAjusteManual',
           query(collection(db, 'posicoesAjusteManual'), where('strategy_id', '==', strategyId)),
           (snap) => {
             strategyAjustesRef.current = snap.docs.map(d => d.data());
@@ -343,7 +346,8 @@ export default function PosicoesPage() {
           },
           (err) => {
             console.error('onSnapshot estratégia ajustes error:', err);
-          }
+          },
+          'strategyAdjustmentsListener'
         );
         return;
       }
@@ -351,7 +355,7 @@ export default function PosicoesPage() {
       // Conta individual
       if (typeof selectedAccount === 'string' && selectedAccount) {
         const q = query(collection(db, 'posicoesDLL'), where('account_id', '==', selectedAccount));
-        const unsub = onSnapshot(q, (snap) => {
+        const unsub = trackedOnSnapshot('posicoesDLL', q, (snap) => {
           const list = snap.docs.map(d => d.data()).filter((pos: any) => pos.quantity !== 0);
           setPositions(list);
           setLog(`LIVE: conta ${selectedAccount} com ${list.length} posições`);
@@ -362,7 +366,7 @@ export default function PosicoesPage() {
           setLog('Erro no listener da conta: ' + (err.message || JSON.stringify(err)));
           setIsLive(false);
           setLoading(false);
-        });
+        }, 'accountPositionsListener');
         positionsUnsubsRef.current = [unsub];
       }
     } catch (err: any) {
@@ -569,7 +573,7 @@ export default function PosicoesPage() {
     try {
       // 1. Buscar posições calculadas
       const q = query(collection(db, "posicoesDLL"), where("account_id", "==", accountId));
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await trackedGetDocs('posicoesDLL', q, 'loadAccountPositions');
       const posicoesCalculadas = querySnapshot.docs.map(doc => doc.data());
       
       // 2. Buscar ajustes manuais da estratégia atual
@@ -579,7 +583,7 @@ export default function PosicoesPage() {
         where("strategy_id", "==", strategyId),
         where("account_id", "==", accountId)
       );
-      const ajustesSnapshot = await getDocs(qAjustes);
+      const ajustesSnapshot = await trackedGetDocs('posicoesAjusteManual', qAjustes, 'loadAccountPositions');
       const ajustesManuais = ajustesSnapshot.docs.map(doc => doc.data());
       
       console.log(`=== DEBUG CONTA ${accountId} ===`);
@@ -630,7 +634,7 @@ export default function PosicoesPage() {
       
       // Buscar posição atual (sem ajustes)
       const q = query(collection(db, "posicoesDLL"), where("account_id", "==", accountId), where("ticker", "==", position.ticker));
-      const querySnapshot = await getDocs(q);
+      const querySnapshot = await trackedGetDocs('posicoesDLL', q, 'savePositionAdjustment');
       const posicaoCalculada = querySnapshot.docs[0]?.data();
       const quantidadeCalculada = posicaoCalculada?.quantity || 0;
       
@@ -770,7 +774,7 @@ export default function PosicoesPage() {
       let positionsArr: any[] = [];
       if (selectedAccount === 'MASTER') {
         // Busca todas as posições de todas as contas
-        const querySnapshot = await getDocs(collection(db, "posicoesDLL"));
+        const querySnapshot = await trackedGetDocs('posicoesDLL', collection(db, "posicoesDLL"), 'handleListPositions_master');
         const allPositions = querySnapshot.docs.map(doc => doc.data());
         // Consolidar por ticker
         const tickerMap: Record<string, { ticker: string, quantity: number, totalBuy: number }> = {};
@@ -794,7 +798,7 @@ export default function PosicoesPage() {
         const strategyId = selectedAccount.replace('strategy:', '');
         
         // Sempre buscar alocações para carregar as contas da estratégia
-        const allocRes = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`);
+        const allocRes = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/allocations?strategy_id=${strategyId}`, 'handleListPositions_allocations');
         const allocData = await allocRes.json();
         const accIds: string[] = (allocData.allocations || []).map((a: any) => a.account_id);
         
@@ -826,7 +830,7 @@ export default function PosicoesPage() {
         
         // Primeiro tenta buscar via API do backend
         try {
-          const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/positions_strategy?strategy_id=${strategyId}`);
+          const res = await trackedFetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/positions_strategy?strategy_id=${strategyId}`, 'handleListPositions_api');
           if (res.ok) {
             const data = await res.json();
             positionsArr = data.positions || [];
@@ -840,12 +844,12 @@ export default function PosicoesPage() {
           
           // Buscar posições calculadas de todas as contas da estratégia
           const q = query(collection(db, 'posicoesDLL'), where('account_id', 'in', accIds));
-          const snap = await getDocs(q);
+          const snap = await trackedGetDocs('posicoesDLL', q, 'handleListPositions_manual');
           const posicoesCalculadas = snap.docs.map(d=>d.data());
           
           // Buscar TODOS os ajustes manuais da estratégia
           const qAjustes = query(collection(db, 'posicoesAjusteManual'), where('strategy_id', '==', strategyId));
-          const ajustesSnap = await getDocs(qAjustes);
+          const ajustesSnap = await trackedGetDocs('posicoesAjusteManual', qAjustes, 'handleListPositions_manual_ajustes');
           const ajustesManuais = ajustesSnap.docs.map(d => d.data());
           
           console.log('=== DEBUG CONSOLIDAÇÃO ESTRATÉGIA ===');
@@ -870,7 +874,7 @@ export default function PosicoesPage() {
           where("account_id", "==", selectedAccount)
         );
         console.log("Query Firestore: posicoesDLL, account_id =", selectedAccount);
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await trackedGetDocs('posicoesDLL', q, 'handleListPositions_account');
         console.log("QuerySnapshot size:", querySnapshot.size);
         positionsArr = querySnapshot.docs
           .map(doc => {
@@ -1531,6 +1535,7 @@ export default function PosicoesPage() {
           </div>
         </div>
       )}
+      <FirestoreMonitorWidget />
     </div>
   );
 } 
