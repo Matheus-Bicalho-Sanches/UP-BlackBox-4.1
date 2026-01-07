@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { collection, getDocs, getFirestore, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, getFirestore } from 'firebase/firestore';
 import app from '@/config/firebase';
 
 // Interface para templates de contrato
@@ -48,28 +48,49 @@ export default function NewContractPage() {
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const templatesCollection = collection(db, 'contractTemplates');
-        const templatesQuery = query(templatesCollection, orderBy('createdAt', 'desc'));
-        const snapshot = await getDocs(templatesQuery);
+        console.log('Buscando templates...');
+        const response = await fetch('/api/contracts/templates');
         
-        const fetchedTemplates = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as ContractTemplate[];
+        if (!response.ok) {
+          throw new Error(`Erro HTTP: ${response.status}`);
+        }
         
-        // Filtrar apenas templates prontos
-        const readyTemplates = fetchedTemplates.filter(t => t.status === 'ready');
-        setTemplates(readyTemplates);
-      } catch (error) {
+        const data = await response.json();
+        console.log('Resposta da API:', data);
+        
+        if (data.success && data.templates) {
+          console.log(`Total de templates encontrados: ${data.templates.length}`);
+          console.log('Templates:', data.templates);
+          
+          // Filtrar apenas templates prontos
+          const readyTemplates = data.templates.filter((t: ContractTemplate) => t.status === 'ready');
+          console.log(`Templates prontos: ${readyTemplates.length}`);
+          
+          if (readyTemplates.length === 0 && data.templates.length > 0) {
+            // Se não há templates prontos, mas há templates, mostrar todos
+            console.log('Nenhum template pronto encontrado, mostrando todos os templates');
+            setTemplates(data.templates);
+          } else {
+            setTemplates(readyTemplates);
+          }
+        } else {
+          console.error('Resposta da API sem sucesso ou sem templates:', data);
+          if (data.error) {
+            setError(`Erro: ${data.error}`);
+          } else {
+            setError('Não foi possível carregar os templates. Por favor, tente novamente.');
+          }
+        }
+      } catch (error: any) {
         console.error('Erro ao buscar templates:', error);
-        setError('Não foi possível carregar os templates. Por favor, tente novamente.');
+        setError(`Erro ao buscar templates: ${error.message || 'Erro desconhecido'}`);
       } finally {
         setLoadingTemplates(false);
       }
     };
 
     fetchTemplates();
-  }, [db]);
+  }, []);
 
   const handleTemplateSelect = (template: ContractTemplate) => {
     setSelectedTemplate(template);
@@ -192,7 +213,12 @@ export default function NewContractPage() {
       {!showClientForm ? (
         /* Seleção de Template */
         <div className="bg-gray-800 rounded-lg shadow p-6">
-          {templates.length === 0 ? (
+          {loadingTemplates ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto mb-4"></div>
+              <p className="text-gray-400">Carregando templates...</p>
+            </div>
+          ) : templates.length === 0 ? (
             <div className="text-center py-12">
               <svg 
                 className="mx-auto h-12 w-12 text-gray-400 mb-4" 
@@ -203,9 +229,15 @@ export default function NewContractPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               <p className="text-gray-400 mb-4">Nenhum template de contrato disponível.</p>
-              <p className="text-gray-500 text-sm">
+              <p className="text-gray-500 text-sm mb-4">
                 Os templates serão criados através da integração com o Assinafy.
               </p>
+              <Link
+                href="/dashboard/contracts"
+                className="inline-block px-4 py-2 bg-cyan-500 text-white rounded hover:bg-cyan-600 transition-colors"
+              >
+                Voltar para Contratos
+              </Link>
             </div>
           ) : (
             <div className="space-y-4">
@@ -221,8 +253,18 @@ export default function NewContractPage() {
                   >
                     <div className="flex items-start justify-between mb-2">
                       <h3 className="text-lg font-semibold text-white">{template.name}</h3>
-                      <span className="px-2 py-1 bg-green-500 text-white text-xs rounded">
-                        Pronto
+                      <span className={`px-2 py-1 text-white text-xs rounded ${
+                        template.status === 'ready' 
+                          ? 'bg-green-500' 
+                          : template.status === 'processing' 
+                          ? 'bg-yellow-500' 
+                          : 'bg-red-500'
+                      }`}>
+                        {template.status === 'ready' 
+                          ? 'Pronto' 
+                          : template.status === 'processing' 
+                          ? 'Processando' 
+                          : 'Erro'}
                       </span>
                     </div>
                     {template.description && (

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readdir, readFile } from 'fs/promises';
 import { join } from 'path';
-import { uploadTemplateToAssinafy } from '@/lib/assinafy';
+import { uploadTemplateToAssinafy, listAssinafyTemplates, getAssinafyTemplate } from '@/lib/assinafy';
 import { adminDb } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 
@@ -23,14 +23,78 @@ export async function GET(request: NextRequest) {
     }
 
     // Buscar templates no Firestore usando Admin SDK
-    const templatesSnapshot = await adminDb.collection('contractTemplates')
-      .orderBy('createdAt', 'desc')
-      .get();
+    let templatesSnapshot;
+    try {
+      // Tentar buscar com orderBy primeiro
+      templatesSnapshot = await adminDb.collection('contractTemplates')
+        .orderBy('createdAt', 'desc')
+        .get();
+    } catch (error: any) {
+      // Se falhar (provavelmente por falta de índice), buscar sem orderBy
+      console.warn('Erro ao buscar com orderBy, tentando sem ordenação:', error.message);
+      templatesSnapshot = await adminDb.collection('contractTemplates').get();
+    }
     
-    const firestoreTemplates = templatesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    let firestoreTemplates = templatesSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        // Garantir que createdAt seja serializado corretamente
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
+      };
+    });
+
+    console.log(`Templates encontrados no Firestore: ${firestoreTemplates.length}`);
+    console.log('Status dos templates:', firestoreTemplates.map(t => ({ id: t.id, name: t.name, status: t.status })));
+
+    // Se houver ASSINAFY_ACCOUNT_ID, tentar sincronizar status dos templates com o Assinafy
+    if (ASSINAFY_ACCOUNT_ID && process.env.ASSINAFY_API_KEY && firestoreTemplates.length > 0) {
+      try {
+        console.log('Sincronizando status dos templates com Assinafy...');
+        const assinafyTemplatesResponse = await listAssinafyTemplates(ASSINAFY_ACCOUNT_ID);
+        
+        if (assinafyTemplatesResponse.status === 200 && assinafyTemplatesResponse.data) {
+          const assinafyTemplates = Array.isArray(assinafyTemplatesResponse.data) 
+            ? assinafyTemplatesResponse.data 
+            : [];
+          
+          // Criar um mapa de templateId (Assinafy) -> status
+          const assinafyStatusMap = new Map();
+          assinafyTemplates.forEach((t: any) => {
+            assinafyStatusMap.set(t.id, t.status);
+          });
+          
+          // Atualizar status dos templates no Firestore se necessário
+          const updatePromises: Promise<any>[] = [];
+          firestoreTemplates.forEach(template => {
+            if (template.templateId && assinafyStatusMap.has(template.templateId)) {
+              const assinafyStatus = assinafyStatusMap.get(template.templateId);
+              if (template.status !== assinafyStatus) {
+                console.log(`Atualizando status do template ${template.id} de ${template.status} para ${assinafyStatus}`);
+                const templateRef = adminDb.collection('contractTemplates').doc(template.id);
+                updatePromises.push(
+                  templateRef.update({ 
+                    status: assinafyStatus,
+                    updatedAt: FieldValue.serverTimestamp()
+                  })
+                );
+                // Atualizar também no array local
+                template.status = assinafyStatus;
+              }
+            }
+          });
+          
+          if (updatePromises.length > 0) {
+            await Promise.all(updatePromises);
+            console.log(`Status de ${updatePromises.length} templates atualizados`);
+          }
+        }
+      } catch (error: any) {
+        console.warn('Erro ao sincronizar templates com Assinafy (continuando mesmo assim):', error.message);
+        // Não falhar a requisição se a sincronização falhar
+      }
+    }
 
     return NextResponse.json({
       success: true,
