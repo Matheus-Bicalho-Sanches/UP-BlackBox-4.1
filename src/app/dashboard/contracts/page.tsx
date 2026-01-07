@@ -30,6 +30,12 @@ export default function ContractsPage() {
   const [sortBy, setSortBy] = useState<'clientName' | 'createdAt' | 'signedAt'>('createdAt');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [error, setError] = useState('');
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templates, setTemplates] = useState<any[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
   const router = useRouter();
   const db = getFirestore(app);
 
@@ -68,6 +74,73 @@ export default function ContractsPage() {
 
     fetchContracts();
   }, [db]);
+
+  useEffect(() => {
+    if (showTemplateModal) {
+      fetchTemplates();
+    }
+  }, [showTemplateModal]);
+
+  const fetchTemplates = async () => {
+    try {
+      const response = await fetch('/api/contracts/templates');
+      const data = await response.json();
+      if (data.success) {
+        setTemplates(data.templates || []);
+      }
+    } catch (error) {
+      console.error('Erro ao buscar templates:', error);
+    }
+  };
+
+  const handleUploadTemplate = async () => {
+    if (!uploadFile || !templateName) {
+      setError('Por favor, selecione um arquivo e informe o nome do template.');
+      return;
+    }
+
+    setUploading(true);
+    setError('');
+
+    try {
+      // Primeiro, salvar o arquivo na pasta templates/contracts via API
+      // Como não podemos fazer upload direto do frontend para a pasta do servidor,
+      // vamos enviar o arquivo para a API que fará o processamento
+      
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+      formData.append('name', templateName);
+      formData.append('description', templateDescription);
+
+      const response = await fetch('/api/contracts/templates/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        // Mostrar mensagem de erro mais detalhada
+        const errorMsg = data.error || 'Erro ao fazer upload do template';
+        console.error('Erro na API:', data);
+        throw new Error(errorMsg);
+      }
+
+      // Atualizar lista de templates
+      await fetchTemplates();
+      
+      // Limpar formulário
+      setUploadFile(null);
+      setTemplateName('');
+      setTemplateDescription('');
+      
+      alert('Template enviado com sucesso! Aguarde o processamento.');
+    } catch (error: any) {
+      setError(error.message || 'Erro ao fazer upload do template');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const getStatusColor = (status: Contract['status']) => {
     switch (status) {
@@ -169,12 +242,20 @@ export default function ContractsPage() {
     <div className="w-[95%] mx-auto pt-6 pb-0">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-white">Contratos</h1>
-        <Link
-          href="/dashboard/contracts/new"
-          className="px-4 py-2 bg-cyan-500 text-white rounded hover:bg-cyan-600 transition-colors"
-        >
-          Novo Contrato
-        </Link>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setShowTemplateModal(true)}
+            className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
+          >
+            Gerenciar Templates
+          </button>
+          <Link
+            href="/dashboard/contracts/new"
+            className="px-4 py-2 bg-cyan-500 text-white rounded hover:bg-cyan-600 transition-colors"
+          >
+            Novo Contrato
+          </Link>
+        </div>
       </div>
 
       {error && (
@@ -375,6 +456,116 @@ export default function ContractsPage() {
           </div>
         )}
       </div>
+
+      {/* Modal de Gerenciamento de Templates */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-white">Gerenciar Templates</h2>
+              <button
+                onClick={() => {
+                  setShowTemplateModal(false);
+                  setUploadFile(null);
+                  setTemplateName('');
+                  setTemplateDescription('');
+                }}
+                className="text-gray-400 hover:text-white"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Upload de Template */}
+            <div className="mb-6 p-4 bg-gray-700 rounded-lg">
+              <h3 className="text-lg font-semibold text-white mb-3">Fazer Upload de Template</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Arquivo DOCX *
+                  </label>
+                  <input
+                    type="file"
+                    accept=".docx,.pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setUploadFile(file);
+                        if (!templateName) {
+                          setTemplateName(file.name.replace(/\.(docx|pdf)$/i, ''));
+                        }
+                      }
+                    }}
+                    className="w-full px-4 py-2 bg-gray-600 border border-gray-500 rounded text-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Nome do Template *
+                  </label>
+                  <input
+                    type="text"
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    placeholder="Ex: Contrato Padrão"
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Descrição (opcional)
+                  </label>
+                  <textarea
+                    value={templateDescription}
+                    onChange={(e) => setTemplateDescription(e.target.value)}
+                    placeholder="Descrição do template..."
+                    rows={3}
+                    className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  />
+                </div>
+                <button
+                  onClick={handleUploadTemplate}
+                  disabled={!uploadFile || !templateName || uploading}
+                  className="w-full px-4 py-2 bg-cyan-500 text-white rounded hover:bg-cyan-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {uploading ? 'Enviando...' : 'Fazer Upload'}
+                </button>
+              </div>
+            </div>
+
+            {/* Lista de Templates */}
+            <div>
+              <h3 className="text-lg font-semibold text-white mb-3">Templates Disponíveis</h3>
+              {templates.length === 0 ? (
+                <p className="text-gray-400 text-center py-4">Nenhum template cadastrado</p>
+              ) : (
+                <div className="space-y-2">
+                  {templates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="p-3 bg-gray-700 rounded flex justify-between items-center"
+                    >
+                      <div>
+                        <p className="text-white font-medium">{template.name}</p>
+                        {template.description && (
+                          <p className="text-gray-400 text-sm">{template.description}</p>
+                        )}
+                        <p className="text-gray-500 text-xs mt-1">
+                          Status: <span className={template.status === 'ready' ? 'text-green-400' : 'text-yellow-400'}>
+                            {template.status === 'ready' ? 'Pronto' : template.status}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

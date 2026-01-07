@@ -1,0 +1,49 @@
+Exception class : Exception
+Exception Msg : Se não conectar no mercury avisar frederico, caso estiver conecado ignore. | (FFFFFFFFFFFFF000){python.exe  } [0000000000000000]
+Exception Addr: 0000000000000000
+------------------------------------------------------------------------------------------------------------------------------------------------------
+SILENT MODE - Error Number : 1
+------------------------------------------------------------------------------------------------------------------------------------------------------
+Info            : Registrado - Profit Dll - Client - 4.0.0.23 (Classic) - PT-BR - 64 bits
+Act Code : 1997502989466275517 - Machine ID: 2EFAFEA1 - Registro  : 30/12/1899 - 46029 - HasRoteamento=True - Profit Dll
+Prog Path       : C:\Users\vinic\OneDrive\Desktop\UP-BlackBox-4.1-main\Dll_Profit\ 
+Run Path        : C:\Users\vinic\AppData\Local\Programs\Python\Python313\ 
+Warsaw          : Not installed - Protection active
+LoginInfos      : FirstLogin=False FreshInstall=False ImportedConfig=False
+Janelas: 0 - GDI Objects: 19 - User Objects: 104Not installed ShowAfter:False
+------------------------------------------------------------------------------------------------------------------------------------------------------
+Tempo : - > Application Running
+Tempo : - - Servidor : - (#,1,0;A,1,0;B,1,0;D,1,0;E,1,0;F,1,0;V,1,0) > MercuryProxy ( 18 )
+Tempo : 00:00:00 - Servidor : 18.228.121.188 > HadesProxy ( 34 )
+Tempo : 00:00:00 - Servidor : 191-252-154-42.nelogica.com.br > InfoProxy ( 18 )
+------------------------------------------------------------------------------------------------------------------------------------------------------
+Sistema    : Windows 11 Home Edition [64 Bits], Version: 10.0, Build: 6658, Service Pack: , Release:  2009
+Build      :26200
+Processador: AMD, AMD Ryzen 5 5600GT with Radeon Graphics        , 3590 MHz MMX
+Monitor    : 1920x1080 pixels, 32 bpp
+------------------------------------------------------------------------------------------------------------------------------------------------------
+CURRENT STACK:
+Lista da pilha, gerada 07/01/2026 07:40:21, ThreadID 00000F18
+(0000000000162B14) [00007FF9FE703B14]
+[00000000009BBC23] JclDebug.TJclStackInfoList.Create
+[00000000009BB67E] JclDebug.JclCreateStackList
+[00000000009BB7EE] JclDebug.JclCreateThreadStackTrace
+[00000000009BB8A4] JclDebug.JclCreateThreadStackTraceFromID
+[0000000000B49B5D] ExceptionObjectU.TExceptionObject.SilentException
+[0000000000F669FB] MercuryClientProcessorU.TMercuryClientProcessor.SendLoginMessage
+[0000000000F65177] MercuryClientProcessorU.TMercuryClientProcessor.DoLogin
+[0000000000F64F6B] MercuryClientProcessorU.TMercuryClientProcessor.Connected
+[0000000000F99ABC] CustomClientU.TCustomClient.DoLogin
+[0000000000F99533] CustomClientU.TCustomClient.HandleLogin
+[0000000000F98ED9] CustomClientU.TCustomClient.ProcessMessage
+[0000000000F193A8] MercuryClientU.TMercuryClient.ProcessMessage
+[0000000000F98959] CustomClientU.TCustomClient.Execute
+[00000000004BAC13] System.Classes.ThreadProc
+[00000000004119DD] System.ThreadWrapper
+(000000000002D8D7) [00007FF9FCC9E8D7]
+(000000000008B53C) [00007FF9FE62C53C]
+------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------
+Free Disk Space        : 135.494 MB
+Mem Load          : 53 % ... - Memoria Em Uso (Platform) : 648.700 kb
+Mem Fisica Livre / Total  : 13.695.116 kb / 29.250.680 kb  - Mem PageFile Livre / Total  : 8.440.324 kb / 31.085.688 kb - Mem Virtual Livre / Total  : 137.434.372.492 kb / 137.438.953.344 kb

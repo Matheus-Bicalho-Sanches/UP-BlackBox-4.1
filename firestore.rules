@@ -299,6 +299,18 @@ service cloud.firestore {
           : true);
     }
 
+    // Regras para a coleção contracts (Contratos)
+    match /contracts/{contractId} {
+      // Qualquer usuário autenticado pode ler e escrever contratos
+      allow read, write: if isAuthenticated();
+    }
+
+    // Regras para a coleção contractTemplates (Templates de Contratos)
+    match /contractTemplates/{templateId} {
+      // Qualquer usuário autenticado pode ler e escrever templates
+      allow read, write: if isAuthenticated();
+    }
+
          // Default deny all
      match /{document=**} {
        allow read, write: if false;

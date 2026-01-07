@@ -1,0 +1,51 @@
+********** ProfitVersion 4.0.0.23 **********#231C #D86FE42D 07/01 11:11:10.051 | 11:11:10.054 : ********** FirstEntry **********
+#231C #CB6EC1C4 07/01 11:11:10.051 | 11:11:10.054 : Session Uptime (64-bit)=500 | System Uptime (32-bit)=436386296 | System Uptime (64-bit)=436386296
+#231C #ECFF4A5E 07/01 11:11:10.051 | 11:11:10.054 : TEventWriter.Execute Started | ThreadID=8988 (#0000231C)
+#4B70 #1F801D9B 07/01 11:11:10.175 | 11:11:10.179 : TDataFeedManager       Handle:2755256
+#4B70 #27AE6A94 07/01 11:11:10.178 | 11:11:10.179 : TInfoClient            Thread:17740 (#0000454C)
+#4B70 #AB0FC030 07/01 11:11:10.182 | 11:11:10.179 : TInfoClient            Creation Completed
+#4B70 #C57BC679 07/01 11:11:10.189 | 11:11:10.195 : TDataFeedManager       Creation Completed
+#4B70 #1098BF83 07/01 11:11:10.198 | 11:11:10.195 : TFilesThread           Thread:8896 (#000022C0)
+#4B70 #83796C25 07/01 11:11:10.198 | 11:11:10.195 : TFilesThread           Creation Completed
+#4B70 #2C8194C9 07/01 11:11:10.200 | 11:11:10.211 : TTickerInfoManager     Handle:11012262
+#4B70 #E3B144E9 07/01 11:11:10.201 | 11:11:10.211 : TTickerInfoManager     Creation Completed
+#454C #BABD9C73 07/01 11:11:10.352 | 11:11:10.351 : TPingManager.TestIpv6Connectivity ThreadID=14024
+#4B70 #A1B26B6E 07/01 11:11:10.397 | 11:11:10.398 : THolidayManager        Creation Completed
+#4B70 #7C7A1F74 07/01 11:11:10.398 | 11:11:10.398 : THadesClient           Thread:10944 (#00002AC0)
+#4B70 #AED81E93 07/01 11:11:10.399 | 11:11:10.398 : THadesClient           Creation Completed
+#4B70 #2CEA5182 07/01 11:11:10.399 | 11:11:10.398 : TTickerInfoRepoManager       Creation Completed
+#4B70 #DFCB388F 07/01 11:11:10.400 | 11:11:10.398 : TBaseDataLoader            Handle:11666458
+#4B70 #215D115C 07/01 11:11:10.400 | 11:11:10.398 : TTickerInfoManager     Handle:18483624
+#4B70 #C98192A8 07/01 11:11:10.400 | 11:11:10.398 : TTickerInfoManager     Creation Completed
+#4B70 #D03ADF27 07/01 11:11:10.430 | 11:11:10.429 : TBaseDataLoader            Creation Completed
+#4B70 #1A58B7C4 07/01 11:11:10.430 | 11:11:10.429 : TCalcDaemon            Thread:17128 (#000042E8)
+#4B70 #01B02FB1 07/01 11:11:10.431 | 11:11:10.429 : THolidayManager        Creation Completed
+#4B70 #A6C7BAD0 07/01 11:11:10.436 | 11:11:10.445 : TCalcDaemon            Creation Completed
+#4B70 #BE75D6F5 07/01 11:11:10.436 | 11:11:10.445 : TDataManager           Creation Completed
+#42E8 #2F8B1522 07/01 11:11:10.442 | 11:11:10.445 : TCalcAdjustManager     Creation Started
+#4B70 #AE1A5574 07/01 11:11:10.444 | 11:11:10.445 : TRoteamentoManager     Handle:15665700
+#4B70 #0E484E33 07/01 11:11:10.444 | 11:11:10.445 : TWalletManager Handle: 658310
+#4B70 #AA433CC8 07/01 11:11:10.444 | 11:11:10.445 : TRoteamentoManager     Creation Completed
+#4B70 #5100A550 07/01 11:11:10.446 | 11:11:10.445 : TCopyTradingManager Handle: 12715794
+#42E8 #3EF43B81 07/01 11:11:10.448 | 11:11:10.445 : TCalcAdjustManager     Creation Completed
+#42E8 #F9404570 07/01 11:11:10.448 | 11:11:10.445 : TDataCheckerDaemon     Thread:19232 (#00004B20)
+#42E8 #F295AFC4 07/01 11:11:10.448 | 11:11:10.445 : TDataCheckerDaemon     Creation Completed
+#42E8 #B4375A98 07/01 11:11:10.450 | 11:11:10.445 : TCalcDataLoader        Handle:8127578
+#42E8 #79029311 07/01 11:11:10.451 | 11:11:10.461 : TCalcTickerInfoManager Handle:21498474
+#42E8 #89D8C2CB 07/01 11:11:10.451 | 11:11:10.461 : TCalcTickerInfoManager Creation Completed
+#42E8 #66D835C0 07/01 11:11:10.451 | 11:11:10.461 : TCalcDataLoader        Creation Completed
+#4B70 #DA396C55 07/01 11:11:10.599 | 11:11:10.601 : TMercuryClient         Thread:14192 (#00003770) ClientIndex:0
+#4B70 #49400094 07/01 11:11:10.600 | 11:11:10.601 : TMercuryClient         Creation Completed ClientIndex:0
+#4B70 #C0740793 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : última msg enviada :  CurThreadID=19312 Handle=2755256 ThreadID=0 Message=WM_SERVER_PENDING_REQUEST
+#4B70 #CE6A8CB3 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : primeira mensagem acumulada : WM_VALID_LICENSE
+#4B70 #A3FFA1BB 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : LastSentMessages:
+#4B70 #B4C590B9 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : Main = WM_NULL
+#4B70 #E3CDE2B0 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : DataLoader = WM_QUOTE_SIGNAL
+#4B70 #EA92F7AD 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : CalcDataLoader = WM_NULL
+#4B70 #8FB99499 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : CalcDaemon = WM_ADD_ASSET
+#4B70 #EDDDDB54 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : TradingRoom = WM_NULL
+#4B70 #C34F6D60 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : OtherHandleID = 2755256
+#4B70 #BD478E50 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : OtherHandleMsg = WM_SERVER_PENDING_REQUEST
+#4B70 #80A6771D 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : OtherThreadID = 10944
+#4B70 #1B3B9663 07/01 11:11:10.612 | 11:11:10.617 : TSafeMessageObject.InnerPostMessage : OtherThreadMsg = WM_CONNECT
+#4B70 #DDE1D672 07/01 11:11:10.630 | 11:11:10.633 : TSafeMessageObject.InnerPostMessage (ThreadID=14192) : esvaziamos a lista
